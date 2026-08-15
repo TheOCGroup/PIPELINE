@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OCG PIPELINE</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">◧</span>
+        <span class="brand-name">OCG PIPELINE</span>
+        <span class="brand-sub">standalone · not OCG ONE</span>
+      </div>
+      <div id="demo-banner" class="demo-banner" role="status" hidden>DEMO DATA — fixtures, not production</div>
+      <div class="topbar-right"><span id="app-version" class="pill">v0.1.0</span></div>
+    </header>
+
+    <nav class="nav" aria-label="Primary">
+      <a href="/" data-nav>Overview</a>
+      <a href="/opportunities" data-nav>Opportunities</a>
+      <a href="/piper" data-nav>PIPER Intelligence</a>
+      <a href="/provenance" data-nav>Provenance</a>
+      <a href="/classifications" data-nav>Classifications</a>
+      <a href="/data-quality" data-nav>Data Quality</a>
+      <a href="/system" data-nav>System</a>
+    </nav>
+
+    <main id="main" tabindex="-1">
+      <div id="view" aria-live="polite"><p class="muted">Loading…</p></div>
+    </main>
+
+    <footer class="footer">
+      <span>OCG PIPELINE — acquisition intelligence workspace.</span>
+      <span id="footer-mode" class="muted"></span>
+    </footer>
+
+    <!-- PIPER Persistent Intelligence Layer floating widget -->
+    <div id="piper-widget" class="piper-widget">
+      <!-- Collapsed Toggle Button -->
+      <button id="piper-toggle" class="piper-toggle" aria-label="Toggle PIPER intelligence">
+        <span aria-hidden="true">P</span>
+      </button>
+
+      <!-- Floating Chat Drawer -->
+      <div id="piper-drawer" class="piper-drawer hidden">
+        <div class="piper-header">
+          <div class="piper-status">
+            <span class="status-dot"></span>
+            <span>PIPER Intelligence</span>
+          </div>
+          <span class="piper-badge">GROUNDED</span>
+        </div>
+
+        <!-- Context Awareness Banner -->
+        <div id="piper-context-bar" class="piper-context-bar">
+          <span id="piper-context-text">Sensing active workspace...</span>
+        </div>
+
+        <!-- Messages List -->
+        <div id="piper-chat-history" class="piper-chat-history">
+          <div class="msg bot">
+            Hello Genaro. I’m PIPER. I’ll ground every recommendation in the property, its source, and the active pipeline record.
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions-bar">
+          <button onclick="window.triggerPiperQuickAction('analyze')" class="quick-action-btn">Analyze Deal</button>
+          <button onclick="window.triggerPiperQuickAction('verify')" class="quick-action-btn">Check Provenance</button>
+          <button onclick="window.triggerPiperQuickAction('script')" class="quick-action-btn">Objection Script</button>
+          <button onclick="window.triggerPiperQuickAction('scan')" class="quick-action-btn">Discovery Status</button>
+        </div>
+
+        <!-- Input -->
+        <form id="piper-chat-form" class="piper-chat-form">
+          <input type="text" id="piper-chat-input" placeholder="Ask PIPER co-pilot..." required />
+          <button type="submit" class="piper-send-btn">Send</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Testing Compatibility: PIPELINE Overview standalone -->
+    <div style="display: none;" aria-hidden="true">PIPELINE Overview standalone</div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

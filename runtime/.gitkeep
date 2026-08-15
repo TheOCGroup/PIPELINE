@@ -1,0 +1,2 @@
+# Keeps the runtime directory in Git. The PIPELINE database (pipeline.db) is
+# created here at runtime and is gitignored.

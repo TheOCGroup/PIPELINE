@@ -1,0 +1,17 @@
+node_modules/
+
+# Runtime database and WAL sidecars — never commit runtime data.
+runtime/*
+!runtime/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Secrets — only .env.example is tracked.
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log
