@@ -54,3 +54,43 @@ test("development mode does not require secrets", () => {
   // No throw; health/version never need secrets.
   assert.equal(cfg.sessionSecret, "");
 });
+
+test("PIPER intake is disabled by default and fails closed with a weak production secret", () => {
+  const disabled = loadConfig({ PIPELINE_ENV: "production" });
+  assert.equal(disabled.piperIntakeEnabled, false);
+
+  assert.throws(
+    () => loadConfig({
+      PIPELINE_ENV: "production",
+      PIPELINE_ENABLE_PIPER_INTAKE: "true",
+      PIPELINE_PIPER_INTAKE_SECRET: "too-short",
+    }),
+    /PIPELINE_PIPER_INTAKE_SECRET.*too weak/
+  );
+
+  const enabled = loadConfig({
+    PIPELINE_ENV: "production",
+    PIPELINE_ENABLE_PIPER_INTAKE: "true",
+    PIPELINE_PIPER_INTAKE_SECRET: "a-secure-piper-intake-secret",
+  });
+  assert.equal(enabled.piperIntakeEnabled, true);
+});
+
+test("an enabled production intake never echoes the secret in its failure", () => {
+  const weakSecret = "short-intake-key";
+  try {
+    loadConfig({
+      PIPELINE_ENV: "production",
+      PIPELINE_ENABLE_PIPER_INTAKE: "true",
+      PIPELINE_PIPER_INTAKE_SECRET: weakSecret.slice(0, 8),
+    });
+    assert.fail("should have thrown");
+  } catch (err) {
+    assert.ok(!err.message.includes(weakSecret.slice(0, 8)), "the secret value must not be echoed in the error");
+  }
+});
+
+test("production defaults to read-only, which blocks intake writes", () => {
+  const cfg = loadConfig({ PIPELINE_ENV: "production" });
+  assert.equal(cfg.readOnly, true, "production must default to refusing mutations");
+});

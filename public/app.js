@@ -180,7 +180,11 @@
         </div>
       </div>
       
-      <div class="panel"><strong>Fixture / demo disclosure.</strong> ${s.demo ? "This view is backed by <strong>DEMO fixtures</strong>, not production data." : "Empty data mode — no records loaded."}</div>`;
+      <div class="panel"><strong>Data source disclosure.</strong> ${s.demo
+        ? "This view is backed by <strong>DEMO fixtures</strong>, not production data."
+        : state.opportunities.length
+          ? `Live data — ${state.opportunities.length} record(s) read from the PIPELINE database. No demonstration fixtures are loaded.`
+          : "Live data — the PIPELINE database holds no opportunity records yet."}</div>`;
   }
   const card = (n, l) => `<div class="card"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`;
 
@@ -446,7 +450,7 @@
     state.activeOppId = null;
     updatePiperContext();
     const { data, meta } = await api("/api/v1/data-quality");
-    view.innerHTML = `<h1>Data Quality</h1><p class="sub">${meta.demo ? "DEMO DATA" : "Empty mode"}</p>
+    view.innerHTML = `<h1>Data Quality</h1><p class="sub">${meta.demo ? "DEMO DATA" : `Live data · ${data.totalOpportunities} record(s)`}</p>
       <div class="cards">
         ${card(data.totalOpportunities, "Total opportunities")}
         ${card(data.missingProvenance, "Missing provenance")}

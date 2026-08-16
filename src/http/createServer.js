@@ -26,6 +26,7 @@ import { handleGetSession, handlePostLogout } from "./routes/authRoutes.js";
 import { handleConvertLead } from "./routes/opportunitiesConvert.js";
 import { verifyServiceToken } from "../auth/tokenService.js";
 import { handleDealFindrIntake } from "./routes/dealFindrIntake.js";
+import { authorizePiperIntake } from "./routes/piperIntakeAuthorization.js";
 
 
 const STATIC = {
@@ -74,6 +75,10 @@ export function createServer(ctx) {
         if (path === "/api/integrations/deal-findr/intake") {
           if (req.method !== "POST") {
             return sendJson(res, 405, { ok: false, error: "method_not_allowed" }, { "Allow": "POST" });
+          }
+          const authorization = authorizePiperIntake(req, ctx.config);
+          if (!authorization.ok) {
+            return sendJson(res, authorization.status, { ok: false, error: authorization.error });
           }
           return handleDealFindrIntake(req, res, ctx);
         }

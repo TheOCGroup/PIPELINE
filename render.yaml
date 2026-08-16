@@ -1,0 +1,59 @@
+# Render blueprint for OCG PIPELINE.
+#
+# PIPELINE is a long-running Node process that persists to SQLite on disk, so it
+# needs a real mounted volume. A Render disk requires a paid instance type — the
+# free tier has ephemeral storage and would silently discard the database on
+# every redeploy. `starter` is the smallest plan that supports a disk.
+#
+# Migrations run automatically at boot (src/app/createApp.js -> runMigrations),
+# so a fresh disk migrates itself on first start and survives redeploys after.
+#
+# Secrets are declared with `sync: false`: Render prompts for them once in the
+# dashboard and never stores them in this file or in git.
+
+services:
+  - type: web
+    name: ocg-pipeline
+    runtime: docker
+    dockerfilePath: ./deploy/production/pipeline.Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: false
+
+    disk:
+      name: pipeline-data
+      mountPath: /data
+      sizeGB: 1
+
+    envVars:
+      - key: PIPELINE_ENV
+        value: production
+      - key: PIPELINE_HOST
+        value: 0.0.0.0
+      - key: PIPELINE_PORT
+        value: "8090"
+      # Must live under the mounted disk, or the database dies with the container.
+      - key: PIPELINE_DB_PATH
+        value: /data/pipeline.db
+
+      # Production ships refusing every mutation, including intake. Flip to
+      # false only at a deliberate cutover.
+      - key: PIPELINE_READ_ONLY
+        value: "true"
+
+      # Never serve demonstration fixtures from production.
+      - key: PIPELINE_DATA_SOURCE
+        value: empty
+
+      - key: PIPELINE_ALLOW_OCG_ONE_INTEGRATION
+        value: "false"
+
+      # Intake stays off until Deal Findr is ready to call it. When enabled in
+      # production, boot fails unless the secret is at least 16 characters.
+      - key: PIPELINE_ENABLE_PIPER_INTAKE
+        value: "false"
+      - key: PIPELINE_PIPER_INTAKE_SECRET
+        sync: false
+      - key: PIPELINE_SESSION_SECRET
+        sync: false

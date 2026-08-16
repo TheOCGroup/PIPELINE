@@ -53,6 +53,10 @@ export function loadConfig(env = process.env) {
     : asBool(env.PIPELINE_READ_ONLY);
   const sessionSecret = env.PIPELINE_SESSION_SECRET || "";
   const handoffSecret = env.PIPELINE_HANDOFF_SECRET || "";
+  // Machine-to-machine intake boundary (Deal Findr / PIPER). Disabled unless
+  // explicitly turned on, so a default deployment exposes no write path.
+  const piperIntakeEnabled = asBool(env.PIPELINE_ENABLE_PIPER_INTAKE);
+  const piperIntakeSecret = env.PIPELINE_PIPER_INTAKE_SECRET || "";
   const ocgOneBaseUrl = env.OCG_ONE_BASE_URL || DEFAULTS.ocgOneBaseUrl;
 
   const handoffIssuer = env.OCG_ONE_HANDOFF_ISSUER || "ocg-one";
@@ -112,6 +116,12 @@ export function loadConfig(env = process.env) {
     }
   }
 
+  // Intake is the only write path in the application. If an operator enables it
+  // in production, refuse to boot on a guessable shared secret.
+  if (appEnv === "production" && piperIntakeEnabled && isWeak(piperIntakeSecret)) {
+    throw new Error(`PIPELINE_PIPER_INTAKE_SECRET is missing or too weak for production intake (min ${MIN_SECRET_LEN} chars)`);
+  }
+
   return {
     host,
     port,
@@ -121,6 +131,8 @@ export function loadConfig(env = process.env) {
     readOnly,
     sessionSecret,
     handoffSecret,
+    piperIntakeEnabled,
+    piperIntakeSecret,
     ocgOneBaseUrl,
     dataSource,
     handoffIssuer,

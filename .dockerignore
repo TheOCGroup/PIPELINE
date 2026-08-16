@@ -12,3 +12,10 @@ runtime/
 playwright-report/
 test-results/
 storage/
+
+# Not part of the running application. src/fixtures/ IS application code
+# (PIPELINE_DATA_SOURCE=fixtures) and must stay in the image.
+tests/
+docs/
+HANDOFF.md
+VALIDATION_STATUS.md

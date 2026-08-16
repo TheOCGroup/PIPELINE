@@ -1,47 +1,24 @@
 /**
- * PIPELINE runtime version guard.
- *
- * PIPELINE persists through the built-in `node:sqlite` module, which is only
- * available from Node 22.5 onward. Running on an older runtime fails deep in
- * the database layer with an opaque module error, so this guard runs first in
- * `server.js` and fails closed with an actionable message.
- *
- * The minimum mirrors `engines.node` in package.json — keep the two in step.
+ * Independent Node runtime check. PIPELINE requires Node >= 22.5 (built-in
+ * node:sqlite). This is a self-contained prerequisite — PIPELINE does not depend
+ * on any OCG ONE runtime.
  */
 
-export const MINIMUM_NODE_VERSION = "22.5.0";
+export const MIN_NODE = { major: 22, minor: 5 };
 
-const parse = (version) =>
-  String(version)
-    .replace(/^v/, "")
-    .split("-")[0]
-    .split(".")
-    .map((part) => Number.parseInt(part, 10) || 0);
-
-/** @returns {{ok:true,version:string}|{ok:false,reason:string,version:string}} */
-export function inspectNodeVersion(version = process.versions.node) {
-  const [major, minor, patch] = parse(version);
-  const [minMajor, minMinor, minPatch] = parse(MINIMUM_NODE_VERSION);
-
-  const satisfied =
-    major > minMajor ||
-    (major === minMajor && minor > minMinor) ||
-    (major === minMajor && minor === minMinor && patch >= minPatch);
-
-  return satisfied
-    ? { ok: true, version }
-    : { ok: false, reason: "node_version_below_minimum", version };
+export function isSupportedNode(versionString = process.versions.node) {
+  const [major, minor] = String(versionString).split(".").map((n) => parseInt(n, 10));
+  if (!Number.isInteger(major)) return false;
+  if (major > MIN_NODE.major) return true;
+  if (major < MIN_NODE.major) return false;
+  return (Number.isInteger(minor) ? minor : 0) >= MIN_NODE.minor;
 }
 
-/** Exits the process before boot unless the runtime can provide `node:sqlite`. */
-export function assertNodeVersion(version = process.versions.node) {
-  const verdict = inspectNodeVersion(version);
-  if (!verdict.ok) {
-    console.error(
-      `[pipeline-runtime] Node ${MINIMUM_NODE_VERSION} or newer is required ` +
-        `(running ${verdict.version}). PIPELINE uses the built-in node:sqlite module.`
+export function assertNodeVersion(versionString = process.versions.node) {
+  if (!isSupportedNode(versionString)) {
+    throw new Error(
+      `OCG PIPELINE requires Node.js >= ${MIN_NODE.major}.${MIN_NODE.minor} (found ${versionString}). ` +
+        "Install a supported Node runtime; PIPELINE has no bundled runtime and no dependency on any other app."
     );
-    process.exit(1);
   }
-  return verdict.version;
 }
