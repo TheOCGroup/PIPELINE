@@ -27,6 +27,8 @@ import { handleConvertLead } from "./routes/opportunitiesConvert.js";
 import { verifyServiceToken } from "../auth/tokenService.js";
 import { handleDealFindrIntake } from "./routes/dealFindrIntake.js";
 import { authorizePiperIntake } from "./routes/piperIntakeAuthorization.js";
+import { handleOperatorRoutes } from "./routes/operatorRoutes.js";
+import { handlePiperRoutes } from "./routes/piperRoutes.js";
 
 
 const STATIC = {
@@ -140,8 +142,20 @@ export function createServer(ctx) {
                 if (!session.permissions || !session.permissions.includes("pipeline.read")) {
                   return sendJson(res, 403, { ok: false, error: "forbidden_insufficient_permissions" });
                 }
+                // Carried so operator writes below can attribute the actor.
+                req.pipelineSession = session;
               }
             }
+          }
+
+          // Operator state and Piper sit after session enforcement, so in
+          // production they inherit the same authentication as every read.
+          const seg = path.replace(/^\/api\/v1\/?/, "").split("/").filter(Boolean);
+          if (seg[0] === "operator") {
+            if (await handleOperatorRoutes(req, res, ctx, url, seg)) return;
+          }
+          if (seg[0] === "piper") {
+            if (await handlePiperRoutes(req, res, ctx, url, seg)) return;
           }
 
           return handleApi(req, res, ctx, url);

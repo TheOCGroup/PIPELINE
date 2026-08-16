@@ -84,42 +84,67 @@
     localStorage.setItem("pipeline_overrides", JSON.stringify(data));
   }
 
-  // Local Tasks Checklist Helpers
-  function getTasks(oppId) {
-    const data = JSON.parse(localStorage.getItem("pipeline_tasks") || "{}");
-    if (!data[oppId]) {
-      // Default checklists for new deals
-      data[oppId] = [
-        { title: "Skiptrace owner contact details", done: false },
-        { title: "Verify APN/GIS records", done: false },
-        { title: "Run 75% MAO calculations", done: false },
-        { title: "Schedule walk-through / inspection", done: false },
-        { title: "Draft escrow purchase agreement", done: false }
-      ];
-      localStorage.setItem("pipeline_tasks", JSON.stringify(data));
+  // Operator state lives in PIPELINE, not the browser. These call the
+  // /api/v1/operator/* endpoints so checklist progress and notes survive a
+  // cleared cache and are visible to every operator.
+  const CHECKLIST_TEMPLATE = [
+    { key: "skiptrace", label: "Skiptrace owner contact details" },
+    { key: "apn", label: "Verify APN/GIS records" },
+    { key: "mao", label: "Run MAO calculations" },
+    { key: "walkthrough", label: "Schedule walk-through / inspection" },
+    { key: "escrow", label: "Draft escrow purchase agreement" },
+  ];
+
+  async function operatorGet(resource, oppId) {
+    const res = await fetch(`/api/v1/operator/${resource}?opportunityId=${encodeURIComponent(oppId)}`);
+    const body = await res.json();
+    if (!body.ok) throw new Error(body.error || "operator_read_failed");
+    return body.data;
+  }
+
+  async function operatorPost(resource, payload) {
+    const res = await fetch(`/api/v1/operator/${resource}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json();
+    if (!body.ok) throw new Error(body.error || "operator_write_failed");
+    return body.data;
+  }
+
+  /** Renders the checklist, merging stored state over the standard template. */
+  async function renderChecklist(oppId) {
+    const box = document.getElementById("detail-tasks-box");
+    if (!box) return;
+    try {
+      const { checklist } = await operatorGet("checklist", oppId);
+      const stored = new Map(checklist.map((i) => [i.key, i]));
+      box.innerHTML = CHECKLIST_TEMPLATE.map((t) => {
+        const done = stored.get(t.key)?.checked === true;
+        return `<div class="task-item">
+          <input type="checkbox" ${done ? "checked" : ""} class="task-checkbox"
+                 onchange="window.toggleDetailTask('${esc(oppId)}','${esc(t.key)}','${esc(t.label)}',this.checked)" />
+          <span class="task-text ${done ? "done" : ""}">${esc(t.label)}</span>
+        </div>`;
+      }).join("");
+    } catch {
+      box.innerHTML = `<div class="state error">Could not load checklist from PIPELINE.</div>`;
     }
-    return data[oppId];
   }
 
-  function toggleTask(oppId, index) {
-    const data = JSON.parse(localStorage.getItem("pipeline_tasks") || "{}");
-    if (data[oppId] && data[oppId][index]) {
-      data[oppId][index].done = !data[oppId][index].done;
-      localStorage.setItem("pipeline_tasks", JSON.stringify(data));
+  async function renderNotes(oppId) {
+    const list = document.getElementById("detail-logs-list");
+    if (!list) return;
+    try {
+      const { notes } = await operatorGet("notes", oppId);
+      list.innerHTML = notes.length
+        ? notes.map((n) => `<div class="log-card"><div>"${esc(n.body)}"</div>
+            <span class="log-date">${esc((n.createdAt || "").slice(0, 10))} · ${esc(n.createdBy)}</span></div>`).join("")
+        : `<div class="state">No notes recorded.</div>`;
+    } catch {
+      list.innerHTML = `<div class="state error">Could not load notes from PIPELINE.</div>`;
     }
-  }
-
-  // Local Seller Logs Helpers
-  function getSellerLogs(oppId) {
-    const data = JSON.parse(localStorage.getItem("pipeline_logs") || "{}");
-    return data[oppId] || [];
-  }
-
-  function addSellerLog(oppId, text) {
-    const data = JSON.parse(localStorage.getItem("pipeline_logs") || "{}");
-    if (!data[oppId]) data[oppId] = [];
-    data[oppId].push({ text, date: new Date().toLocaleDateString() });
-    localStorage.setItem("pipeline_logs", JSON.stringify(data));
   }
 
   // Global System Info Sync
@@ -147,10 +172,11 @@
     state.opportunities = opps.data;
 
     // Compile local overrides to get actual stage metrics
+    // Counts come from the server's stage only. A browser-local override used
+    // to outrank it here, so the funnel disagreed with the database.
     const stageCounts = {};
     state.opportunities.forEach(o => {
-      const overrides = getOverrides(o.id);
-      const actualStage = overrides.stage || o.stage || "new_lead";
+      const actualStage = o.stage || "new_lead";
       stageCounts[actualStage] = (stageCounts[actualStage] || 0) + 1;
     });
 
@@ -199,14 +225,8 @@
     try { body = await api("/api/v1/opportunities?" + qs.toString()); }
     catch (e) { return errorState("Could not load opportunities: " + e.message); }
     
-    // Apply local stage overrides to list view
-    state.opportunities = body.data.map(o => {
-      const overrides = getOverrides(o.id);
-      return {
-        ...o,
-        stage: overrides.stage || o.stage
-      };
-    });
+    // No local stage rewriting: the list shows what PIPELINE stores.
+    state.opportunities = body.data;
     
     const pg = body.meta.pagination;
     view.innerHTML = `
@@ -272,7 +292,7 @@
 
     // Load Local overrides
     const overrides = getOverrides(o.id);
-    const stageVal = overrides.stage || o.stage || "new_lead";
+    const stageVal = o.stage || "new_lead";
     const arvVal = overrides.arv || 250000;
     const rehabVal = overrides.rehab || 50000;
     const feeVal = overrides.fee || 5000;
@@ -370,33 +390,26 @@
           <!-- Interactive Task checklist -->
           <div class="panel">
             <h2>Acquisitions Checklist</h2>
-            <p class="scratchpad-note"><span>⚠</span><span>Checklist progress is stored in this browser only. PIPELINE's API is read-only and does not persist it — it will not appear for other operators and is lost if site data is cleared.</span></p>
-            <div class="checklist-box" id="detail-tasks-box">
-              ${getTasks(o.id).map((t, idx) => `
-                <div class="task-item">
-                  <input type="checkbox" ${t.done ? 'checked' : ''} class="task-checkbox" onchange="window.toggleDetailTask('${o.id}', ${idx})" />
-                  <span class="task-text ${t.done ? 'done' : ''}">${esc(t.title)}</span>
-                </div>
-              `).join("")}
-            </div>
+            <p class="scratchpad-note"><span>✓</span><span>Saved in PIPELINE. Checklist state is stored server-side and is visible to every operator.</span></p>
+            <div class="checklist-box" id="detail-tasks-box">Loading…</div>
+          </div>
+
+          <!-- Next actions (server-backed) -->
+          <div class="panel">
+            <h2>Next Actions</h2>
+            <p class="scratchpad-note"><span>✓</span><span>Saved in PIPELINE. Piper reads these when deciding what is stalled and what needs you.</span></p>
+            <div id="detail-next-actions">Loading…</div>
           </div>
 
           <!-- Negotiation Logs -->
           <div class="panel">
             <h2>Seller Call Log &amp; Notes</h2>
-            <p class="scratchpad-note"><span>⚠</span><span>Every note logged here is stored in this browser only. PIPELINE's API is read-only and does not persist it — it will not appear for other operators and is lost if site data is cleared.</span></p>
+            <p class="scratchpad-note"><span>✓</span><span>Saved in PIPELINE. Notes are stored server-side, append-only, and visible to every operator.</span></p>
             <form class="log-form" onsubmit="window.submitSellerLog(event, '${o.id}')">
               <input type="text" id="detail-log-input" placeholder="Type new seller update..." required />
               <button type="submit">Add Log</button>
             </form>
-            <div class="logs-list" id="detail-logs-list">
-              ${getSellerLogs(o.id).map(l => `
-                <div class="log-card">
-                  <div>"${esc(l.text)}"</div>
-                  <span class="log-date">${esc(l.date)}</span>
-                </div>
-              `).join("")}
-            </div>
+            <div class="logs-list" id="detail-logs-list">Loading…</div>
           </div>
         </div>
 
@@ -418,7 +431,68 @@
       <h2>Outcome</h2>
       <div class="panel">${o.outcome ? esc(o.outcome.result + " — " + o.outcome.reason) : '<span class="muted">No outcome recorded.</span>'}</div>
     `;
+
+    // Operator state is fetched after the shell renders, so a slow read never
+    // blocks the record itself from appearing.
+    renderChecklist(o.id);
+    renderNotes(o.id);
+    renderNextActions(o.id);
   }
+
+  /** Server-backed next actions for the open opportunity. */
+  async function renderNextActions(oppId) {
+    const host = document.getElementById("detail-next-actions");
+    if (!host) return;
+    try {
+      const { nextActions } = await operatorGet("next-actions", oppId);
+      const open = nextActions.filter((a) => a.status === "open");
+      host.innerHTML = `
+        <form class="log-form" onsubmit="window.submitNextAction(event, '${esc(oppId)}')">
+          <input type="text" id="detail-action-input" placeholder="Add a next action..." required />
+          <button type="submit">Add</button>
+        </form>
+        ${nextActions.length ? nextActions.map((a) => `
+          <div class="task-item">
+            <input type="checkbox" class="task-checkbox" ${a.status === "done" ? "checked" : ""}
+                   onchange="window.completeNextAction('${esc(a.id)}','${esc(oppId)}',this.checked)" />
+            <span class="task-text ${a.status === "done" ? "done" : ""}">${esc(a.title)}${a.dueDate ? ` <span class="muted">· due ${esc(a.dueDate)}</span>` : ""}</span>
+          </div>`).join("") : `<div class="state">No next actions recorded.</div>`}
+        ${open.length === 0 && nextActions.length ? `<div class="piper-reason">All actions complete — this record will read as stalled once it passes the inactivity threshold.</div>` : ""}`;
+    } catch {
+      host.innerHTML = `<div class="state error">Could not load next actions from PIPELINE.</div>`;
+    }
+  }
+
+  window.submitNextAction = async (e, oppId) => {
+    e.preventDefault();
+    const input = document.getElementById("detail-action-input");
+    if (!input || !input.value.trim()) return;
+    const title = input.value.trim();
+    input.value = "";
+    try {
+      await operatorPost("next-actions", { opportunityId: oppId, title });
+      await renderNextActions(oppId);
+    } catch (err) {
+      input.value = title;
+      alert(`Could not save the next action to PIPELINE (${err.message}).`);
+    }
+  };
+
+  window.completeNextAction = async (id, oppId, checked) => {
+    try {
+      const res = await fetch(`/api/v1/operator/next-actions/${encodeURIComponent(id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: checked ? "done" : "open" }),
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error);
+      await renderNextActions(oppId);
+    } catch (err) {
+      alert(`Could not update the next action (${err.message}).`);
+      await renderNextActions(oppId);
+    }
+  };
 
   async function provenance() {
     loading();
@@ -439,10 +513,12 @@
     updatePiperContext();
     const { data, meta } = await api("/api/v1/classifications");
     const cur = data.current, hist = data.history;
+    const anyLineage = cur.some((c) => c.classification && c.classification !== "NOT_RECORDED");
     view.innerHTML = `<h1>Classifications</h1><p class="sub">${cur.length} record(s)${meta.demo ? " · DEMO DATA" : ""}. Unresolved provenance is never auto-synthetic.</p>
-      ${cur.length ? tbl(["Opportunity", "Classification", "Provenance", "Reason"], cur.map((c) => [linkOpp(c.opportunityId), badgeHtml(c.classification), badgeHtml(c.provenanceState), c.reason]), true) : empty("No classifications (empty mode).")}
+      ${!anyLineage && cur.length ? `<div class="panel"><strong>Lineage is not recorded.</strong> REAL / SYNTHETIC / AMBIGUOUS is a determination about a source lead's lineage, and this database has no column storing it. The record classification and provenance columns below are read from stored values; lineage is shown as NOT RECORDED rather than inferred.</div>` : ""}
+      ${cur.length ? tbl(["Opportunity", "Record classification", "Lineage", "Provenance", "Determined by", "Reason"], cur.map((c) => [linkOpp(c.opportunityId), badgeHtml(c.recordClassification), badgeHtml(c.classification), badgeHtml(c.provenanceState), esc(c.determinedBy || "—"), esc(c.reason)]), true) : empty("No classifications recorded.")}
       <h2>History (append-only)</h2>
-      ${hist.length ? tbl(["Opportunity", "Prior", "New", "Reason", "At"], hist.map((h) => [linkOpp(h.opportunityId), h.priorClassification || "—", h.newClassification, h.reason, (h.changedAt || "").slice(0, 10)]), true) : empty("No history.")}`;
+      ${hist.length ? tbl(["Opportunity", "Prior", "New", "Determined by", "Reason", "At"], hist.map((h) => [linkOpp(h.opportunityId), esc(h.priorClassification || "—"), esc(h.newClassification), esc(h.determinedBy || "—"), esc(h.reason), esc((h.changedAt || "").slice(0, 10))]), true) : empty("No classification history recorded.")}`;
   }
 
   async function dataQuality() {
@@ -522,22 +598,38 @@
   };
 
   window.saveStageChange = (oppId) => {
+    // Stage is owned by the systems of record. The browser-local override this
+    // replaces silently outranked the server's stage in the list and in the
+    // Overview funnel counts, so two operators saw different totals for the
+    // same database. Recording a next action is the honest alternative.
     const select = document.getElementById("detail-stage-select");
-    if (select) {
-      setOverride(oppId, "stage", select.value);
-      alert(`Stage shown as ${formatStage(select.value)} in this browser only. PIPELINE has no stage-change endpoint, so the record itself is unchanged.`);
+    const target = select ? formatStage(select.value) : "another stage";
+    const title = `Review stage placement — proposed: ${target}`;
+    if (!confirm(`PIPELINE has no stage-change endpoint, so the record cannot be moved from here.\n\nRecord a next action instead?\n\n"${title}"`)) return;
+
+    fetch("/api/v1/operator/next-actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ opportunityId: oppId, title }),
+    })
+      .then((r) => r.json())
+      .then((b) => alert(b.ok
+        ? "Saved as a next action in PIPELINE. The stage itself is unchanged."
+        : `Could not save the next action (${b.error || "unknown error"}).`))
+      .catch(() => alert("Could not reach PIPELINE to save the next action."));
+  };
+
+  window.toggleDetailTask = async (oppId, key, label, checked) => {
+    try {
+      await operatorPost("checklist", { opportunityId: oppId, key, label, checked });
+      await renderChecklist(oppId);
+    } catch (err) {
+      alert(`Could not save checklist state to PIPELINE (${err.message}).`);
+      await renderChecklist(oppId);
     }
   };
 
-  window.toggleDetailTask = (oppId, index) => {
-    toggleTask(oppId, index);
-    const label = view.querySelectorAll(".task-text")[index];
-    if (label) {
-      label.classList.toggle("done");
-    }
-  };
-
-  window.submitSellerLog = (e, oppId) => {
+  window.submitSellerLog = async (e, oppId) => {
     e.preventDefault();
     const input = document.getElementById("detail-log-input");
     if (!input || !input.value.trim()) return;
@@ -545,17 +637,12 @@
     const text = input.value.trim();
     input.value = "";
 
-    addSellerLog(oppId, text);
-    
-    // Refresh log list view
-    const list = document.getElementById("detail-logs-list");
-    if (list) {
-      list.innerHTML = getSellerLogs(oppId).map(l => `
-        <div class="log-card">
-          <div>"${esc(l.text)}"</div>
-          <span class="log-date">${esc(l.date)}</span>
-        </div>
-      `).join("");
+    try {
+      await operatorPost("notes", { opportunityId: oppId, body: text });
+      await renderNotes(oppId);
+    } catch (err) {
+      input.value = text;
+      alert(`Could not save the note to PIPELINE (${err.message}).`);
     }
   };
 
@@ -565,60 +652,114 @@
     if (toggle) {
       toggle.addEventListener("click", () => {
         piperDrawer.classList.toggle("hidden");
-        renderPiperHistory();
+        const opened = !piperDrawer.classList.contains("hidden");
+        // Brief on open, so Piper is already oriented before being asked.
+        if (opened && !state.piperBriefLoaded) {
+          state.piperBriefLoaded = true;
+          loadPiperBrief();
+        } else {
+          renderPiperHistory();
+        }
       });
     }
 
     if (piperChatForm) {
-      piperChatForm.addEventListener("submit", (e) => {
+      piperChatForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         const text = piperChatInput.value.trim();
         if (!text) return;
         piperChatInput.value = "";
 
         state.piperMessages.push({ sender: "user", text });
+        // A real pending state for a real request — not a timer pretending to think.
+        state.piperMessages.push({ sender: "bot", text: "Reading PIPELINE state…", pending: true });
         renderPiperHistory();
 
-        setTimeout(() => {
-          let reply = "I report stored pipeline state: stage, provenance lineage, classification, and data-quality counts. I have no language model behind me, so I will not generate analysis or advice. Ask about a specific opportunity, or open one and ask about its lineage.";
-          const query = text.toLowerCase();
+        let reply;
+        try {
+          const res = await fetch("/api/v1/piper/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: text, activeOpportunityId: state.activeOppId || null }),
+          });
+          const body = await res.json();
+          reply = body.ok ? renderPiperAnswer(body.data) : "I couldn't read PIPELINE state just now.";
+        } catch {
+          reply = "I couldn't reach PIPELINE to answer that.";
+        }
 
-          if (query.includes("unresolved") || query.includes("which records")) {
-            const loaded = state.opportunities || [];
-            const list = loaded.filter((o) => o.provenanceState === "unresolved");
-            reply = list.length
-              ? `${list.length} of ${loaded.length} loaded record(s) have unresolved provenance: ${list.map((o) => o.id).join(", ")}. Unresolved means lineage could not be established — it is <strong>not</strong> a synthetic determination.`
-              : `No record among the ${loaded.length} currently loaded has unresolved provenance. This covers the loaded page only, not the whole book.`;
-          } else if (query.includes("mao") || query.includes("calculate") || query.includes("underwrit")) {
-            reply = "The underwriting panel computes MAO from figures you enter, and those figures are stored in this browser only — PIPELINE's API is read-only and does not persist them. Treat it as a scratchpad, not a record of the deal.";
-          } else if (state.activeOppId) {
-            const currentOpp = state.opportunities.find(o => o.id === state.activeOppId);
-            const addr = !currentOpp
-              ? "The active opportunity"
-              : currentOpp.property?.address
-                ? currentOpp.property.address
-                : currentOpp.propertyRef
-                  ? "Property ref " + currentOpp.propertyRef
-                  : "Opportunity " + currentOpp.id;
-            
-            if (query.includes("script") || query.includes("negotiat")) {
-              reply = "I can't write seller scripts. No language model is connected to PIPELINE, and inventing negotiation copy would be me pretending to a capability I don't have. What I can do is report stage, lineage, and classification for any opportunity.";
-            } else if (query.includes("verify") || query.includes("provenance") || query.includes("source")) {
-              const ps = currentOpp?.provenanceState ?? "unknown";
-              const cls = currentOpp?.classification ?? "unclassified";
-              const note = ps === "unresolved"
-                ? "Unresolved means neither an original nor a recovered source message could be established. That is <strong>not</strong> a finding that the record is synthetic, and it is not a verification."
-                : ps === "recovered"
-                  ? "Recovered means the original source message was absent and lineage was reconstructed. The recovery method and confidence are on the Provenance view."
-                  : "Original means the source message id is present on the record as first captured.";
-              reply = `<strong>${addr}</strong> — provenance <strong>${ps}</strong>, classification <strong>${cls}</strong>. ${note} PIPELINE stores no contact details, so I cannot check contact data against any roll.`;
-            }
-          }
-
-          state.piperMessages.push({ sender: "bot", text: reply });
-          renderPiperHistory();
-        }, 800);
+        state.piperMessages = state.piperMessages.filter((m) => !m.pending);
+        state.piperMessages.push({ sender: "bot", text: reply });
+        renderPiperHistory();
       });
+    }
+  }
+
+  /** Renders a Piper answer plus the records it was derived from. */
+  function renderPiperAnswer(data) {
+    const items = (data.items || []).slice(0, 6).map((i) => {
+      const link = i.opportunityId ? linkOpp(i.opportunityId) : "";
+      const why = (i.reasons || []).map((r) => `<div class="piper-reason">${esc(r)}</div>`).join("");
+      return `<div class="piper-item">${link} <span>${esc(i.label)}</span>${why}</div>`;
+    }).join("");
+
+    const caps = data.capabilities
+      ? `<div class="piper-reason">Try: ${data.capabilities.slice(0, 5).map(esc).join(" · ")}</div>`
+      : "";
+
+    const proposal = data.proposal && data.proposal.kind === "create_next_action"
+      ? `<div class="piper-item"><button type="button" onclick="piperConfirmAction('${esc(data.proposal.opportunityId)}', '${esc(data.proposal.title).replace(/'/g, "\\'")}')">Create this next action</button></div>`
+      : "";
+
+    return `${esc(data.answer)}${items}${proposal}${caps}`;
+  }
+
+  window.piperConfirmAction = async (opportunityId, title) => {
+    try {
+      const res = await fetch("/api/v1/operator/next-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId, title }),
+      });
+      const body = await res.json();
+      state.piperMessages.push({
+        sender: "bot",
+        text: body.ok
+          ? `Recorded "${esc(title)}" as a next action on ${linkOpp(opportunityId)}. It is saved in PIPELINE, not this browser.`
+          : `I couldn't save that (${esc(body.error || "unknown error")}).`,
+      });
+      renderPiperHistory();
+    } catch {
+      state.piperMessages.push({ sender: "bot", text: "I couldn't reach PIPELINE to save that." });
+      renderPiperHistory();
+    }
+  };
+
+  /** The operating brief, fetched from real state when the panel opens. */
+  async function loadPiperBrief() {
+    try {
+      const res = await fetch("/api/v1/piper/brief");
+      const body = await res.json();
+      if (!body.ok) return;
+      const b = body.data;
+
+      const sections = b.sections.map((s) => `
+        <div class="piper-brief-section">
+          <div class="piper-brief-title">${esc(s.title)} <span>${s.items.length}</span></div>
+          ${s.items.slice(0, 4).map((i) => `
+            <div class="piper-item">
+              ${i.opportunityId ? linkOpp(i.opportunityId) : ""} <span>${esc(i.label)}</span>
+              ${(i.reasons || []).slice(0, 1).map((r) => `<div class="piper-reason">${esc(r)}</div>`).join("")}
+            </div>`).join("")}
+        </div>`).join("");
+
+      state.piperMessages = [{
+        sender: "bot",
+        text: `<strong>${esc(b.headline)}</strong>${sections || `<div class="piper-reason">Nothing flagged across ${b.evidence.opportunitiesConsidered} record(s).</div>`}`,
+      }];
+      renderPiperHistory();
+    } catch {
+      /* brief is best-effort; the panel still works for questions */
     }
   }
 
@@ -655,7 +796,13 @@
 
   // ---- helpers ----
   const linkOpp = (id) => `<a href="/opportunities/${esc(id)}" data-nav>${esc(id)}</a>`;
-  const badgeHtml = (v) => `<span class="badge b-${esc(v)}">${esc(v)}</span>`;
+  // Class comes from a slug so unrecorded values ("NOT_RECORDED") fall through
+  // to the neutral default badge instead of producing a broken class name.
+  const badgeHtml = (v) => {
+    const raw = v === null || v === undefined || v === "" ? "NOT_RECORDED" : String(v);
+    const slug = raw.replace(/[^A-Za-z0-9_-]/g, "-");
+    return `<span class="badge b-${esc(slug)}">${esc(raw.replace(/_/g, " "))}</span>`;
+  };
   function tbl(headers, rows, rawCells = false) {
     const cell = (c) => rawCells ? c : esc(c);
     return `<div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>

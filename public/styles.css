@@ -575,3 +575,45 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   .piper-widget { bottom: 18px; right: 18px; }
   th, td { padding: 11px 13px; }
 }
+
+/* ---------- Piper brief & grounded answers ----------------------------- */
+/* Lives inside the existing dark Piper drawer; inherits its palette. */
+
+.piper-brief-section { margin: 12px 0 4px; }
+.piper-brief-title {
+  font-size: 9.5px; font-weight: 900; letter-spacing: .18em;
+  text-transform: uppercase; color: rgba(255, 255, 255, .55);
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+.piper-brief-title span {
+  background: rgba(255, 255, 255, .10); color: rgba(255, 255, 255, .85);
+  border-radius: 999px; padding: 1px 7px; font-size: 9px;
+}
+.piper-item {
+  margin: 6px 0; padding: 8px 10px;
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 10px; font-size: 12.5px; line-height: 1.45;
+}
+.piper-item a { color: #c7d2fe; font-weight: 700; text-decoration: none; }
+.piper-item a:hover { text-decoration: underline; }
+.piper-item button {
+  margin-top: 4px; font-size: 11px; padding: 6px 10px; border-radius: 9px;
+  background: linear-gradient(135deg, #8b5cf6, #d946ef); color: #fff; cursor: pointer;
+}
+.piper-reason {
+  margin-top: 4px; font-size: 11.5px; line-height: 1.45;
+  color: rgba(255, 255, 255, .62);
+}
+
+/* ---------- narrow screens: stack key/value pairs ---------------------- */
+/* dl.kv uses a max-content label column, which cannot shrink below the
+   longest label. On a phone that pushed the detail view past the viewport. */
+
+@media (max-width: 640px) {
+  dl.kv { grid-template-columns: 1fr; gap: 3px 0; }
+  dl.kv dt { margin-top: 10px; }
+  dl.kv dd { overflow-wrap: anywhere; }
+  dl.kv select,
+  dl.kv input { width: 100%; box-sizing: border-box; }
+}

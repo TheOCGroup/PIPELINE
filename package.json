@@ -12,7 +12,8 @@
     "start": "node server.js",
     "dev": "node server.js",
     "test": "node --test",
-    "migrate": "node scripts/migrate.js"
+    "migrate": "node scripts/migrate.js",
+    "backup": "node scripts/backup.js"
   },
   "dependencies": {
     "jose": "^6.2.5"

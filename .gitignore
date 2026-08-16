@@ -15,3 +15,6 @@ runtime/*
 
 .DS_Store
 *.log
+
+# Local SQLite backups — never commit database contents.
+backups/

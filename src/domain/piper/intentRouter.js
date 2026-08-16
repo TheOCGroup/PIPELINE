@@ -1,0 +1,346 @@
+/**
+ * Piper's question router.
+ *
+ * IMPORTANT, and stated plainly because it governs everything below: PIPELINE
+ * has no language model connected. This is deterministic intent matching over
+ * real stored state, not generative reasoning. Every answer is assembled from
+ * snapshot fields and carries the opportunity ids it came from.
+ *
+ * The trade is deliberate. A deterministic router cannot paraphrase an unusual
+ * question, but it also cannot invent a deal, a figure, or a verification that
+ * the database does not contain — which is the failure mode this product exists
+ * to prevent. When Piper does not understand, she says so and lists what she
+ * can answer, rather than guessing.
+ */
+
+import { money } from "../../services/piperContextService.js";
+import { buildBrief } from "./briefModel.js";
+
+const INTENTS = [
+  { id: "attention",      patterns: [/what needs (my|your) attention/i, /needs? me/i, /what should i look at/i, /anything urgent/i] },
+  { id: "changed",        patterns: [/what changed/i, /what.s new/i, /since (my |the )?last/i, /any updates?/i] },
+  { id: "stalled",        patterns: [/stalled/i, /stuck/i, /not moving/i, /sitting (in|for)/i, /why is this (deal )?still here/i] },
+  { id: "next",           patterns: [/what should i do( next)?/i, /next step/i, /recommend/i, /what.s next/i] },
+  { id: "risk",           patterns: [/risk/i, /what could go wrong/i, /concerns?/i, /problems?/i] },
+  { id: "missing",        patterns: [/what am i missing/i, /missing/i, /incomplete/i, /gaps?/i] },
+  { id: "strongest",      patterns: [/strongest/i, /best (deal|opportunity)/i, /most promising/i, /which.*looks good/i] },
+  { id: "hunter",         patterns: [/hunter/i, /deal ?find(er|r)/i, /new (leads?|intake)/i, /what came in/i] },
+  { id: "victor",         patterns: [/victor/i, /deal ?scout/i, /underwrit/i, /change the numbers/i, /arv|rehab|mao|ceiling/i] },
+  { id: "detail",         patterns: [/tell me (everything )?about/i, /what do (you|we) know about/i, /show me /i, /details? (on|for|about)/i] },
+  { id: "createAction",   patterns: [/create (the |a )?next action/i, /add (a )?(task|next action)/i, /remind me to/i] },
+  { id: "moveStage",      patterns: [/move (this|it) to/i, /change (the )?stage/i, /set stage/i] },
+  { id: "system",         patterns: [/system (health|status)/i, /is everything (ok|working)/i, /health/i] },
+];
+
+const CAPABILITIES = [
+  "What needs my attention?",
+  "What changed since last time?",
+  "Which deals are stalled?",
+  "What should I do next?",
+  "Show me the risks.",
+  "What am I missing?",
+  "Which opportunity looks strongest?",
+  "What did Hunter find?",
+  "Did Victor change the numbers?",
+  "Tell me about <address or opportunity id>",
+  "Create a next action for this opportunity",
+  "System health",
+];
+
+/**
+ * @param {string} question
+ * @param {object} snapshot
+ * @param {{activeOpportunityId?: string|null}} context UI context — the record
+ *        currently open on screen, so the operator never has to restate it.
+ */
+export function answerQuestion(question, snapshot, context = {}) {
+  const text = String(question || "").trim();
+  if (!text) return unknown(snapshot, "Ask me about attention, stalled deals, risks, Hunter intake, or a specific address.");
+
+  const target = resolveTarget(text, snapshot, context);
+  const intent = INTENTS.find((i) => i.patterns.some((p) => p.test(text)));
+
+  // An address with no recognised verb is a request for that record.
+  if (!intent && target) return detail(target, snapshot);
+  if (!intent) return unknown(snapshot);
+
+  switch (intent.id) {
+    case "attention":    return attention(snapshot);
+    case "changed":      return changed(snapshot);
+    case "stalled":      return stalled(snapshot, target);
+    case "next":         return next(snapshot);
+    case "risk":         return risks(snapshot, target);
+    case "missing":      return missing(snapshot, target);
+    case "strongest":    return strongest(snapshot);
+    case "hunter":       return hunter(snapshot);
+    case "victor":       return victor(snapshot, target);
+    case "detail":       return target ? detail(target, snapshot) : needTarget(snapshot);
+    case "createAction": return proposeAction(text, target, snapshot);
+    case "moveStage":    return stageRefusal(target);
+    case "system":       return system(snapshot);
+    default:             return unknown(snapshot);
+  }
+}
+
+// --- answers ---------------------------------------------------------------
+
+function attention(s) {
+  const brief = buildBrief(s);
+  const needs = brief.sections.find((x) => x.title === "NEEDS YOU");
+  if (!needs) {
+    return say(
+      `Nothing needs a decision right now. ${s.totals.active} active opportunit${s.totals.active === 1 ? "y" : "ies"}, ` +
+      `${s.totals.stalled} stalled, ${s.totals.openNextActions} open next action(s).`,
+      [], s
+    );
+  }
+  return say(
+    `${needs.items.length} need${needs.items.length === 1 ? "s" : ""} your decision.`,
+    needs.items, s
+  );
+}
+
+function changed(s) {
+  const r = s.recent;
+  const total = r.stageEvents.length + r.classificationChanges.length + r.victorUpdates.length + r.intakes.length;
+  if (!total) {
+    return say(s.since ? `Nothing has changed since ${s.since}.` : "No recorded changes yet.", [], s);
+  }
+  const items = buildBrief(s).sections.filter((x) => x.title === "CHANGED" || x.title === "NEW").flatMap((x) => x.items);
+  return say(`${total} change(s) recorded${s.since ? ` since ${s.since}` : ""}.`, items, s);
+}
+
+function stalled(s, target) {
+  if (target) {
+    const days = target.daysSinceActivity;
+    if (!target.stalled) {
+      return say(
+        `${label(target)} is not stalled. Last activity ${days === null ? "is not recorded" : `was ${days} day(s) ago`}, ` +
+        `with ${target.openNextActionCount} open next action(s).`,
+        [{ opportunityId: target.id, label: label(target), reasons: [] }], s
+      );
+    }
+    return say(
+      `${label(target)} has had no movement for ${days} day(s) in ${target.stageLabel} and has no open next action.`,
+      [{ opportunityId: target.id, label: label(target), reasons: target.risks.map((r) => r.detail) }], s
+    );
+  }
+
+  const items = s.opportunities.filter((o) => o.stalled).map((o) => ({
+    opportunityId: o.id,
+    label: label(o),
+    reasons: [`${o.daysSinceActivity} day(s) without movement in ${o.stageLabel}.`],
+  }));
+  return say(items.length ? `${items.length} stalled (no movement for ${s.staleThresholdDays}+ days and no open action).` : "Nothing is stalled.", items, s);
+}
+
+function next(s) {
+  const brief = buildBrief(s);
+  const rec = brief.sections.find((x) => x.title === "NEXT");
+  return say(rec ? "Recommended next actions:" : "No recommended actions — nothing is stalled or awaiting a decision.", rec ? rec.items : [], s);
+}
+
+function risks(s, target) {
+  const pool = target ? [target] : s.opportunities.filter((o) => !o.closed);
+  const items = pool.filter((o) => o.risks.length).map((o) => ({
+    opportunityId: o.id, label: label(o), reasons: o.risks.map((r) => r.detail),
+  }));
+  return say(items.length ? `${items.length} opportunit${items.length === 1 ? "y carries" : "ies carry"} recorded risk.` : "No recorded risks.", items, s);
+}
+
+function missing(s, target) {
+  const pool = target ? [target] : s.opportunities.filter((o) => !o.closed);
+  const items = pool.filter((o) => o.missing.length).map((o) => ({
+    opportunityId: o.id, label: label(o), reasons: [`Missing: ${o.missing.join(", ")}.`],
+  }));
+  return say(items.length ? `${items.length} record(s) have missing fields.` : "No missing fields on active records.", items, s);
+}
+
+function strongest(s) {
+  // Ranked only on recorded figures. An opportunity without underwriting is not
+  // ranked at all, because there is nothing to rank it on.
+  const ranked = s.opportunities
+    .filter((o) => !o.closed && o.underwriting.mao !== null && o.askingPrice !== null)
+    .map((o) => ({ o, spread: o.underwriting.mao - o.askingPrice }))
+    .sort((a, b) => b.spread - a.spread);
+
+  if (!ranked.length) {
+    const why = s.totals.withoutUnderwriting;
+    return say(
+      `I can't rank them. No active opportunity has both a recorded asking price and a Victor underwriting ceiling` +
+      `${why ? `; ${why} have no underwriting at all` : ""}. PIPELINE snapshots underwriting from Deal Scout and never computes it.`,
+      [], s
+    );
+  }
+
+  const top = ranked[0];
+  return say(
+    `${label(top.o)} has the widest recorded margin: ceiling ${money(top.o.underwriting.mao)} against a ${money(top.o.askingPrice)} ask.`,
+    ranked.slice(0, 5).map((r) => ({
+      opportunityId: r.o.id,
+      label: label(r.o),
+      reasons: [`Ceiling ${money(r.o.underwriting.mao)} vs ask ${money(r.o.askingPrice)} (${money(r.spread)} spread).`],
+    })), s
+  );
+}
+
+function hunter(s) {
+  const intakes = s.recent.intakes;
+  const fromHunter = s.opportunities.filter((o) => o.originatedBy === "deal-findr");
+  if (!intakes.length && !fromHunter.length) {
+    return say("No Deal Finder intake is recorded.", [], s);
+  }
+  return say(
+    `${intakes.length} intake event(s) recorded${s.since ? " since your last brief" : ""}; ` +
+    `${fromHunter.length} opportunit${fromHunter.length === 1 ? "y" : "ies"} originated from Deal Finder in total. ` +
+    `Deal Finder is Hunter's system; the stored actor string is "deal-findr".`,
+    fromHunter.map((o) => ({ opportunityId: o.id, label: label(o), reasons: [`Originated by ${o.originatedBy}.`] })), s
+  );
+}
+
+function victor(s, target) {
+  const pool = target ? [target] : s.opportunities;
+  const withUw = pool.filter((o) => o.underwriting.sourceType);
+  if (!withUw.length) {
+    return say(
+      target
+        ? `${label(target)} has no underwriting on record, so Victor has not set a ceiling for it.`
+        : "No opportunity has recorded underwriting. Victor (Deal Scout) has not supplied figures, and PIPELINE never computes them itself.",
+      [], s
+    );
+  }
+  return say(
+    `${withUw.length} opportunit${withUw.length === 1 ? "y has" : "ies have"} underwriting snapshots from Deal Scout.`,
+    withUw.map((o) => ({
+      opportunityId: o.id,
+      label: label(o),
+      reasons: [
+        `Source ${o.underwriting.sourceType}${o.underwriting.attributedTo.agent ? ` (${o.underwriting.attributedTo.agent})` : ""}; ` +
+        `ARV ${money(o.underwriting.arv)}, rehab ${money(o.underwriting.rehab)}, ceiling ${money(o.underwriting.mao)}` +
+        `${o.underwriting.recordedAt ? `, recorded ${o.underwriting.recordedAt}` : ""}.`,
+      ],
+    })), s
+  );
+}
+
+function detail(o, s) {
+  const lines = [
+    `Stage ${o.stageLabel}; status ${o.status}.`,
+    `Provenance ${o.provenanceState || "NOT RECORDED"}. Record classification ${o.recordClassification || "NOT RECORDED"}.`,
+    `Asking ${money(o.askingPrice)}; authorized ceiling ${money(o.maxAuthorizedOffer)}.`,
+    o.underwriting.sourceType
+      ? `Underwriting from ${o.underwriting.sourceType}: ARV ${money(o.underwriting.arv)}, rehab ${money(o.underwriting.rehab)}, MAO ${money(o.underwriting.mao)}.`
+      : "No underwriting recorded from Victor or Deal Scout.",
+    `${o.openNextActionCount} open next action(s), ${o.noteCount} note(s), ${o.interactionCount} logged interaction(s).`,
+    o.daysSinceActivity === null ? "No activity timestamp recorded." : `Last activity ${o.daysSinceActivity} day(s) ago.`,
+  ];
+  if (o.missing.length) lines.push(`Missing: ${o.missing.join(", ")}.`);
+  if (o.risks.length) lines.push(...o.risks.map((r) => r.detail));
+
+  return say(`${label(o)} — ${o.id}`, [{ opportunityId: o.id, label: label(o), reasons: lines }], s);
+}
+
+function proposeAction(text, target, s) {
+  if (!target) return needTarget(s);
+  const m = text.match(/(?:remind me to|create (?:the |a )?next action(?: to)?|add (?:a )?(?:task|next action)(?: to)?)\s*(.*)/i);
+  const title = (m && m[1] ? m[1] : "").trim().replace(/[.?!]+$/, "");
+  if (!title) {
+    return {
+      ok: true,
+      answer: `Tell me what the action should be, for example: "create next action call the seller".`,
+      items: [], proposal: null, evidence: evidence(s),
+    };
+  }
+  return {
+    ok: true,
+    answer: `Create next action "${title}" on ${label(target)}?`,
+    items: [{ opportunityId: target.id, label: label(target), reasons: [] }],
+    // A proposal, not a write. The client confirms, then calls the operator API.
+    proposal: { kind: "create_next_action", opportunityId: target.id, title },
+    evidence: evidence(s),
+  };
+}
+
+function stageRefusal(target) {
+  return {
+    ok: true,
+    answer:
+      "I can't move a stage. Stage is owned by the systems of record and PIPELINE's API is read-only for it — " +
+      "the old browser-local stage override was removed because it silently disagreed with the server. " +
+      "I can record a next action instead.",
+    items: target ? [{ opportunityId: target.id, label: label(target), reasons: [] }] : [],
+    proposal: target ? { kind: "create_next_action", opportunityId: target.id, title: "Review stage placement" } : null,
+    evidence: null,
+  };
+}
+
+function system(s) {
+  return say(
+    `Data source ${s.system.dataSource}${s.system.demo ? " (DEMO fixtures)" : ""}; ` +
+    `OCG ONE integration ${s.system.integration}; ` +
+    `${s.system.readOnly ? "read-only (mutations refused)" : "writable"}; ` +
+    `intake ${s.system.intakeEnabled ? "enabled" : "disabled"}. ` +
+    `${s.totals.opportunities} opportunit${s.totals.opportunities === 1 ? "y" : "ies"} loaded.`,
+    [], s
+  );
+}
+
+// --- helpers ---------------------------------------------------------------
+
+function resolveTarget(text, snapshot, context) {
+  const byId = snapshot.opportunities.find(
+    (o) => o.id && text.toLowerCase().includes(o.id.toLowerCase())
+  );
+  if (byId) return byId;
+
+  const byCode = snapshot.opportunities.find(
+    (o) => o.code && text.toLowerCase().includes(String(o.code).toLowerCase())
+  );
+  if (byCode) return byCode;
+
+  const byAddress = snapshot.opportunities.find((o) => {
+    if (!o.address) return false;
+    const head = o.address.split(",")[0].trim().toLowerCase();
+    return head.length > 4 && text.toLowerCase().includes(head);
+  });
+  if (byAddress) return byAddress;
+
+  // Fall back to whatever the operator has open on screen.
+  if (context.activeOpportunityId) {
+    return snapshot.opportunities.find((o) => o.id === context.activeOpportunityId) || null;
+  }
+  return null;
+}
+
+function needTarget(s) {
+  return {
+    ok: true,
+    answer: "Which opportunity? Open one and ask again, or name the address or id.",
+    items: [], proposal: null, evidence: evidence(s),
+  };
+}
+
+function unknown(s, hint) {
+  return {
+    ok: true,
+    answer:
+      (hint || "I don't have a deterministic answer for that.") +
+      " No language model is connected to PIPELINE, so I only answer from stored state rather than guessing.",
+    items: [],
+    capabilities: CAPABILITIES,
+    proposal: null,
+    evidence: evidence(s),
+  };
+}
+
+function say(answer, items, s) {
+  return { ok: true, answer, items, proposal: null, evidence: evidence(s) };
+}
+
+function evidence(s) {
+  return s ? { generatedAt: s.generatedAt, since: s.since, opportunitiesConsidered: s.opportunities.length } : null;
+}
+
+const label = (o) => `${o.address || o.code || o.id} (${o.stageLabel})`;
+
+export { CAPABILITIES };

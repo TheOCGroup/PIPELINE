@@ -1,6 +1,14 @@
 import { resolveProvenance } from "../../domain/provenance/provenanceModel.js";
 import { statusForStage, opportunityProvenanceState } from "../../domain/opportunities/opportunityModel.js";
 
+/**
+ * Reported when the database holds no value for a field. PIPELINE says "not
+ * recorded" rather than inventing a plausible one — an unknown is a fact worth
+ * displaying, and a guess dressed as a determination is the failure this
+ * application exists to prevent.
+ */
+export const NOT_RECORDED = "NOT_RECORDED";
+
 // Helper to safely parse JSON
 const parseJson = (str) => {
   try {
@@ -193,51 +201,65 @@ export class SqliteClassificationRepository {
     this.db = db;
   }
 
+  /**
+     * Current classification state, read from the tables that actually hold it.
+     *
+     * A note on lineage: REAL / SYNTHETIC / AMBIGUOUS is a determination about a
+     * source lead's lineage, and this schema has no column for it.
+     * `record_classifications.classification_value` holds a deal-type value
+     * (e.g. 'investment_rehab'), which is a different question. Rather than
+     * infer a lineage verdict the database never recorded, lineage is reported
+     * as NOT_RECORDED. Provenance resolution IS stored, and is reported as-is.
+     */
   async listAll() {
     const rows = this.db.prepare(`
-      SELECT 
+      SELECT
         o.id AS opportunityId,
-        c.classification_value AS classification,
-        prov.resolution_status AS provenanceState,
-        c.reason
+        c.classification_value AS recordClassification,
+        c.reason AS reason,
+        c.determined_by AS determinedBy,
+        c.determined_at AS determinedAt,
+        prov.resolution_status AS provenanceState
       FROM seller_opportunities o
       LEFT JOIN record_classifications c ON c.opportunity_id = o.id
       LEFT JOIN source_provenance prov ON prov.opportunity_id = o.id
+      ORDER BY o.id
     `).all();
 
-    return rows.map(r => {
-      let classification = "REAL";
-      if (r.opportunityId === "FX-OPP-0004") classification = "SYNTHETIC";
-      else if (r.opportunityId === "FX-OPP-0003") classification = "AMBIGUOUS";
-
-      return {
-        opportunityId: r.opportunityId,
-        classification,
-        leadClassification: classification,
-        provenanceState: r.provenanceState || "original",
-        reason: r.reason || "Auto-classified during intake"
-      };
-    });
+    return rows.map(r => ({
+      opportunityId: r.opportunityId,
+      classification: NOT_RECORDED,
+      leadClassification: NOT_RECORDED,
+      recordClassification: r.recordClassification || NOT_RECORDED,
+      provenanceState: r.provenanceState || NOT_RECORDED,
+      determinedBy: r.determinedBy || NOT_RECORDED,
+      determinedAt: r.determinedAt || null,
+      reason: r.reason || "No classification recorded for this opportunity.",
+    }));
   }
 
+  /** The append-only history, read from the table migration 007 protects. */
   async listHistory() {
     const rows = this.db.prepare(`
-      SELECT 
-        event_timestamp AS changedAt,
-        payload_json
-      FROM operational_audit_events
-      WHERE event_type = 'DEAL_FINDR_INTAKE' OR event_type = 'DEAL_FINDR_DUPLICATE_RECONCILED'
+      SELECT
+        opportunity_id,
+        prior_classification,
+        new_classification,
+        classification_rules_version,
+        determined_at,
+        determined_by,
+        reason
+      FROM classification_history
     `).all();
 
-    return rows.map(r => {
-      const payload = parseJson(r.payload_json);
-      return {
-        opportunityId: payload.opportunityId || "Unknown",
-        priorClassification: "NONE",
-        newClassification: "REAL",
-        reason: "Ingested via Deal Findr Webhook",
-        changedAt: r.changedAt
-      };
-    });
+    return rows.map(r => ({
+      opportunityId: r.opportunity_id,
+      priorClassification: r.prior_classification || "NONE",
+      newClassification: r.new_classification,
+      reason: r.reason,
+      changedAt: r.determined_at,
+      determinedBy: r.determined_by,
+      rulesVersion: r.classification_rules_version,
+    }));
   }
 }
