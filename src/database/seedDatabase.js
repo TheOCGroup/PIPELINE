@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { DEAL_CLASSIFICATIONS } from "../fixtures/opportunities.js";
+
+const SEED_RULES_VERSION = "1.0.0";
+const SEED_ACTOR = "system-seed";
+const SEED_REASON = "Auto-classified during seeding";
 
 export function seedDatabaseIfEmpty(db) {
   const count = db.prepare("SELECT COUNT(*) AS count FROM seller_opportunities").get().count;
@@ -21,7 +26,7 @@ export function seedDatabaseIfEmpty(db) {
         arv: 250000,
         rehab: 50000,
         stage: "negotiating",
-        classification: "REAL",
+        classification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB,
         provenance: "original_resolved",
         sourceMsgId: "DEMO-MSG-0001"
       },
@@ -34,7 +39,7 @@ export function seedDatabaseIfEmpty(db) {
         arv: 240000,
         rehab: 45000,
         stage: "contacted",
-        classification: "REAL",
+        classification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB,
         provenance: "recovered_resolved",
         sourceMsgId: "DEMO-MSG-0002"
       },
@@ -47,7 +52,7 @@ export function seedDatabaseIfEmpty(db) {
         arv: 280000,
         rehab: 60000,
         stage: "qualified",
-        classification: "AMBIGUOUS",
+        classification: DEAL_CLASSIFICATIONS.UNKNOWN,
         provenance: "unresolved",
         sourceMsgId: null
       },
@@ -60,7 +65,7 @@ export function seedDatabaseIfEmpty(db) {
         arv: 180000,
         rehab: 30000,
         stage: "lost",
-        classification: "SYNTHETIC",
+        classification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB,
         provenance: "original_resolved",
         sourceMsgId: "DEMO-MSG-0004"
       }
@@ -91,14 +96,28 @@ export function seedDatabaseIfEmpty(db) {
         ) VALUES (?, ?, ?, ?)
       `).run(randomUUID(), o.id, JSON.stringify({ source: "lead_inbox", seller: o.sellerName }), o.provenance);
 
-      // 4. Insert record_classifications
+      // 4. Insert record_classifications — the current classification.
       db.prepare(`
         INSERT INTO record_classifications (
           opportunity_id, classification_value, classification_rules_version, determined_by, reason
-        ) VALUES (?, 'investment_rehab', '1.0.0', 'system-seed', 'Auto-classified during seeding')
-      `).run(o.id);
+        ) VALUES (?, ?, ?, ?, ?)
+      `).run(o.id, o.classification, SEED_RULES_VERSION, SEED_ACTOR, SEED_REASON);
 
-      // 5. Log audit event
+      // 5. Record that classification as a history event.
+      //
+      // Seeding genuinely classifies each record once, so exactly one row is
+      // written per opportunity: prior NULL because there is no predecessor,
+      // and new_classification identical to the value inserted above. No
+      // transition is invented — the append-only history that migration 007
+      // protects with triggers simply had no initial row before this.
+      db.prepare(`
+        INSERT INTO classification_history (
+          id, opportunity_id, prior_classification, new_classification,
+          classification_rules_version, determined_by, reason
+        ) VALUES (?, ?, NULL, ?, ?, ?, ?)
+      `).run(randomUUID(), o.id, o.classification, SEED_RULES_VERSION, SEED_ACTOR, SEED_REASON);
+
+      // 6. Log audit event
       db.prepare(`
         INSERT INTO operational_audit_events (id, event_timestamp, event_type, actor_id, payload_json, correlation_id)
         VALUES (?, ?, 'DEAL_FINDR_INTAKE', 'system-seed', ?, ?)

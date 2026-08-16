@@ -14,6 +14,35 @@ import { RECOVERY_METHODS } from "../domain/provenance/provenanceModel.js";
 
 export const FIXTURE_CLOCK = "2026-08-01T00:00:00Z";
 
+/**
+ * Deal classification — the vocabulary the database actually stores, enforced by
+ * the CHECK constraint on record_classifications.classification_value and
+ * classification_history.new_classification (migration 007).
+ *
+ * This is NOT lineage. REAL / SYNTHETIC / AMBIGUOUS answer "is this record's
+ * source genuine", which no column stores; these answer "what kind of deal is
+ * this". The two were previously conflated in classification history, which put
+ * lineage values into a column whose CHECK constraint would have rejected them.
+ *
+ * Fixture assignment rule, chosen to avoid inventing determinations:
+ *   - `investment_rehab` where the seeded database records exactly that, which
+ *     is what every real writer produces today;
+ *   - `unknown` — the enum's own "not determined" member — only where the
+ *     recovered record carries an explicit absence of evidence.
+ * No other value is assigned, because nothing in the recovered data supports one.
+ */
+export const DEAL_CLASSIFICATIONS = Object.freeze({
+  RETAIL_LISTING: "retail_listing",
+  WHOLESALE_TARGET: "wholesale_target",
+  INVESTMENT_REHAB: "investment_rehab",
+  LAND_HOLD: "land_hold",
+  DISQUALIFIED: "disqualified",
+  UNKNOWN: "unknown",
+});
+
+/** Every value the CHECK constraint permits. */
+export const DEAL_CLASSIFICATION_VALUES = Object.freeze(Object.values(DEAL_CLASSIFICATIONS));
+
 export const OPPORTUNITY_FIXTURES = Object.freeze([
   {
     id: "FX-OPP-0001",
@@ -24,6 +53,7 @@ export const OPPORTUNITY_FIXTURES = Object.freeze([
     stage: "negotiating",
     classification: REAL,
     leadClassification: REAL,
+    recordClassification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB,
     lastActivity: "2026-07-20T00:00:00Z",
     source: { sourceType: "property_lead_inbox", originalSourceMessageId: "DEMO-MSG-0001", recoveredSourceMessageId: null, recoveryMethod: null, recoveryConfidence: null },
     participants: [
@@ -48,6 +78,7 @@ export const OPPORTUNITY_FIXTURES = Object.freeze([
     stage: "contacted",
     classification: REAL,
     leadClassification: REAL,
+    recordClassification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB,
     lastActivity: "2026-07-10T00:00:00Z",
     // Original absent; recovered via lead-claims path.
     source: { sourceType: "property_lead_inbox", originalSourceMessageId: null, recoveredSourceMessageId: "DEMO-MSG-0002", recoveryMethod: RECOVERY_METHODS.CLAIMS, recoveryConfidence: "High" },
@@ -69,6 +100,8 @@ export const OPPORTUNITY_FIXTURES = Object.freeze([
     stage: "qualified",
     classification: "AMBIGUOUS",
     leadClassification: null, // no lineage evidence
+    // Explicit absence of evidence, so the enum's own "not determined" member.
+    recordClassification: DEAL_CLASSIFICATIONS.UNKNOWN,
     lastActivity: "2026-05-01T00:00:00Z", // STALE (< 2026-06-02)
     // Unresolved: neither original nor recovered. Must NOT be called synthetic.
     source: { sourceType: "property_lead_inbox", originalSourceMessageId: null, recoveredSourceMessageId: null, recoveryMethod: null, recoveryConfidence: null },
@@ -87,6 +120,7 @@ export const OPPORTUNITY_FIXTURES = Object.freeze([
     stage: "lost",
     classification: SYNTHETIC,
     leadClassification: SYNTHETIC,
+    recordClassification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB,
     lastActivity: "2026-06-15T00:00:00Z",
     source: { sourceType: "property_lead_inbox", originalSourceMessageId: "DEMO-MSG-0004", recoveredSourceMessageId: null, recoveryMethod: null, recoveryConfidence: null },
     participants: [{ id: "FX-PART-0005", name: "Test Synthetic Dolan", role: "Seller", externalPersonId: "DEMO-PERSON-0005" }],
@@ -108,6 +142,7 @@ export const OPPORTUNITY_FIXTURES = Object.freeze([
     stage: "closed",
     classification: REAL,
     leadClassification: REAL,
+    recordClassification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB,
     lastActivity: "2026-07-01T00:00:00Z",
     // Recovered via the direct source-message path.
     source: { sourceType: "property_lead_inbox", originalSourceMessageId: null, recoveredSourceMessageId: "DEMO-MSG-0005", recoveryMethod: RECOVERY_METHODS.DIRECT, recoveryConfidence: "High" },
@@ -133,6 +168,7 @@ export const OPPORTUNITY_FIXTURES = Object.freeze([
     stage: "new_lead",
     classification: REAL,
     leadClassification: REAL,
+    recordClassification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB,
     lastActivity: "2026-07-15T00:00:00Z",
     source: { sourceType: "property_lead_inbox", originalSourceMessageId: "DEMO-MSG-0006", recoveredSourceMessageId: null, recoveryMethod: null, recoveryConfidence: null },
     // Participant with a missing external person reference.
@@ -145,9 +181,23 @@ export const OPPORTUNITY_FIXTURES = Object.freeze([
 ]);
 
 /** Classification history is append-only (nothing overwritten). DEMO DATA. */
+/**
+ * Classification history — deal classification, matching the CHECK constraint.
+ *
+ * Structure is preserved exactly from the recovered history: the same three
+ * opportunities carry history (FX-OPP-0002, -0005 and -0006 have none), the same
+ * number of rows, the same timestamps, actors and reason text. Only the
+ * vocabulary is corrected. No transition was added, removed or reordered.
+ *
+ * `priorClassification: null` is retained wherever the recovered row had no
+ * predecessor — that is a real statement about the record, not a placeholder.
+ *
+ * Each opportunity's final row equals its `recordClassification` above, because
+ * history and current state must agree.
+ */
 export const CLASSIFICATION_HISTORY_FIXTURES = Object.freeze([
-  { opportunityId: "FX-OPP-0004", priorClassification: null, newClassification: "SYNTHETIC", reason: "initial classification", changedBy: "classifier.demo", changedAt: "2026-06-02T00:00:00Z" },
-  { opportunityId: "FX-OPP-0004", priorClassification: "SYNTHETIC", newClassification: "SYNTHETIC", reason: "re-review confirmed", changedBy: "classifier.demo", changedAt: "2026-06-16T00:00:00Z" },
-  { opportunityId: "FX-OPP-0003", priorClassification: null, newClassification: "AMBIGUOUS", reason: "unresolved provenance; not synthetic", changedBy: "classifier.demo", changedAt: "2026-05-02T00:00:00Z" },
-  { opportunityId: "FX-OPP-0001", priorClassification: null, newClassification: "REAL", reason: "initial classification", changedBy: "classifier.demo", changedAt: "2026-07-01T00:00:00Z" },
+  { opportunityId: "FX-OPP-0004", priorClassification: null, newClassification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB, reason: "initial classification", changedBy: "classifier.demo", changedAt: "2026-06-02T00:00:00Z" },
+  { opportunityId: "FX-OPP-0004", priorClassification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB, newClassification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB, reason: "re-review confirmed", changedBy: "classifier.demo", changedAt: "2026-06-16T00:00:00Z" },
+  { opportunityId: "FX-OPP-0003", priorClassification: null, newClassification: DEAL_CLASSIFICATIONS.UNKNOWN, reason: "provenance unresolved; classification withheld", changedBy: "classifier.demo", changedAt: "2026-05-02T00:00:00Z" },
+  { opportunityId: "FX-OPP-0001", priorClassification: null, newClassification: DEAL_CLASSIFICATIONS.INVESTMENT_REHAB, reason: "initial classification", changedBy: "classifier.demo", changedAt: "2026-07-01T00:00:00Z" },
 ]);
