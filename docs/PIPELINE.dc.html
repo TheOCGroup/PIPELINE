@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#0f172a;background:#f8fafc;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  button,input,textarea,select{font:inherit}
+  button{cursor:pointer;border:0;background:none;color:inherit}
+  a{color:#4f46e5;text-decoration:none}
+  a:hover{color:#4338ca;text-decoration:underline}
+  ::selection{background:#c7d2fe}
+  @keyframes pulse-ring{0%{transform:scale(.9);opacity:.6}70%,100%{transform:scale(1.55);opacity:0}}
+  @keyframes scan{0%{transform:translateY(-10%);opacity:0}12%{opacity:.55}88%{opacity:.55}100%{transform:translateY(1000%);opacity:0}}
+  @keyframes drift{0%{transform:translate3d(0,0,0)}50%{transform:translate3d(18px,-14px,0)}100%{transform:translate3d(0,0,0)}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes blip{0%,100%{opacity:.25;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}
+  @keyframes glowpulse{0%,100%{opacity:.30}50%{opacity:.62}}
+  @keyframes slidein{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:translateX(0)}}
+  @keyframes riseup{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</helmet>
+
+<div style="display:flex;min-height:100vh;background:#f8fafc;position:relative">
+
+  <div style="position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(rgba(79,70,229,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.045) 1px,transparent 1px);background-size:28px 28px"></div>
+
+  <aside style="position:relative;z-index:20;width:272px;flex-shrink:0;background:#020617;display:flex;flex-direction:column;padding:22px 16px;gap:24px;overflow:hidden">
+    <div style="position:absolute;top:-80px;left:-60px;width:320px;height:320px;border-radius:9999px;background:radial-gradient(circle,rgba(124,58,237,.28),transparent 68%);animation:{{ ambientDrift }};pointer-events:none"></div>
+
+    <div style="position:relative;display:flex;align-items:center;gap:11px;padding:0 6px">
+      <div style="width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,#4f46e5,#2563eb);display:grid;place-items:center;box-shadow:0 6px 18px rgba(79,70,229,.45)">
+        <div style="width:13px;height:13px;border:2.5px solid #fff;border-radius:4px;transform:rotate(45deg)"></div>
+      </div>
+      <div>
+        <div style="font-size:15px;font-weight:900;letter-spacing:.16em;color:#fff;line-height:1">PIPELINE</div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:.16em;color:#64748b;margin-top:4px">STANDALONE · NOT OCG ONE</div>
+      </div>
+    </div>
+
+    <button onClick="{{ openPiper }}" style="position:relative;display:flex;align-items:center;gap:12px;padding:13px;border-radius:18px;background:rgba(255,255,255,.05);border:1px solid rgba(217,70,239,.28);text-align:left;transition:background .2s,border-color .2s" style-hover="background:rgba(255,255,255,.09);border-color:rgba(217,70,239,.55)">
+      <div style="position:relative;width:38px;height:38px;flex-shrink:0;border-radius:9999px;background:linear-gradient(135deg,#7c3aed,#d946ef,#f59e0b);display:grid;place-items:center;box-shadow:0 8px 22px rgba(217,70,239,.45)">
+        <div style="position:absolute;inset:-6px;border:1px solid rgba(217,70,239,.5);border-radius:9999px;animation:{{ orbRing }}"></div>
+        <div style="width:9px;height:9px;background:#fff;border-radius:2px;transform:rotate(45deg)"></div>
+      </div>
+      <div style="min-width:0">
+        <div style="font-size:13px;font-weight:900;color:#fff">Piper</div>
+        <div style="font-size:10px;font-weight:700;color:#a78bfa;letter-spacing:.05em;margin-top:2px">Reading pipeline state</div>
+      </div>
+    </button>
+
+    <nav style="position:relative;display:flex;flex-direction:column;gap:3px">
+      <div style="font-size:9px;font-weight:900;letter-spacing:.22em;color:#475569;padding:0 12px 9px">SURFACES</div>
+      <sc-for list="{{ nav }}" as="item" hint-placeholder-count="7">
+        <button onClick="{{ item.go }}" style="{{ item.style }}">
+          <span style="{{ item.dotStyle }}"></span>
+          <span style="flex:1;text-align:left">{{ item.label }}</span>
+          <span style="{{ item.badgeStyle }}">{{ item.badge }}</span>
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="position:relative;margin-top:auto;display:flex;flex-direction:column;gap:10px">
+      <div style="padding:13px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid rgba(148,163,184,.16)">
+        <div style="font-size:9px;font-weight:900;letter-spacing:.2em;color:#64748b;margin-bottom:9px">OWNERSHIP BOUNDARY</div>
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="width:6px;height:6px;border-radius:9999px;background:#d946ef;flex-shrink:0"></span><span style="font-size:10px;font-weight:700;color:#cbd5e1">Piper</span><span style="font-size:9px;color:#64748b;margin-left:auto">PIPELINE</span></div>
+          <div style="display:flex;align-items:center;gap:8px"><span style="width:6px;height:6px;border-radius:9999px;background:#64748b;flex-shrink:0"></span><span style="font-size:10px;font-weight:700;color:#cbd5e1">Properties, people</span><span style="font-size:9px;color:#64748b;margin-left:auto">OCG ONE</span></div>
+          <div style="display:flex;align-items:center;gap:8px"><span style="width:6px;height:6px;border-radius:9999px;background:#6366f1;flex-shrink:0"></span><span style="font-size:10px;font-weight:700;color:#cbd5e1">Opportunities</span><span style="font-size:9px;color:#64748b;margin-left:auto">PIPELINE</span></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:14px;background:rgba(255,255,255,.04)">
+        <span style="width:28px;height:28px;border-radius:9px;background:#f8fafc;color:#020617;display:grid;place-items:center;font-size:10px;font-weight:900;flex-shrink:0">OD</span>
+        <div><div style="font-size:11px;font-weight:800;color:#fff">operator.demo</div><div style="font-size:9px;color:#64748b;font-weight:600">viewer · pipeline.read</div></div>
+      </div>
+    </div>
+  </aside>
+
+  <div style="position:relative;z-index:10;flex:1;min-width:0;display:flex;flex-direction:column">
+
+    <header style="position:sticky;top:0;z-index:30;background:rgba(248,250,252,.85);backdrop-filter:blur(20px);border-bottom:1px solid rgba(226,232,240,.78);padding:15px 32px">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div style="min-width:0;flex:1">
+          <div style="font-size:10px;font-weight:900;letter-spacing:.22em;color:#4f46e5;text-transform:uppercase">{{ eyebrow }}</div>
+          <h1 style="margin:3px 0 0;font-size:21px;font-weight:900;letter-spacing:-.02em">{{ title }}</h1>
+        </div>
+        <sc-if value="{{ showDemoChip }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:center;gap:7px;border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:9999px;padding:7px 13px;font-size:11px;font-weight:800;white-space:nowrap">
+            <span style="width:6px;height:6px;border-radius:9999px;background:#d97706"></span>DEMO DATA — fixtures, not production
+          </div>
+        </sc-if>
+        <div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:8px 13px;box-shadow:0 1px 2px rgba(15,23,42,.05);white-space:nowrap">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#334155">GET only</span>
+        </div>
+        <button onClick="{{ openPiper }}" style="position:relative;width:40px;height:40px;flex-shrink:0;border-radius:9999px;background:linear-gradient(135deg,#7c3aed,#d946ef,#f59e0b);display:grid;place-items:center;box-shadow:0 8px 22px rgba(217,70,239,.4)">
+          <div style="position:absolute;inset:-5px;border:1px solid rgba(217,70,239,.45);border-radius:9999px;animation:{{ orbRing }}"></div>
+          <div style="width:9px;height:9px;background:#fff;border-radius:2px;transform:rotate(45deg)"></div>
+        </button>
+      </div>
+    </header>
+
+    <main style="flex:1;padding:28px 32px 56px;width:100%;min-width:0">
+
+      <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="Overview" style="display:flex;flex-direction:column;gap:24px;animation:riseup .34s ease-out">
+
+          <section style="position:relative;overflow:hidden;border-radius:30px;background:#020617;padding:30px;box-shadow:0 26px 70px rgba(2,6,23,.32)">
+            <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(99,102,241,.09) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.09) 1px,transparent 1px);background-size:28px 28px"></div>
+            <div style="position:absolute;top:-140px;right:-60px;width:520px;height:520px;border-radius:9999px;background:radial-gradient(circle,rgba(79,70,229,.42),transparent 62%);animation:{{ glowAnim }}"></div>
+            <div style="position:absolute;bottom:-180px;left:120px;width:420px;height:420px;border-radius:9999px;background:radial-gradient(circle,rgba(217,70,239,.20),transparent 66%);animation:{{ ambientDrift }}"></div>
+            <div style="position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,rgba(129,140,248,.85),transparent);animation:{{ scanAnim }}"></div>
+
+            <div style="position:relative;display:flex;flex-wrap:wrap;gap:28px;justify-content:space-between;align-items:flex-start">
+              <div style="max-width:540px;min-width:280px">
+                <div style="display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(217,70,239,.36);background:rgba(217,70,239,.10);border-radius:9999px;padding:6px 12px">
+                  <span style="width:6px;height:6px;border-radius:9999px;background:#d946ef;animation:{{ blipAnim }}"></span>
+                  <span style="font-size:10px;font-weight:900;letter-spacing:.18em;color:#f0abfc">PIPER · LINEAGE READ</span>
+                </div>
+                <p style="margin:16px 0 0;font-size:23px;line-height:1.45;font-weight:700;color:#f1f5f9;letter-spacing:-.015em;text-wrap:pretty">{{ piperHeadline }}</p>
+                <div style="display:flex;flex-wrap:wrap;gap:9px;margin-top:20px">
+                  <button onClick="{{ goProvenance }}" style="border-radius:13px;background:#f8fafc;color:#020617;padding:11px 17px;font-size:12px;font-weight:900;box-shadow:0 6px 18px rgba(0,0,0,.3)" style-hover="background:#fff">Review provenance</button>
+                  <button onClick="{{ openPiper }}" style="border-radius:13px;border:1px solid rgba(148,163,184,.34);color:#e2e8f0;padding:11px 17px;font-size:12px;font-weight:800" style-hover="border-color:rgba(217,70,239,.6);color:#fff">Ask Piper</button>
+                </div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:11px;flex:1;min-width:290px">
+                <sc-for list="{{ heroStats }}" as="s" hint-placeholder-count="4">
+                  <div style="border-radius:18px;background:rgba(255,255,255,.055);border:1px solid rgba(148,163,184,.16);padding:15px">
+                    <div style="font-size:9px;font-weight:900;letter-spacing:.16em;color:#94a3b8">{{ s.label }}</div>
+                    <div style="{{ s.valueStyle }}">{{ s.value }}</div>
+                    <div style="{{ s.noteStyle }}">{{ s.note }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#4f46e5">DATA QUALITY</div>
+            <h2 style="margin:5px 0 16px;font-size:19px;font-weight:900;letter-spacing:-.02em">What the records can prove</h2>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:12px">
+              <sc-for list="{{ qualityCards }}" as="c" hint-placeholder-count="8">
+                <div style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:17px 18px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+                  <div style="{{ c.valueStyle }}">{{ c.value }}</div>
+                  <div style="font-size:9.5px;font-weight:900;letter-spacing:.16em;text-transform:uppercase;color:#94a3b8;margin-top:8px">{{ c.label }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+
+          <section>
+            <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#4f46e5">STAGE DISTRIBUTION</div>
+            <h2 style="margin:5px 0 16px;font-size:19px;font-weight:900;letter-spacing:-.02em">Where the book sits</h2>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:21px;box-shadow:0 1px 2px rgba(15,23,42,.05);display:flex;flex-direction:column;gap:11px">
+              <sc-for list="{{ occupiedStages }}" as="st" hint-placeholder-count="5">
+                <div>
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+                    <span style="font-size:11.5px;font-weight:800;color:#334155">{{ st.label }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700">{{ st.count }}</span>
+                  </div>
+                  <div style="height:8px;border-radius:9999px;background:#f1f5f9;overflow:hidden">
+                    <div style="{{ st.fillStyle }}"></div>
+                  </div>
+                </div>
+              </sc-for>
+              <div style="font-size:11px;font-weight:600;color:#64748b;margin-top:4px;line-height:1.5">{{ emptyStageNote }}</div>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Pipeline board" style="animation:riseup .34s ease-out">
+          <p style="margin:0 0 18px;font-size:12.5px;font-weight:600;color:#475569;max-width:660px;line-height:1.6">All twenty canonical stages, mirrored from the OCG ONE database constraints. Stage is presentation only — PIPELINE exposes no stage-change endpoint, so nothing here is draggable.</p>
+          <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:16px;align-items:flex-start">
+            <sc-for list="{{ board }}" as="col" hint-placeholder-count="20">
+              <div style="{{ col.colStyle }}">
+                <div style="{{ col.headStyle }}">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                    <span style="font-size:10px;font-weight:900;letter-spacing:.12em;color:#fff;text-transform:uppercase;line-height:1.3">{{ col.label }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#fff;background:rgba(255,255,255,.22);border-radius:9999px;min-width:22px;padding:2px 7px;text-align:center;flex-shrink:0">{{ col.count }}</span>
+                  </div>
+                </div>
+                <div style="padding:10px;display:flex;flex-direction:column;gap:9px;min-height:74px">
+                  <sc-for list="{{ col.items }}" as="op" hint-placeholder-count="1">
+                    <button onClick="{{ op.open }}" style="display:block;width:100%;text-align:left;border:1px solid #e2e8f0;border-radius:15px;padding:12px;background:#fff;transition:box-shadow .2s,transform .2s" style-hover="box-shadow:0 12px 30px rgba(15,23,42,.13);transform:translateY(-2px)">
+                      <div style="font-size:12.5px;font-weight:900;letter-spacing:-.01em">{{ op.sellerDisplayName }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;color:#94a3b8;margin-top:4px">{{ op.id }}</div>
+                      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px">
+                        <span style="{{ op.provStyle }}">{{ op.provenanceState }}</span>
+                        <span style="{{ op.clsStyle }}">{{ op.classification }}</span>
+                      </div>
+                      <div style="{{ op.staleStyle }}">{{ op.staleLabel }}</div>
+                    </button>
+                  </sc-for>
+                  <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+                    <div style="border:1px dashed #e2e8f0;border-radius:14px;padding:16px 10px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:#cbd5e1">0</div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isRecord }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Opportunity record" style="animation:riseup .34s ease-out">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+            <sc-for list="{{ recordTabs }}" as="t" hint-placeholder-count="6">
+              <button onClick="{{ t.go }}" style="{{ t.style }}">{{ t.label }}</button>
+            </sc-for>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;align-items:start">
+
+            <div style="display:flex;flex-direction:column;gap:20px;min-width:0">
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:26px;padding:24px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <span style="{{ rec.stagePill }}">{{ rec.stageLabel }}</span>
+                  <span style="{{ rec.provStyle }}">{{ rec.provenanceState }}</span>
+                  <span style="{{ rec.clsStyle }}">{{ rec.classification }}</span>
+                  <span style="{{ rec.statusStyle }}">{{ rec.status }}</span>
+                </div>
+                <h2 style="margin:16px 0 0;font-size:26px;font-weight:900;letter-spacing:-.025em">{{ rec.sellerDisplayName }}</h2>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;color:#64748b;margin-top:6px">{{ rec.id }} · {{ rec.code }}</div>
+
+                <div style="display:grid;grid-template-columns:max-content 1fr;gap:12px 24px;margin-top:22px">
+                  <sc-for list="{{ rec.fields }}" as="f" hint-placeholder-count="6">
+                    <div style="font-size:9.5px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:#94a3b8;align-self:center">{{ f.label }}</div>
+                    <div style="{{ f.valueStyle }}">{{ f.value }}</div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:26px;padding:24px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+                <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#4f46e5">PROVENANCE RESOLUTION</div>
+                <h3 style="margin:5px 0 6px;font-size:17px;font-weight:900;letter-spacing:-.02em">{{ rec.provHeadline }}</h3>
+                <p style="margin:0 0 18px;font-size:12.5px;font-weight:600;color:#475569;line-height:1.6;text-wrap:pretty">{{ rec.provExplain }}</p>
+                <div style="display:grid;grid-template-columns:max-content 1fr;gap:11px 24px">
+                  <sc-for list="{{ rec.provFields }}" as="f" hint-placeholder-count="5">
+                    <div style="font-size:9.5px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:#94a3b8;align-self:center">{{ f.label }}</div>
+                    <div style="{{ f.valueStyle }}">{{ f.value }}</div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:26px;padding:24px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+                <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#0e7490">UNDERWRITING SNAPSHOT</div>
+                <h3 style="margin:5px 0 6px;font-size:17px;font-weight:900;letter-spacing:-.02em">Victor's numbers, not PIPELINE's</h3>
+                <p style="margin:0 0 16px;font-size:12.5px;font-weight:600;color:#475569;line-height:1.6;text-wrap:pretty">PIPELINE stores underwriting as a snapshot of an external analysis and never computes it. <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;background:#f1f5f9;border-radius:5px;padding:1px 5px">seller_offer_versions.underwriting_source_type</code> is NOT NULL, so every offer version must name the Victor analysis or Deal Scout project it came from. These columns exist on the record; the read API does not project them and this fixture set carries no values.</p>
+                <div style="display:grid;grid-template-columns:max-content 1fr;gap:11px 24px">
+                  <sc-for list="{{ rec.underwriting }}" as="u" hint-placeholder-count="11">
+                    <div style="font-size:9.5px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:#94a3b8;align-self:center">{{ u.label }}</div>
+                    <div style="min-width:0">
+                      <div style="{{ u.valueStyle }}">{{ u.value }}</div>
+                      <div style="{{ u.hintStyle }}">{{ u.hint }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="display:flex;gap:10px;align-items:flex-start;background:#ecfeff;border:1px solid #a5f3fc;border-radius:14px;padding:12px 14px;margin-top:16px">
+                  <span style="width:6px;height:6px;border-radius:9999px;background:#0891b2;flex-shrink:0;margin-top:6px"></span>
+                  <span style="font-size:11.5px;font-weight:700;color:#155e75;line-height:1.55">Absent here means not recorded in this fixture set — not that the field does not exist. Nothing on this panel is calculated by PIPELINE or by Piper.</span>
+                </div>
+              </div>
+
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:26px;padding:24px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+                <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#4f46e5">STAGE TIMELINE</div>
+                <h3 style="margin:5px 0 18px;font-size:17px;font-weight:900;letter-spacing:-.02em">Recorded movement</h3>
+                <div style="display:flex;flex-direction:column">
+                  <sc-for list="{{ rec.timeline }}" as="t" hint-placeholder-count="3">
+                    <div style="display:flex;gap:14px">
+                      <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">
+                        <span style="{{ t.dotStyle }}"></span>
+                        <span style="{{ t.lineStyle }}"></span>
+                      </div>
+                      <div style="padding-bottom:18px;flex:1;min-width:0">
+                        <div style="font-size:13px;font-weight:800">{{ t.label }}</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:#64748b;margin-top:4px">{{ t.at }} · {{ t.changedBy }}</div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:20px;min-width:0">
+              <div style="position:relative;overflow:hidden;border-radius:26px;background:#0b0714;padding:24px;box-shadow:0 20px 54px rgba(2,6,23,.26)">
+                <div style="position:absolute;top:-90px;right:-70px;width:280px;height:280px;border-radius:9999px;background:radial-gradient(circle,rgba(217,70,239,.32),transparent 66%);animation:{{ glowAnim }}"></div>
+                <div style="position:relative">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <div style="width:30px;height:30px;flex-shrink:0;border-radius:9999px;background:linear-gradient(135deg,#7c3aed,#d946ef,#f59e0b);display:grid;place-items:center">
+                      <div style="width:8px;height:8px;background:#fff;border-radius:2px;transform:rotate(45deg)"></div>
+                    </div>
+                    <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#f0abfc">PIPER · WHAT THIS RECORD SHOWS</div>
+                  </div>
+                  <p style="margin:15px 0 0;font-size:14px;line-height:1.62;font-weight:600;color:#f1f5f9;text-wrap:pretty">{{ rec.piperRead }}</p>
+                  <div style="font-size:10px;font-weight:700;color:#6b7280;margin-top:16px;padding-top:13px;border-top:1px solid rgba(148,163,184,.16);line-height:1.5">Restated from stored fields only. No language model is connected; Piper adds no inference and asserts no lineage the API has not resolved.</div>
+                </div>
+              </div>
+
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:26px;padding:24px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+                <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#4f46e5">PARTICIPANTS</div>
+                <h3 style="margin:5px 0 16px;font-size:17px;font-weight:900;letter-spacing:-.02em">Referenced, not owned</h3>
+                <div style="display:flex;flex-direction:column;gap:11px">
+                  <sc-for list="{{ rec.participants }}" as="p" hint-placeholder-count="2">
+                    <div style="display:flex;align-items:center;gap:12px">
+                      <span style="width:32px;height:32px;flex-shrink:0;border-radius:10px;background:#0f172a;color:#fff;display:grid;place-items:center;font-size:11px;font-weight:900">{{ p.initials }}</span>
+                      <div style="flex:1;min-width:0">
+                        <div style="font-size:12.5px;font-weight:800">{{ p.name }}</div>
+                        <div style="font-size:10px;font-weight:700;color:#94a3b8;margin-top:2px">{{ p.role }}</div>
+                      </div>
+                      <span style="{{ p.refStyle }}">{{ p.externalPersonId }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <p style="margin:16px 0 0;font-size:11px;font-weight:600;color:#64748b;line-height:1.5">People are OCG ONE-owned. PIPELINE stores the external identifier and holds no contact details.</p>
+              </div>
+
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:26px;padding:24px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+                <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#4f46e5">OFFERS &amp; OUTCOME</div>
+                <div style="display:flex;flex-direction:column;gap:9px;margin-top:15px">
+                  <sc-for list="{{ rec.offers }}" as="o" hint-placeholder-count="1">
+                    <div style="display:flex;align-items:center;gap:12px;padding:13px;border:1px solid #e2e8f0;border-radius:15px">
+                      <div style="flex:1;min-width:0">
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700">{{ o.amount }}</div>
+                        <div style="font-size:10px;font-weight:700;color:#94a3b8;margin-top:3px">{{ o.id }} · version {{ o.version }}</div>
+                      </div>
+                      <span style="{{ o.statusStyle }}">{{ o.status }}</span>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ rec.noOffers }}" hint-placeholder-val="{{ false }}">
+                    <div style="border:1px dashed #cbd5e1;border-radius:15px;padding:22px;text-align:center;font-size:12px;font-weight:700;color:#94a3b8">No offers recorded</div>
+                  </sc-if>
+                </div>
+                <div style="{{ rec.outcomeStyle }}">{{ rec.outcomeLabel }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isProvenance }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Provenance" style="animation:riseup .34s ease-out">
+          <div style="display:flex;gap:11px;align-items:flex-start;background:#fff1f2;border:1px solid #fecdd3;border-radius:18px;padding:16px 18px;margin-bottom:20px">
+            <span style="width:7px;height:7px;border-radius:9999px;background:#e11d48;flex-shrink:0;margin-top:6px"></span>
+            <div style="font-size:12.5px;font-weight:700;color:#9f1239;line-height:1.6">Unresolved is not synthetic. A record whose source message could not be established is a record with missing lineage, not a record judged fabricated. The two are never collapsed.</div>
+          </div>
+          <div style="overflow-x:auto;background:#fff;border:1px solid #e2e8f0;border-radius:22px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+            <table style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr>
+                  <sc-for list="{{ provHeaders }}" as="h" hint-placeholder-count="6">
+                    <th style="text-align:left;padding:13px 16px;font-size:9.5px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:#94a3b8;background:#fcfdfe;border-bottom:1px solid #f1f5f9;white-space:nowrap">{{ h }}</th>
+                  </sc-for>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ provRows }}" as="r" hint-placeholder-count="6">
+                  <tr>
+                    <td style="padding:13px 16px;border-bottom:1px solid #f1f5f9;white-space:nowrap"><button onClick="{{ r.open }}" style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:#4f46e5" style-hover="color:#4338ca">{{ r.id }}</button></td>
+                    <td style="padding:13px 16px;border-bottom:1px solid #f1f5f9"><span style="{{ r.provStyle }}">{{ r.provenanceState }}</span></td>
+                    <td style="{{ r.monoCell }}">{{ r.original }}</td>
+                    <td style="{{ r.monoCell }}">{{ r.recovered }}</td>
+                    <td style="padding:13px 16px;border-bottom:1px solid #f1f5f9;font-size:12.5px;font-weight:600;white-space:nowrap">{{ r.method }}</td>
+                    <td style="padding:13px 16px;border-bottom:1px solid #f1f5f9;font-size:12.5px;font-weight:600;white-space:nowrap">{{ r.confidence }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isClassifications }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Classifications" style="display:flex;flex-direction:column;gap:24px;animation:riseup .34s ease-out">
+          <div>
+            <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#4f46e5">CURRENT</div>
+            <h2 style="margin:5px 0 16px;font-size:19px;font-weight:900;letter-spacing:-.02em">Deterministic reasons only</h2>
+            <div style="display:flex;flex-direction:column;gap:11px">
+              <sc-for list="{{ clsRows }}" as="c" hint-placeholder-count="6">
+                <div style="background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.05);display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+                  <button onClick="{{ c.open }}" style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:#4f46e5;flex-shrink:0" style-hover="color:#4338ca">{{ c.id }}</button>
+                  <div style="display:flex;gap:6px;flex-shrink:0">
+                    <span style="{{ c.clsStyle }}">{{ c.classification }}</span>
+                    <span style="{{ c.provStyle }}">{{ c.provenanceState }}</span>
+                  </div>
+                  <div style="flex:1;min-width:200px;font-size:12.5px;font-weight:600;color:#475569;line-height:1.6">{{ c.reason }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#4f46e5">HISTORY · APPEND-ONLY</div>
+            <h2 style="margin:5px 0 16px;font-size:19px;font-weight:900;letter-spacing:-.02em">Nothing is overwritten</h2>
+            <div style="display:flex;flex-direction:column;gap:11px">
+              <sc-for list="{{ clsHistory }}" as="h" hint-placeholder-count="4">
+                <div style="background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+                  <div style="display:flex;gap:11px;align-items:center;flex-wrap:wrap">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:#4f46e5">{{ h.id }}</span>
+                    <span style="{{ h.priorStyle }}">{{ h.prior }}</span>
+                    <span style="font-size:13px;color:#94a3b8">→</span>
+                    <span style="{{ h.newStyle }}">{{ h.next }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#94a3b8;margin-left:auto">{{ h.at }}</span>
+                  </div>
+                  <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-top:11px">
+                    <span style="font-size:12.5px;font-weight:600;color:#475569;line-height:1.6;flex:1;min-width:180px">{{ h.reason }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:500;color:#94a3b8">{{ h.changedBy }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isIntegration }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Integration" style="display:flex;flex-direction:column;gap:24px;animation:riseup .34s ease-out">
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">
+            <sc-for list="{{ boundaries }}" as="b" hint-placeholder-count="4">
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:20px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                  <span style="font-size:14px;font-weight:900;letter-spacing:-.01em">{{ b.name }}</span>
+                  <span style="{{ b.stateStyle }}">{{ b.state }}</span>
+                </div>
+                <div style="{{ b.routeStyle }}">{{ b.route }}</div>
+                <p style="margin:12px 0 0;font-size:12.5px;font-weight:600;color:#475569;line-height:1.6;text-wrap:pretty">{{ b.body }}</p>
+              </div>
+            </sc-for>
+          </div>
+
+          <section style="position:relative;overflow:hidden;border-radius:26px;background:#020617;padding:26px;box-shadow:0 20px 54px rgba(2,6,23,.26)">
+            <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(99,102,241,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.08) 1px,transparent 1px);background-size:28px 28px"></div>
+            <div style="position:absolute;top:-120px;right:-70px;width:360px;height:360px;border-radius:9999px;background:radial-gradient(circle,rgba(217,119,6,.28),transparent 66%);animation:{{ glowAnim }}"></div>
+            <div style="position:relative">
+              <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#fcd34d">THE ONE WRITE PATH</div>
+              <h2 style="margin:5px 0 6px;font-size:19px;font-weight:900;letter-spacing:-.02em;color:#fff">Deal Findr intake, in a single transaction</h2>
+              <p style="margin:0 0 20px;font-size:12.5px;font-weight:600;color:#94a3b8;line-height:1.6;max-width:620px">Six inserts, commit or rollback together. This is the only place PIPELINE mutates state, so it is the only place that can corrupt lineage — which is why the audit event is written inside the same transaction.</p>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <sc-for list="{{ writeSteps }}" as="s" hint-placeholder-count="6">
+                  <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:13px;background:rgba(255,255,255,.05);border:1px solid rgba(148,163,184,.14)">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;color:#6ee7b7;background:rgba(16,185,129,.14);border-radius:6px;padding:3px 6px;flex-shrink:0">INSERT</span>
+                    <div style="min-width:0">
+                      <div style="{{ s.tableStyle }}">{{ s.table }}</div>
+                      <div style="{{ s.detailStyle }}">{{ s.detail }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </section>
+
+          <div>
+            <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#4f46e5">AGENT ASSIGNMENTS</div>
+            <h2 style="margin:5px 0 6px;font-size:19px;font-weight:900;letter-spacing:-.02em">What the code actually contains</h2>
+            <p style="margin:0 0 16px;font-size:12.5px;font-weight:600;color:#475569;line-height:1.6;max-width:660px">The canonical map is PIPELINE → Piper, Deal Finder → Hunter, Deal Scout → Victor, NOVA → Orion. Two of those four are in the recovered source; two are not. Naming the absent ones in the interface would imply integrations that do not exist.</p>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:20px;box-shadow:0 1px 2px rgba(15,23,42,.05);display:flex;flex-direction:column;gap:14px">
+              <sc-for list="{{ agentFacts }}" as="a" hint-placeholder-count="4">
+                <div style="display:flex;gap:12px;align-items:flex-start">
+                  <span style="{{ a.dotStyle }}" ></span>
+                  <div style="min-width:0;flex:1">
+                    <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+                      <span style="{{ a.agentStyle }}">{{ a.agent }}</span>
+                      <span style="{{ a.whereStyle }}">{{ a.where }}</span>
+                    </div>
+                    <div style="font-size:12px;font-weight:600;color:#475569;margin-top:4px;line-height:1.55">{{ a.note }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSystem }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="System" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px;align-items:start;animation:riseup .34s ease-out">
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:26px;padding:24px;box-shadow:0 1px 2px rgba(15,23,42,.05)">
+            <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#4f46e5">IDENTITY</div>
+            <h2 style="margin:5px 0 18px;font-size:19px;font-weight:900;letter-spacing:-.02em">Application status</h2>
+            <div style="display:grid;grid-template-columns:max-content 1fr;gap:12px 24px">
+              <sc-for list="{{ systemFields }}" as="f" hint-placeholder-count="9">
+                <div style="font-size:9.5px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:#94a3b8;align-self:center">{{ f.label }}</div>
+                <div style="{{ f.valueStyle }}">{{ f.value }}</div>
+              </sc-for>
+            </div>
+            <p style="margin:18px 0 0;font-size:11px;font-weight:600;color:#64748b;line-height:1.5">Secrets, token values, and filesystem paths are never surfaced here.</p>
+          </div>
+          <div style="position:relative;overflow:hidden;border-radius:26px;background:#020617;padding:24px;box-shadow:0 20px 54px rgba(2,6,23,.26)">
+            <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(99,102,241,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.08) 1px,transparent 1px);background-size:28px 28px"></div>
+            <div style="position:absolute;bottom:-120px;right:-70px;width:320px;height:320px;border-radius:9999px;background:radial-gradient(circle,rgba(79,70,229,.34),transparent 66%);animation:{{ glowAnim }}"></div>
+            <div style="position:relative">
+              <div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#a5b4fc">API SURFACE</div>
+              <h2 style="margin:5px 0 6px;font-size:19px;font-weight:900;letter-spacing:-.02em;color:#fff">Read-only by design</h2>
+              <p style="margin:0 0 18px;font-size:12.5px;font-weight:600;color:#94a3b8;line-height:1.6">Every endpoint answers GET and HEAD. Anything else returns 405. There are no mutation endpoints, and that is deliberate — writes wait on the controlled cutover.</p>
+              <div style="display:flex;flex-direction:column;gap:7px">
+                <sc-for list="{{ endpoints }}" as="e" hint-placeholder-count="5">
+                  <div style="display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid rgba(148,163,184,.14)">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;color:#6ee7b7;background:rgba(16,185,129,.14);border-radius:6px;padding:3px 6px;flex-shrink:0">GET</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500;color:#e2e8f0;min-width:0;overflow:hidden;text-overflow:ellipsis">{{ e }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isMobile }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Mobile" style="animation:riseup .34s ease-out">
+          <p style="margin:0 0 24px;font-size:13px;font-weight:600;color:#475569;max-width:620px;line-height:1.6">Field use is read-only, which suits the product: check what a record can prove, not edit it. Piper sits in the tab bar rather than floating over the content.</p>
+          <div style="display:flex;gap:40px;flex-wrap:wrap">
+            <sc-for list="{{ phones }}" as="ph" hint-placeholder-count="3">
+              <div style="display:flex;flex-direction:column;gap:14px;align-items:center">
+                <div style="{{ ph.frameStyle }}">
+                  <div style="height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;flex-shrink:0">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:{{ ph.ink }}">9:41</span>
+                    <span style="width:15px;height:8px;border:1px solid {{ ph.ink }};border-radius:2px;opacity:.55"></span>
+                  </div>
+                  <div style="{{ ph.bodyStyle }}">
+                    <div style="{{ ph.eyebrowStyle }}">{{ ph.eyebrow }}</div>
+                    <div style="{{ ph.titleStyle }}">{{ ph.title }}</div>
+                    <sc-for list="{{ ph.rows }}" as="r" hint-placeholder-count="3">
+                      <div style="{{ r.style }}">
+                        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+                          <span style="{{ r.aStyle }}">{{ r.a }}</span>
+                          <span style="{{ r.cStyle }}">{{ r.c }}</span>
+                        </div>
+                        <div style="{{ r.bStyle }}">{{ r.b }}</div>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <div style="{{ ph.tabStyle }}">
+                    <sc-for list="{{ ph.tabs }}" as="tb" hint-placeholder-count="4">
+                      <div style="{{ tb.style }}">
+                        <span style="{{ tb.dotStyle }}"></span>
+                        <span style="font-size:8.5px;font-weight:800">{{ tb.label }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <div style="height:22px;display:grid;place-items:center;flex-shrink:0"><span style="width:106px;height:4px;border-radius:9999px;background:{{ ph.ink }};opacity:.28"></span></div>
+                </div>
+                <div style="font-size:11px;font-weight:800;color:#64748b;letter-spacing:.06em">{{ ph.caption }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+    </main>
+  </div>
+
+  <sc-if value="{{ piperOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:60;display:flex;justify-content:flex-end">
+      <button onClick="{{ closePiper }}" style="position:absolute;inset:0;background:rgba(2,6,23,.5);backdrop-filter:blur(3px)"></button>
+      <div style="position:relative;width:480px;max-width:94vw;height:100%;background:#0b0714;display:flex;flex-direction:column;overflow:hidden;box-shadow:-30px 0 80px rgba(2,6,23,.5);animation:slidein .3s cubic-bezier(.22,1,.36,1)">
+        <div style="position:absolute;top:-130px;right:-90px;width:400px;height:400px;border-radius:9999px;background:radial-gradient(circle,rgba(217,70,239,.32),transparent 64%);animation:{{ glowAnim }};pointer-events:none"></div>
+        <div style="position:absolute;bottom:-160px;left:-110px;width:400px;height:400px;border-radius:9999px;background:radial-gradient(circle,rgba(124,58,237,.28),transparent 66%);animation:{{ ambientDrift }};pointer-events:none"></div>
+
+        <div style="position:relative;display:flex;align-items:center;gap:13px;padding:20px 22px;border-bottom:1px solid rgba(148,163,184,.14);flex-shrink:0">
+          <div style="position:relative;width:40px;height:40px;flex-shrink:0;border-radius:9999px;background:linear-gradient(135deg,#7c3aed,#d946ef,#f59e0b);display:grid;place-items:center;box-shadow:0 8px 22px rgba(217,70,239,.45)">
+            <div style="position:absolute;inset:-6px;border:1px solid rgba(217,70,239,.5);border-radius:9999px;animation:{{ orbRing }}"></div>
+            <div style="width:10px;height:10px;background:#fff;border-radius:2px;transform:rotate(45deg)"></div>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:15px;font-weight:900;color:#fff">Piper</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;color:#a78bfa;margin-top:3px">{{ contextLabel }}</div>
+          </div>
+          <button onClick="{{ closePiper }}" style="width:32px;height:32px;flex-shrink:0;border-radius:10px;background:rgba(255,255,255,.07);color:#cbd5e1;font-size:15px;font-weight:700;display:grid;place-items:center" style-hover="background:rgba(255,255,255,.14)">×</button>
+        </div>
+
+        <div style="position:relative;flex:1;overflow-y:auto;padding:22px;display:flex;flex-direction:column;gap:14px;min-height:0">
+          <div style="align-self:flex-start;max-width:96%;border-radius:20px 20px 20px 6px;background:rgba(255,255,255,.055);border:1px solid rgba(148,163,184,.16);padding:17px">
+            <p style="margin:0;font-size:13.5px;line-height:1.62;font-weight:600;color:#f1f5f9;text-wrap:pretty">{{ piperOpening }}</p>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <sc-for list="{{ piperBriefing }}" as="b" hint-placeholder-count="3">
+              <button onClick="{{ b.go }}" style="display:flex;gap:11px;align-items:flex-start;text-align:left;width:100%;padding:13px;border-radius:15px;background:rgba(255,255,255,.04);border:1px solid rgba(148,163,184,.14);transition:border-color .2s,background .2s" style-hover="border-color:rgba(217,70,239,.5);background:rgba(255,255,255,.08)">
+                <span style="{{ b.dotStyle }}"></span>
+                <span style="flex:1;min-width:0">
+                  <span style="display:block;font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;color:#f1f5f9">{{ b.id }}</span>
+                  <span style="display:block;font-size:11.5px;font-weight:600;color:#94a3b8;margin-top:5px;line-height:1.55">{{ b.body }}</span>
+                </span>
+                <span style="{{ b.tagStyle }}">{{ b.tag }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+            <div style="font-size:9px;font-weight:900;letter-spacing:.2em;color:#6b7280;padding-left:4px">WHAT I CAN ANSWER</div>
+            <sc-for list="{{ suggestions }}" as="s" hint-placeholder-count="4">
+              <div style="padding:11px 14px;border-radius:13px;border:1px solid rgba(148,163,184,.2);font-size:12px;font-weight:700;color:#cbd5e1">{{ s }}</div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="position:relative;padding:16px 22px 22px;border-top:1px solid rgba(148,163,184,.14);flex-shrink:0">
+          <div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.06);border:1px solid rgba(148,163,184,.2);border-radius:16px;padding:12px 15px">
+            <input placeholder="Ask about a record, stage, or lineage" style="flex:1;min-width:0;background:transparent;border:0;outline:none;color:#f1f5f9;font-size:13px;font-weight:600">
+            <button style="width:30px;height:30px;flex-shrink:0;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#d946ef);display:grid;place-items:center"><span style="color:#fff;font-size:13px;font-weight:900">↑</span></button>
+          </div>
+          <div style="font-size:10px;font-weight:600;color:#4b5563;margin-top:10px;line-height:1.5">Piper restates stored pipeline state. No language model is connected; it generates no analysis, verifies no contact data, and asserts no lineage the API has not resolved.</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;motion&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Restrained&quot;,&quot;Noticeable&quot;,&quot;Immersive&quot;],&quot;default&quot;:&quot;Immersive&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Experience&quot;},&quot;showProvenance&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Experience&quot;}}">
+/* Domain mirrored from the recovered PIPELINE source:
+   src/domain/stages/stageModel.js, src/domain/opportunities/opportunityModel.js,
+   src/domain/provenance/provenanceModel.js, src/fixtures/opportunities.js.
+   Fixture records are the repo's own deliberately-fictional DEMO data. */
+
+const STAGES = ["new_lead","needs_review","attempting_contact","contacted","qualified",
+  "appointment_scheduled","property_review","strategy_development","offer_preparation",
+  "offer_approval_required","offer_presented","negotiating","under_contract","due_diligence",
+  "closing_scheduled","closed","nurture","disqualified","lost","archived"];
+
+const STAGE_LABELS = { new_lead:"New Lead", needs_review:"Needs Review", attempting_contact:"Attempting Contact",
+  contacted:"Contacted", qualified:"Qualified", appointment_scheduled:"Appointment Scheduled",
+  property_review:"Property Review", strategy_development:"Strategy Development",
+  offer_preparation:"Offer Preparation", offer_approval_required:"Approval Required",
+  offer_presented:"Offer Presented", negotiating:"Negotiating", under_contract:"Under Contract",
+  due_diligence:"Due Diligence", closing_scheduled:"Closing Scheduled", closed:"Closed",
+  nurture:"Nurture", disqualified:"Disqualified", lost:"Lost", archived:"Archived" };
+
+const CLOSED_STAGES = new Set(["closed","lost","disqualified","archived"]);
+const TERMINAL_HUE = { nurture:"#64748b", disqualified:"#9f1239", lost:"#be123c", archived:"#475569" };
+const FIXTURE_CLOCK = "2026-08-01T00:00:00Z";
+const STALE_CUTOFF = "2026-06-02T00:00:00Z";
+
+function stageHue(stage) {
+  if (TERMINAL_HUE[stage]) return TERMINAL_HUE[stage];
+  const i = STAGES.indexOf(stage);
+  return "hsl(244 " + (48 + i * 1.6).toFixed(0) + "% " + (72 - i * 2.5).toFixed(0) + "%)";
+}
+
+const OPPS = [
+  { id:"FX-OPP-0001", code:"DEMO-OPP-0001", sellerDisplayName:"Ada Fixtureton",
+    property:{ externalPropertyId:"DEMO-PROP-0001", address:"100 Placeholder Lane, Sampleton" },
+    assignedOperator:"operator.demo", stage:"negotiating", classification:"REAL", leadClassification:"REAL",
+    lastActivity:"2026-07-20T00:00:00Z",
+    source:{ sourceType:"property_lead_inbox", originalSourceMessageId:"DEMO-MSG-0001", recoveredSourceMessageId:null, recoveryMethod:null, recoveryConfidence:null },
+    participants:[{ name:"Ada Fixtureton", role:"Seller", externalPersonId:"DEMO-PERSON-0001" },
+                  { name:"Sam Placeholder", role:"Attorney", externalPersonId:"DEMO-PERSON-0002" }],
+    stageTimeline:[{ stage:"new_lead", at:"2026-06-30", changedBy:"operator.demo" },
+                   { stage:"contacted", at:"2026-07-05", changedBy:"operator.demo" },
+                   { stage:"negotiating", at:"2026-07-20", changedBy:"operator.demo" }],
+    offers:[{ id:"FX-OFFER-0001", amount:182000, status:"Draft", version:1 }], outcome:null },
+  { id:"FX-OPP-0002", code:"DEMO-OPP-0002", sellerDisplayName:"Ben Sampleman",
+    property:{ externalPropertyId:"DEMO-PROP-0002", address:"200 Example Court, Sampleton" },
+    assignedOperator:"operator.demo", stage:"contacted", classification:"REAL", leadClassification:"REAL",
+    lastActivity:"2026-07-10T00:00:00Z",
+    source:{ sourceType:"property_lead_inbox", originalSourceMessageId:null, recoveredSourceMessageId:"DEMO-MSG-0002", recoveryMethod:"lead_claims", recoveryConfidence:"High" },
+    participants:[{ name:"Ben Sampleman", role:"Seller", externalPersonId:"DEMO-PERSON-0003" }],
+    stageTimeline:[{ stage:"new_lead", at:"2026-07-01", changedBy:"operator.demo" },
+                   { stage:"contacted", at:"2026-07-10", changedBy:"operator.demo" }],
+    offers:[], outcome:null },
+  { id:"FX-OPP-0003", code:"DEMO-OPP-0003", sellerDisplayName:"Cora Demarco",
+    property:{ externalPropertyId:"DEMO-PROP-0003", address:"300 Demo Ridge, Sampleton" },
+    assignedOperator:"operator.demo", stage:"qualified", classification:"AMBIGUOUS", leadClassification:null,
+    lastActivity:"2026-05-01T00:00:00Z",
+    source:{ sourceType:"property_lead_inbox", originalSourceMessageId:null, recoveredSourceMessageId:null, recoveryMethod:null, recoveryConfidence:null },
+    participants:[{ name:"Cora Demarco", role:"Seller", externalPersonId:"DEMO-PERSON-0004" }],
+    stageTimeline:[{ stage:"qualified", at:"2026-05-01", changedBy:"operator.demo" }],
+    offers:[], outcome:null },
+  { id:"FX-OPP-0004", code:"DEMO-OPP-0004", sellerDisplayName:"Test Synthetic Dolan",
+    property:{ externalPropertyId:null, address:"400 Synthetic Way, Sampleton" },
+    assignedOperator:"operator.demo", stage:"lost", classification:"SYNTHETIC", leadClassification:"SYNTHETIC",
+    lastActivity:"2026-06-15T00:00:00Z",
+    source:{ sourceType:"property_lead_inbox", originalSourceMessageId:"DEMO-MSG-0004", recoveredSourceMessageId:null, recoveryMethod:null, recoveryConfidence:null },
+    participants:[{ name:"Test Synthetic Dolan", role:"Seller", externalPersonId:"DEMO-PERSON-0005" }],
+    stageTimeline:[{ stage:"new_lead", at:"2026-06-01", changedBy:"operator.demo" },
+                   { stage:"contacted", at:"2026-06-08", changedBy:"operator.demo" },
+                   { stage:"lost", at:"2026-06-15", changedBy:"operator.demo" }],
+    offers:[{ id:"FX-OFFER-0004", amount:95000, status:"Withdrawn", version:1 }],
+    outcome:{ result:"lost", reason:"demo outcome" } },
+  { id:"FX-OPP-0005", code:"DEMO-OPP-0005", sellerDisplayName:"Ella Prototype",
+    property:{ externalPropertyId:"DEMO-PROP-0005", address:"500 Prototype Blvd, Sampleton" },
+    assignedOperator:"operator.demo", stage:"closed", classification:"REAL", leadClassification:"REAL",
+    lastActivity:"2026-07-01T00:00:00Z",
+    source:{ sourceType:"property_lead_inbox", originalSourceMessageId:null, recoveredSourceMessageId:"DEMO-MSG-0005", recoveryMethod:"source_message_direct", recoveryConfidence:"High" },
+    participants:[{ name:"Ella Prototype", role:"Seller", externalPersonId:"DEMO-PERSON-0006" },
+                  { name:"Iris Example", role:"Buyer Agent", externalPersonId:"DEMO-PERSON-0007" }],
+    stageTimeline:[{ stage:"new_lead", at:"2026-05-20", changedBy:"operator.demo" },
+                   { stage:"under_contract", at:"2026-06-20", changedBy:"operator.demo" },
+                   { stage:"closed", at:"2026-07-01", changedBy:"operator.demo" }],
+    offers:[{ id:"FX-OFFER-0005", amount:210000, status:"Accepted", version:2 }],
+    outcome:{ result:"closed", reason:"demo outcome" } },
+  { id:"FX-OPP-0006", code:"DEMO-OPP-0006", sellerDisplayName:"Finn Placeholder",
+    property:{ externalPropertyId:null, address:"600 Sample Street, Sampleton" },
+    assignedOperator:"operator.demo", stage:"new_lead", classification:"REAL", leadClassification:"REAL",
+    lastActivity:"2026-07-15T00:00:00Z",
+    source:{ sourceType:"property_lead_inbox", originalSourceMessageId:"DEMO-MSG-0006", recoveredSourceMessageId:null, recoveryMethod:null, recoveryConfidence:null },
+    participants:[{ name:"Finn Placeholder", role:"Seller", externalPersonId:null }],
+    stageTimeline:[{ stage:"new_lead", at:"2026-07-15", changedBy:"operator.demo" }],
+    offers:[], outcome:null }
+];
+
+const METHOD_LABEL = { lead_claims:"Lead claims", source_message_direct:"Direct source message" };
+
+/* Verbatim from classificationReason() in src/domain/classifications/classificationModel.js.
+   Not paraphrased — these strings are the product's determination language. */
+function classificationReason({ classification, leadClassification, provenanceState } = {}) {
+  if (classification === "SYNTHETIC") return "Source lineage is synthetic (naming ignored).";
+  if (classification === "REAL") return "Source lineage is real.";
+  if (provenanceState === "unresolved") return "Provenance is unresolved; not synthetic — awaiting deterministic evidence.";
+  return leadClassification ? "Lineage inconclusive." : "No lineage evidence; classification withheld.";
+}
+
+/* CLASSIFICATION_HISTORY_FIXTURES, verbatim. Append-only; the service sorts
+   oldest-first, so nothing here is reordered or collapsed. */
+const CLASSIFICATION_HISTORY = [
+  { opportunityId:"FX-OPP-0004", priorClassification:null, newClassification:"SYNTHETIC", reason:"initial classification", changedBy:"classifier.demo", changedAt:"2026-06-02T00:00:00Z" },
+  { opportunityId:"FX-OPP-0004", priorClassification:"SYNTHETIC", newClassification:"SYNTHETIC", reason:"re-review confirmed", changedBy:"classifier.demo", changedAt:"2026-06-16T00:00:00Z" },
+  { opportunityId:"FX-OPP-0003", priorClassification:null, newClassification:"AMBIGUOUS", reason:"unresolved provenance; not synthetic", changedBy:"classifier.demo", changedAt:"2026-05-02T00:00:00Z" },
+  { opportunityId:"FX-OPP-0001", priorClassification:null, newClassification:"REAL", reason:"initial classification", changedBy:"classifier.demo", changedAt:"2026-07-01T00:00:00Z" }
+];
+const usd = (n) => "$" + Number(n).toLocaleString("en-US");
+const provState = (s) => s.originalSourceMessageId ? "original" : (s.recoveredSourceMessageId ? "recovered" : "unresolved");
+const initials = (n) => n.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+
+const NAV = [
+  { id:"overview", label:"Overview" },
+  { id:"board", label:"Pipeline board" },
+  { id:"record", label:"Opportunity record" },
+  { id:"provenance", label:"Provenance" },
+  { id:"classifications", label:"Classifications" },
+  { id:"integration", label:"Integration" },
+  { id:"system", label:"System" },
+  { id:"mobile", label:"Mobile" }
+];
+
+const HEAD = {
+  overview:       ["Read-only command", "Standalone PIPELINE"],
+  board:          ["Opportunity lifecycle", "Twenty canonical stages"],
+  record:         ["Opportunity record", "Seller opportunity detail"],
+  provenance:     ["Lineage", "Source provenance"],
+  classifications:["Determination", "Classifications"],
+  integration:    ["Boundary", "System integration"],
+  system:         ["Identity", "System status"],
+  mobile:         ["Field use", "Mobile layouts"]
+};
+
+class Component extends DCLogic {
+  state = { view:"overview", selectedId:"FX-OPP-0003", piperOpen:false };
+
+  go = (v) => this.setState({ view:v });
+  openRecord = (id) => this.setState({ view:"record", selectedId:id, piperOpen:false });
+
+  motion() { return this.props.motion ?? "Immersive"; }
+  m(full, soft) { const k = this.motion(); return k === "Restrained" ? "none" : (k === "Noticeable" ? soft : full); }
+
+  pill(kind, value) {
+    const map = {
+      original:["#ecfdf5","#047857","#a7f3d0"], recovered:["#fffbeb","#92400e","#fde68a"], unresolved:["#fff1f2","#be123c","#fecdd3"],
+      REAL:["#ecfdf5","#047857","#a7f3d0"], AMBIGUOUS:["#fffbeb","#92400e","#fde68a"], SYNTHETIC:["#fff1f2","#be123c","#fecdd3"],
+      active:["#eef2ff","#4338ca","#c7d2fe"], closed:["#f1f5f9","#475569","#e2e8f0"],
+      Draft:["#eef2ff","#4338ca","#c7d2fe"], Accepted:["#ecfdf5","#047857","#a7f3d0"], Withdrawn:["#fff1f2","#be123c","#fecdd3"]
+    };
+    const c = map[value] || ["#f1f5f9","#475569","#e2e8f0"];
+    return "display:inline-block;font-size:9px;font-weight:900;letter-spacing:.13em;text-transform:uppercase;background:" +
+      c[0] + ";color:" + c[1] + ";border:1px solid " + c[2] + ";border-radius:9999px;padding:4px 9px;white-space:nowrap";
+  }
+  mono(size) { return "font-family:'JetBrains Mono',monospace;font-size:" + (size || 12.5) + "px;font-weight:500;align-self:center"; }
+
+  renderVals() {
+    const view = this.state.view;
+    const [eyebrow, title] = HEAD[view];
+
+    const enriched = OPPS.map((o) => ({
+      ...o,
+      provenanceState: provState(o.source),
+      status: CLOSED_STAGES.has(o.stage) ? "closed" : "active",
+      stale: o.lastActivity < STALE_CUTOFF,
+      stageLabel: STAGE_LABELS[o.stage]
+    }));
+    const sel = enriched.find((o) => o.id === this.state.selectedId) || enriched[0];
+
+    const count = (p) => enriched.filter(p).length;
+    const original = count((o) => o.provenanceState === "original");
+    const recovered = count((o) => o.provenanceState === "recovered");
+    const unresolved = count((o) => o.provenanceState === "unresolved");
+    const stale = count((o) => o.stale);
+    const missingProp = count((o) => !o.property.externalPropertyId);
+    const missingPersonRef = count((o) => o.participants.some((p) => !p.externalPersonId));
+    const unresolvedList = enriched.filter((o) => o.provenanceState === "unresolved");
+    const staleList = enriched.filter((o) => o.stale);
+
+    const nav = NAV.map((n) => {
+      const on = n.id === view;
+      const badge = n.id === "board" ? String(enriched.length) : (n.id === "provenance" && unresolved ? String(unresolved) : "");
+      return {
+        ...n, badge, go: () => this.go(n.id),
+        style: "display:flex;align-items:center;gap:11px;width:100%;padding:11px 12px;border-radius:13px;font-size:12.5px;font-weight:" +
+          (on ? 800 : 700) + ";color:" + (on ? "#fff" : "#94a3b8") + ";background:" + (on ? "rgba(255,255,255,.09)" : "transparent") +
+          ";transition:background .18s,color .18s",
+        dotStyle: "width:5px;height:5px;border-radius:9999px;flex-shrink:0;background:" + (on ? "#d946ef" : "#475569"),
+        badgeStyle: badge ? "font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:" + (on ? "#fff" : "#64748b") +
+          ";background:rgba(148,163,184,.18);border-radius:9999px;padding:2px 7px" : "display:none"
+      };
+    });
+
+    const heroStat = (label, value, note, kind) => ({
+      label, value, note,
+      valueStyle: "font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;color:#fff;margin-top:8px;letter-spacing:-.02em",
+      noteStyle: "font-size:10.5px;font-weight:700;margin-top:5px;line-height:1.4;color:" +
+        (kind === "risk" ? "#fb7185" : kind === "ok" ? "#6ee7b7" : "#94a3b8")
+    });
+
+    const heroStats = [
+      heroStat("OPPORTUNITIES", String(enriched.length), "all fixture records", "muted"),
+      heroStat("LINEAGE PROVEN", String(original + recovered), original + " original · " + recovered + " recovered", "ok"),
+      heroStat("UNRESOLVED", String(unresolved), "missing lineage, not synthetic", "risk"),
+      heroStat("STALE", String(stale), "no activity in 60 days", "risk")
+    ];
+
+    const qualityCards = [
+      ["Total opportunities", enriched.length], ["Original provenance", original],
+      ["Recovered provenance", recovered], ["Unresolved provenance", unresolved],
+      ["Classification coverage", count((o) => o.classification) + "/" + enriched.length],
+      ["Missing property refs", missingProp], ["Missing participant refs", missingPersonRef], ["Stale opportunities", stale]
+    ].map(([label, value]) => ({
+      label, value: String(value),
+      valueStyle: "font-family:'JetBrains Mono',monospace;font-size:27px;font-weight:700;letter-spacing:-.03em;line-height:1.1"
+    }));
+
+    const byStage = {};
+    for (const o of enriched) byStage[o.stage] = (byStage[o.stage] || 0) + 1;
+    const maxStage = Math.max(1, ...Object.values(byStage));
+
+    const occupiedStages = STAGES.filter((s) => byStage[s]).map((s) => ({
+      label: STAGE_LABELS[s], count: byStage[s],
+      fillStyle: "height:100%;width:" + Math.round((byStage[s] / maxStage) * 100) +
+        "%;border-radius:9999px;background:" + stageHue(s) + ";transition:width .6s cubic-bezier(.22,1,.36,1)"
+    }));
+    const emptyStageNote = (STAGES.length - occupiedStages.length) + " of the 20 canonical stages hold no records in this fixture set.";
+
+    const boardCard = (o) => ({
+      ...o, open: () => this.openRecord(o.id),
+      provStyle: this.pill("prov", o.provenanceState),
+      clsStyle: this.pill("cls", o.classification),
+      staleLabel: o.stale ? "Stale · no activity 60d+" : "",
+      staleStyle: o.stale ? "margin-top:9px;font-size:10px;font-weight:800;color:#be123c;background:#fff1f2;border-radius:7px;padding:4px 7px;display:inline-block" : "display:none"
+    });
+
+    const board = STAGES.map((s) => {
+      const items = enriched.filter((o) => o.stage === s).map(boardCard);
+      return {
+        label: STAGE_LABELS[s], count: items.length, items, empty: items.length === 0,
+        colStyle: "flex:0 0 232px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 1px 2px rgba(15,23,42,.05);overflow:hidden;opacity:" + (items.length ? 1 : .62),
+        headStyle: "padding:13px 14px;background:" + stageHue(s)
+      };
+    });
+
+    const recordTabs = enriched.map((o) => {
+      const on = o.id === sel.id;
+      return {
+        label: o.sellerDisplayName, go: () => this.openRecord(o.id),
+        style: "padding:9px 14px;border-radius:12px;font-size:12px;font-weight:800;border:1px solid " +
+          (on ? "#0f172a" : "#e2e8f0") + ";background:" + (on ? "#0f172a" : "#fff") + ";color:" + (on ? "#fff" : "#475569")
+      };
+    });
+
+    const field = (label, value, mono) => ({
+      label, value: value ?? "—",
+      valueStyle: mono ? this.mono() : "font-size:13px;font-weight:600;align-self:center"
+    });
+
+    const provExplain = {
+      original: "The source message id is present on the record exactly as first captured. Lineage needs no reconstruction.",
+      recovered: "The original source message was absent, so lineage was reconstructed through a recovery path. Method and confidence are recorded below.",
+      unresolved: "Neither an original nor a recovered source message could be established. This is missing lineage. It is not a finding that the record is fabricated, and it never implies the SYNTHETIC classification."
+    }[sel.provenanceState];
+
+    const rec = {
+      ...sel,
+      stagePill: "display:inline-block;font-size:9px;font-weight:900;letter-spacing:.13em;text-transform:uppercase;color:#fff;background:" +
+        stageHue(sel.stage) + ";border-radius:9999px;padding:4px 9px",
+      provStyle: this.pill("prov", sel.provenanceState),
+      clsStyle: this.pill("cls", sel.classification),
+      statusStyle: this.pill("st", sel.status),
+      fields: [
+        field("Property address", sel.property.address),
+        field("External property ref", sel.property.externalPropertyId, true),
+        field("Assigned operator", sel.assignedOperator, true),
+        field("Source type", sel.source.sourceType, true),
+        field("Last activity", sel.lastActivity.slice(0, 10), true),
+        field("Lead classification", sel.leadClassification || "no lineage evidence")
+      ],
+      provHeadline: { original:"Original lineage intact", recovered:"Lineage recovered", unresolved:"Lineage unresolved" }[sel.provenanceState],
+      provExplain,
+      provFields: [
+        field("Resolved message", sel.source.originalSourceMessageId || sel.source.recoveredSourceMessageId, true),
+        field("Original", sel.source.originalSourceMessageId, true),
+        field("Recovered", sel.source.recoveredSourceMessageId, true),
+        field("Recovery method", METHOD_LABEL[sel.source.recoveryMethod]),
+        field("Confidence", sel.source.recoveryConfidence)
+      ],
+      underwriting: [
+        ["Source type", sel.underwritingSourceType, "victor_analysis or deal_scout_project"],
+        ["Source id", null], ["Version id", null],
+        ["ARV snapshot", null], ["Rehab snapshot", null], ["MAO snapshot", null],
+        ["Confidence", null], ["Limitations", null], ["Snapshot taken", null],
+        ["Target purchase price", null], ["Max authorized offer", null]
+      ].map(([label, value, hint]) => ({
+        label, hint: hint || "",
+        value: value == null ? "not recorded" : String(value),
+        valueStyle: value == null
+          ? "font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500;color:#94a3b8;align-self:center"
+          : "font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:700;align-self:center",
+        hintStyle: hint ? "font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:500;color:#cbd5e1;margin-top:3px" : "display:none"
+      })),
+      timeline: sel.stageTimeline.slice().reverse().map((t, i, a) => ({
+        label: STAGE_LABELS[t.stage], at: t.at, changedBy: t.changedBy,
+        dotStyle: "width:9px;height:9px;border-radius:9999px;flex-shrink:0;margin-top:6px;background:" + (i === 0 ? stageHue(t.stage) : "#cbd5e1"),
+        lineStyle: i === a.length - 1 ? "display:none" : "flex:1;width:1px;background:#e2e8f0;margin:4px 0"
+      })),
+      participants: sel.participants.map((p) => ({
+        ...p, initials: initials(p.name),
+        refStyle: "font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;color:#64748b;flex-shrink:0"
+      })),
+      offers: sel.offers.map((o) => ({ ...o, amount: usd(o.amount), statusStyle: this.pill("off", o.status) })),
+      noOffers: sel.offers.length === 0,
+      outcomeLabel: sel.outcome ? "Outcome recorded: " + sel.outcome.result + " — " + sel.outcome.reason : "No outcome recorded",
+      outcomeStyle: "margin-top:14px;padding:13px 15px;border-radius:14px;font-size:12px;font-weight:700;background:" +
+        (sel.outcome ? "#f1f5f9" : "#fcfdfe") + ";color:#475569;border:1px solid #e2e8f0",
+      piperRead: sel.provenanceState === "unresolved"
+        ? "This record sits at " + sel.stageLabel + " with no source message on either path, so its lineage is unresolved and its classification is " +
+          sel.classification + ". Last activity was " + sel.lastActivity.slice(0, 10) + ", which puts it past the 60-day stale threshold. Unresolved lineage is not a synthetic determination, and I will not present it as one."
+        : "This record sits at " + sel.stageLabel + ". Lineage is " + sel.provenanceState +
+          (sel.source.recoveryConfidence ? " at " + sel.source.recoveryConfidence.toLowerCase() + " confidence" : "") +
+          ", classification is " + sel.classification + ", and last activity was " + sel.lastActivity.slice(0, 10) + "."
+    };
+
+    const provRows = enriched.map((o) => ({
+      id: o.id, provenanceState: o.provenanceState,
+      original: o.source.originalSourceMessageId || "—",
+      recovered: o.source.recoveredSourceMessageId || "—",
+      method: METHOD_LABEL[o.source.recoveryMethod] || "—",
+      confidence: o.source.recoveryConfidence || "—",
+      open: () => this.openRecord(o.id),
+      provStyle: this.pill("prov", o.provenanceState),
+      monoCell: "padding:13px 16px;border-bottom:1px solid #f1f5f9;font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500;white-space:nowrap"
+    }));
+
+    const clsRows = enriched.map((o) => ({
+      id: o.id, classification: o.classification, provenanceState: o.provenanceState,
+      reason: classificationReason(o), open: () => this.openRecord(o.id),
+      clsStyle: this.pill("cls", o.classification), provStyle: this.pill("prov", o.provenanceState)
+    }));
+
+    const clsHistory = CLASSIFICATION_HISTORY
+      .slice()
+      .sort((a, b) => String(a.changedAt).localeCompare(String(b.changedAt)))
+      .map((h) => ({
+        id: h.opportunityId,
+        prior: h.priorClassification || "none",
+        next: h.newClassification,
+        at: h.changedAt.slice(0, 10),
+        reason: h.reason,
+        changedBy: h.changedBy,
+        priorStyle: h.priorClassification
+          ? this.pill("cls", h.priorClassification)
+          : "display:inline-block;font-size:9px;font-weight:900;letter-spacing:.13em;text-transform:uppercase;background:#f1f5f9;color:#94a3b8;border:1px dashed #cbd5e1;border-radius:9999px;padding:4px 9px",
+        newStyle: this.pill("cls", h.newClassification)
+      }));
+
+    const systemFields = [
+      field("Application", "OCG PIPELINE"), field("Version", "0.1.0", true),
+      field("Schema version", "8", true), field("Runtime mode", "development", true),
+      field("Data source", "fixtures (DEMO DATA)", true), field("Database", "available"),
+      field("OCG ONE integration", "disabled"), field("Handoff", "disabled"),
+      field("API contract version", "v1", true)
+    ];
+
+    const endpoints = ["/api/v1/opportunities", "/api/v1/opportunities/:id", "/api/v1/provenance",
+      "/api/v1/classifications", "/api/v1/data-quality", "/api/v1/system/status"];
+
+    const provHeaders = ["Opportunity","State","Original","Recovered","Method","Confidence"];
+
+    const phoneRow = (a, b, c, kind) => ({
+      a, b, c,
+      style: "padding:12px;border-radius:14px;border:1px solid " + (kind === "dark" ? "rgba(148,163,184,.16)" : "#e2e8f0") +
+        ";background:" + (kind === "dark" ? "rgba(255,255,255,.05)" : "#fff") + ";margin-top:9px",
+      aStyle: "font-size:12px;font-weight:900;letter-spacing:-.01em;color:" + (kind === "dark" ? "#f1f5f9" : "#0f172a"),
+      bStyle: "font-size:10px;font-weight:700;color:" + (kind === "dark" ? "#94a3b8" : "#64748b") + ";margin-top:4px;line-height:1.4",
+      cStyle: "font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;flex-shrink:0;letter-spacing:.08em;color:" +
+        (kind === "dark" ? "#f0abfc" : "#4338ca")
+    });
+    const tabs = (active) => ["Overview","Board","Lineage","Piper"].map((l) => ({
+      label: l,
+      style: "flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;color:" + (l === active ? "#4f46e5" : "#94a3b8"),
+      dotStyle: "width:16px;height:16px;border-radius:5px;background:" +
+        (l === active ? (l === "Piper" ? "linear-gradient(135deg,#7c3aed,#d946ef)" : "#4f46e5") : "#cbd5e1")
+    }));
+    const frame = (dark) => "width:290px;height:596px;border-radius:44px;background:" + (dark ? "#0b0714" : "#f8fafc") +
+      ";border:9px solid #0f172a;box-shadow:0 26px 60px rgba(15,23,42,.24);display:flex;flex-direction:column;overflow:hidden";
+
+    const phones = [
+      { caption:"OVERVIEW", ink:"#0f172a", dark:false, frameStyle:frame(false), eyebrow:"DATA QUALITY", title:"1 unresolved",
+        rows:[ phoneRow("Lineage proven",(original + recovered) + " of " + enriched.length + " records", Math.round(((original + recovered) / enriched.length) * 100) + "%"),
+               phoneRow("Unresolved", unresolvedList.map((o) => o.id).join(", ") + " — missing lineage", String(unresolved)),
+               phoneRow("Missing refs","Property and participant references", String(missingProp + missingPersonRef)) ],
+        tabs:tabs("Overview") },
+      { caption:"BOARD", ink:"#0f172a", dark:false, frameStyle:frame(false), eyebrow:"QUALIFIED · 1", title:"Pipeline board",
+        rows:[ phoneRow("Cora Demarco","FX-OPP-0003 · ambiguous","QUAL"),
+               phoneRow("Swipe for Negotiating","1 record","→"),
+               phoneRow((STAGES.length - occupiedStages.length) + " stages empty","No records held","0") ],
+        tabs:tabs("Board") },
+      { caption:"PIPER", ink:"#f1f5f9", dark:true, frameStyle:frame(true), eyebrow:"PIPER · LINEAGE READ", title:"What can be proven",
+        rows:[ phoneRow("FX-OPP-0003","No source message on either path","UNRES","dark"),
+               phoneRow("Not synthetic","Missing lineage is not fabrication","NOTE","dark"),
+               phoneRow("FX-OPP-0004","Classified synthetic on its own lineage","SYNTH","dark") ],
+        tabs:tabs("Piper") }
+    ].map((p) => ({
+      ...p,
+      bodyStyle: "flex:1;overflow:hidden;padding:16px 15px;background:" + (p.dark ? "#0b0714" : "#f8fafc"),
+      eyebrowStyle: "font-size:8.5px;font-weight:900;letter-spacing:.2em;color:" + (p.dark ? "#f0abfc" : "#4f46e5"),
+      titleStyle: "font-size:19px;font-weight:900;letter-spacing:-.025em;margin-top:5px;color:" + p.ink,
+      tabStyle: "display:flex;padding:11px 14px 5px;border-top:1px solid " + (p.dark ? "rgba(148,163,184,.16)" : "#e2e8f0") +
+        ";flex-shrink:0;background:" + (p.dark ? "#0b0714" : "#fff")
+    }));
+
+    const piperHeadline = unresolved
+      ? "Lineage is unresolved on " + unresolved + " of " + enriched.length + " records. " + unresolvedList[0].id +
+        " has no source message on either path and has been inactive since " + unresolvedList[0].lastActivity.slice(0, 10) +
+        (staleList.length === 1 ? " — the only stale record in the set." : ".") +
+        " That is missing lineage, not a synthetic determination."
+      : "All " + enriched.length + " records have provable lineage.";
+
+    const piperBriefing = [
+      { id:"FX-OPP-0003", body:"No original and no recovered source message. Classified AMBIGUOUS, which is the correct outcome for absent evidence.", tag:"UNRESOLVED" },
+      { id:"FX-OPP-0004", body:"Classified SYNTHETIC on its own lineage, and separately missing its external property reference.", tag:"SYNTHETIC" },
+      { id:"FX-OPP-0002", body:"Original message absent but lineage recovered through lead claims at high confidence.", tag:"RECOVERED" }
+    ].map((b) => ({
+      ...b, go: () => this.openRecord(b.id),
+      dotStyle: "width:6px;height:6px;border-radius:9999px;background:#d946ef;flex-shrink:0;margin-top:6px",
+      tagStyle: "font-size:8.5px;font-weight:900;letter-spacing:.11em;color:#f0abfc;background:rgba(217,70,239,.14);border-radius:6px;padding:3px 6px;flex-shrink:0"
+    }));
+
+    const ctx = { overview:"portfolio", board:"pipeline board", record:sel.id, provenance:"provenance",
+      classifications:"classifications", system:"system status", mobile:"mobile" }[view];
+
+    return {
+      eyebrow, title, nav,
+      isOverview: view === "overview", isBoard: view === "board", isRecord: view === "record",
+      isProvenance: view === "provenance", isClassifications: view === "classifications",
+      isSystem: view === "system", isMobile: view === "mobile",
+      isIntegration: view === "integration",
+      writeSteps: [
+        { table:"seller_opportunities", detail:"stage new_lead · qualification needs_review · data quality raw_ingestion" },
+        { table:"seller_opportunity_sources", detail:"source_type deal_scout_handoff · conversion_actor deal-findr" },
+        { table:"source_provenance", detail:"resolution_status original_resolved" },
+        { table:"record_classifications", detail:"investment_rehab · rules version 1.0.0" },
+        { table:"classification_history", detail:"append-only initial classification" },
+        { table:"operational_audit_events", detail:"DEAL_FINDR_INTAKE or DEAL_FINDR_DUPLICATE_RECONCILED" }
+      ].map((s) => ({ ...s,
+        tableStyle:"font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;color:#f1f5f9",
+        detailStyle:"font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;color:#94a3b8;margin-top:5px;line-height:1.5" })),
+      boundaries: [
+        { name:"OCG ONE handoff", route:"POST /auth/handoff", state:"Disabled",
+          body:"Verifies a short-lived signed token from an authenticated OCG ONE user, then issues a PIPELINE-owned session. Fails closed unless integration is explicitly enabled and a handoff secret is configured. No live secrets, no production token trust.", kind:"off" },
+        { name:"Deal Findr intake", route:"POST intake", state:"Write path",
+          body:"The one route in PIPELINE that writes. Normalises the address, dedupes against existing sources, and on a new record opens a transaction across six tables. Everything under /api/v1 remains GET and HEAD only.", kind:"write" },
+        { name:"Properties and people", route:"OCG ONE API", state:"Referenced",
+          body:"PIPELINE stores external identifiers and resolves details through authenticated OCG ONE APIs. It never creates a second authoritative copy, and it holds no contact details — intake accepts phone and email and deliberately persists neither.", kind:"ref" },
+        { name:"Direct database access", route:"—", state:"Prohibited",
+          body:"Neither system opens the other's database. canonicalDatabaseGuard rejects the OCG ONE canonical database, its directory, protected basenames, and same-file paths before anything is opened.", kind:"off" }
+      ].map((b) => {
+        const c = b.kind === "write" ? ["#fffbeb","#92400e","#fde68a"] : b.kind === "ref" ? ["#eef2ff","#4338ca","#c7d2fe"] : ["#f1f5f9","#475569","#e2e8f0"];
+        return { ...b,
+          stateStyle:"display:inline-block;font-size:9px;font-weight:900;letter-spacing:.13em;text-transform:uppercase;background:" + c[0] + ";color:" + c[1] + ";border:1px solid " + c[2] + ";border-radius:9999px;padding:4px 9px;white-space:nowrap",
+          routeStyle:"font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:#64748b" };
+      }),
+      agentFacts: [
+        { agent:"Piper", where:"PIPELINE", note:"Present. The only agent named anywhere in this codebase.", present:true },
+        { agent:"Hunter", where:"Deal Finder", note:"Not present in this repository. The intake route's actor is the literal string deal-findr.", present:false },
+        { agent:"Victor", where:"Deal Scout", note:"Present, and enforced by the schema. seller_offer_versions.underwriting_source_type is NOT NULL CHECK IN ('victor_analysis','deal_scout_project') — every offer version must cite a Victor analysis or a Deal Scout project as its underwriting source. Migration 003 heads nine underwriting_* columns with the comment \"Victor / Deal Scout refs\".", present:true },
+        { agent:"Orion", where:"NOVA", note:"Not present. No NOVA reference exists in the recovered source.", present:false }
+      ].map((a) => ({ ...a,
+        dotStyle:"width:7px;height:7px;border-radius:9999px;flex-shrink:0;background:" + (a.present ? "#d946ef" : "#cbd5e1"),
+        agentStyle:"font-size:12.5px;font-weight:900;color:" + (a.present ? "#0f172a" : "#64748b"),
+        whereStyle:"font-size:9px;font-weight:900;letter-spacing:.13em;text-transform:uppercase;color:#94a3b8" })),
+      goProvenance: () => this.go("provenance"),
+      openPiper: () => this.setState({ piperOpen:true }),
+      closePiper: () => this.setState({ piperOpen:false }),
+      piperOpen: this.state.piperOpen,
+      showDemoChip: this.props.showProvenance ?? true,
+      heroStats, qualityCards, occupiedStages, emptyStageNote, board, recordTabs, rec,
+      provRows, provHeaders, clsRows, clsHistory, systemFields, endpoints, phones,
+      piperHeadline, piperBriefing,
+      contextLabel: "reading " + ctx,
+      piperOpening: piperHeadline +
+        (staleList.length > 1 ? " " + staleList.length + " records are stale." : "") +
+        " I restate stored fields. I don't infer, score, or verify anything the API hasn't resolved.",
+      suggestions: [
+        "Which records have unresolved lineage?",
+        "What is the classification history for a record?",
+        "How many records are missing an external property reference?",
+        "What does 'recovered' mean for a given record?"
+      ],
+      orbRing: this.m("pulse-ring 2.4s ease-out infinite","pulse-ring 4s ease-out infinite"),
+      scanAnim: this.m("scan 5s ease-in-out infinite","scan 9s ease-in-out infinite"),
+      glowAnim: this.m("glowpulse 6s ease-in-out infinite","glowpulse 11s ease-in-out infinite"),
+      ambientDrift: this.m("drift 14s ease-in-out infinite","drift 26s ease-in-out infinite"),
+      blipAnim: this.m("blip 1.6s ease-in-out infinite","blip 3s ease-in-out infinite")
+    };
+  }
+}
+</script>
+</body>
+</html>

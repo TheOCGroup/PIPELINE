@@ -1,0 +1,14 @@
+node_modules/
+runtime/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+.env
+.env.*
+!.env.example
+.git/
+*.log
+playwright-report/
+test-results/
+storage/

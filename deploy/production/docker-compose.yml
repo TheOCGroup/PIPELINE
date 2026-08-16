@@ -1,0 +1,102 @@
+version: '3.8'
+
+networks:
+  ocg-production:
+    name: ocg-production
+    driver: bridge
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: ocg-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - ocg-production
+    depends_on:
+      - ocg-one
+      - pipeline
+
+  ocg-one:
+    build:
+      context: ../apps/ocg-one
+      dockerfile: deploy/production/ocg-one.Dockerfile
+    container_name: ocg-one-app
+    restart: unless-stopped
+    env_file:
+      - /etc/ocg/ocg-one.env
+    volumes:
+      - ocg-one-data:/srv/ocg/ocg-one/data
+      - ocg-one-logs:/srv/ocg/ocg-one/logs
+    networks:
+      - ocg-production
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  pipeline:
+    build:
+      context: ../apps/pipeline
+      dockerfile: deploy/production/pipeline.Dockerfile
+    container_name: ocg-pipeline-app
+    restart: unless-stopped
+    env_file:
+      - /etc/ocg/pipeline.env
+    volumes:
+      - pipeline-data:/data
+      - pipeline-logs:/logs
+    networks:
+      - ocg-production
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8090/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  caddy-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/ocg/caddy/data
+  caddy-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/ocg/caddy/config
+  ocg-one-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/ocg/ocg-one/data
+  ocg-one-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/ocg/ocg-one/logs
+  pipeline-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/ocg/pipeline/data
+  pipeline-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/ocg/pipeline/logs

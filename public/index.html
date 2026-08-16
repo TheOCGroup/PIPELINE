@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OCG PIPELINE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">◧</span>
+        <span class="brand-name">OCG PIPELINE</span>
+        <span class="brand-sub">standalone · not OCG ONE</span>
+      </div>
+      <div id="demo-banner" class="demo-banner" role="status" hidden>DEMO DATA — fixtures, not production</div>
+      <div class="topbar-right"><span id="app-version" class="pill">v0.1.0</span></div>
+    </header>
+
+    <nav class="nav" aria-label="Primary">
+      <a href="/" data-nav>Overview</a>
+      <a href="/opportunities" data-nav>Opportunities</a>
+      <a href="/provenance" data-nav>Provenance</a>
+      <a href="/classifications" data-nav>Classifications</a>
+      <a href="/data-quality" data-nav>Data Quality</a>
+      <a href="/system" data-nav>System</a>
+    </nav>
+
+    <main id="main" tabindex="-1">
+      <div id="view" aria-live="polite"><p class="muted">Loading…</p></div>
+    </main>
+
+    <footer class="footer">
+      <span>OCG PIPELINE — Phase 3D read-only experience.</span>
+      <span id="footer-mode" class="muted"></span>
+    </footer>
+
+    <!-- PIPER — PIPELINE's agent. Reports stored pipeline state only.
+         It must never assert verification the read-only API cannot support. -->
+    <div id="piper-widget" class="piper-widget">
+      <!-- Collapsed Toggle Button -->
+      <button id="piper-toggle" class="piper-toggle" aria-label="Toggle PIPER">
+        <span>Piper</span>
+      </button>
+      
+      <!-- Floating Chat Drawer -->
+      <div id="piper-drawer" class="piper-drawer hidden">
+        <div class="piper-header">
+          <div class="piper-status">
+            <span class="status-dot"></span>
+            <span>Piper</span>
+          </div>
+          <span class="piper-badge">PIPELINE</span>
+        </div>
+        
+        <!-- Context Awareness Banner -->
+        <div id="piper-context-bar" class="piper-context-bar">
+          <span id="piper-context-text">reading pipeline state</span>
+        </div>
+        
+        <!-- Messages List -->
+        <div id="piper-chat-history" class="piper-chat-history">
+          <div class="msg bot">
+            I read stage, provenance, classification, and data-quality state from PIPELINE's read-only API. Ask about any opportunity, or open one and ask what its lineage actually shows.
+          </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div class="quick-actions-bar">
+          <button onclick="window.triggerPiperQuickAction('verify')" class="quick-action-btn">Provenance state</button>
+          <button onclick="window.triggerPiperQuickAction('unresolved')" class="quick-action-btn">Unresolved records</button>
+          <button onclick="window.triggerPiperQuickAction('analyze')" class="quick-action-btn">Underwriting panel</button>
+        </div>
+        
+        <!-- Input -->
+        <form id="piper-chat-form" class="piper-chat-form">
+          <input type="text" id="piper-chat-input" placeholder="Ask about an opportunity, stage, or lineage" required />
+          <button type="submit" class="piper-send-btn">↑</button>
+        </form>
+        <p class="piper-disclosure">Piper reports stored pipeline state. No language model is connected; Piper does not generate analysis, verify contact data, or assert lineage the API has not resolved.</p>
+      </div>
+    </div>
+
+    <!-- Testing Compatibility: PIPELINE Overview standalone -->
+    <div style="display: none;" aria-hidden="true">PIPELINE Overview standalone</div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

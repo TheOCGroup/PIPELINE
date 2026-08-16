@@ -1,0 +1,20 @@
+{
+  "name": "ocg-pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OCG PIPELINE — standalone seller-opportunity pipeline application (shell). Part of the OCG ecosystem; independent of OCG ONE.",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test",
+    "migrate": "node scripts/migrate.js"
+  },
+  "dependencies": {
+    "jose": "^6.2.5"
+  }
+}
