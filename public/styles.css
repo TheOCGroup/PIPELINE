@@ -685,9 +685,14 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 }
 
 @keyframes intelligence-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.5); }
-  70% { box-shadow: 0 0 0 10px rgba(217, 70, 239, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.6); }
+  70% { box-shadow: 0 0 0 14px rgba(217, 70, 239, 0); }
   100% { box-shadow: 0 0 0 0 rgba(217, 70, 239, 0); }
+}
+
+@keyframes shape-morph {
+  0%, 100% { border-radius: 42% 58% 70% 30% / 45% 45% 55% 55%; }
+  50% { border-radius: 70% 30% 52% 48% / 60% 40% 60% 40%; }
 }
 
 @keyframes status-glow {
@@ -775,13 +780,27 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 
 /* 3. Status Dot Pulse & Glow */
 .status-dot {
-  animation: status-glow 3s infinite, float-gentle 4s ease-in-out infinite;
+  position: relative;
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, var(--piper-a), var(--piper-b), var(--piper-c));
+  background-size: 200% 200%;
+  display: grid; place-items: center; flex-shrink: 0;
+  box-shadow: 0 0 20px rgba(217, 70, 239, 0.4), inset 0 0 8px rgba(255,255,255,0.3);
+  animation: status-glow 3s infinite, float-gentle 4s ease-in-out infinite, shape-morph 6s ease-in-out infinite, nebula-flow 4s linear infinite;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.status-dot::before {
+  content: ""; width: 8px; height: 8px;
+  background: #fff; border-radius: 999px;
+  box-shadow: 0 0 10px #fff;
+  z-index: 5;
 }
 .status-dot::after {
   content: "";
   position: absolute;
-  inset: 0;
-  border-radius: 999px;
+  inset: -4px;
+  border-radius: inherit;
+  border: 1px solid rgba(217, 70, 239, 0.4);
   animation: intelligence-pulse 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
 }
 

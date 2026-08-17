@@ -159,6 +159,35 @@
   }
 
   // ---- views ----
+  function bindTiltEffect(element) {
+    if (!element) return;
+    element.style.transition = "transform 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease-out";
+    element.style.transformStyle = "preserve-3d";
+    
+    element.addEventListener("mousemove", (e) => {
+      const rect = element.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const xc = rect.width / 2;
+      const yc = rect.height / 2;
+      const dx = x - xc;
+      const dy = y - yc;
+      
+      const tiltX = -(dy / yc) * 6;
+      const tiltY = (dx / xc) * 6;
+      
+      element.style.transform = `perspective(1000px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateY(-4px)`;
+      element.style.boxShadow = "0 20px 40px rgba(0,0,0,0.6), 0 0 20px rgba(139,92,246,0.15)";
+      element.style.borderColor = "rgba(139, 92, 246, 0.4)";
+    });
+    
+    element.addEventListener("mouseleave", () => {
+      element.style.transform = "perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0px)";
+      element.style.boxShadow = "";
+      element.style.borderColor = "";
+    });
+  }
+
   async function overview() {
     loading();
     state.activeOppId = null;
@@ -172,7 +201,6 @@
     const d = dq.data, s = sys.data, b = briefRes.data;
     state.opportunities = opps.data;
 
-    // Compile local overrides to get actual stage metrics
     const stageCounts = {};
     state.opportunities.forEach(o => {
       const actualStage = o.stage || "new_lead";
@@ -254,6 +282,7 @@
         </div>
       </div>
     `;
+    view.querySelectorAll(".card, .funnel-stage-item").forEach(bindTiltEffect);
   }
   const card = (n, l) => `<div class="card"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`;
 
@@ -452,6 +481,7 @@
     wireFilters();
     if (currentView === "board") {
       wireKanbanDragAndDrop();
+      view.querySelectorAll(".board-card").forEach(bindTiltEffect);
     }
   }
   const oppRow = (o) => `<tr>
@@ -509,10 +539,39 @@
     const mao = Math.max(0, Math.round(arvVal * 0.75 - rehabVal - feeVal - holdingVal));
     const isWarning = askingVal > mao;
 
+    // Underwriting Micro-chart logic
+    const calcChartHtml = (arv, rehab, fee, holding, asking, maoLimit, warn) => {
+      const totalARV = arv || 1;
+      const maoThreshold = Math.min(100, Math.round((maoLimit / totalARV) * 100));
+      const askingPct = Math.min(100, Math.round((asking / totalARV) * 100));
+      return `
+        <div style="margin-top: 20px; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.03);">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 6px;">
+            <span>75% MAO Limit: <strong>${money(maoLimit)}</strong></span>
+            <span>ARV Target: ${money(arv)}</span>
+          </div>
+          <div style="height: 8px; background: rgba(255,255,255,0.05); border-radius: 999px; overflow: hidden; position: relative;">
+            <div style="position: absolute; left: 0; top: 0; bottom: 0; width: ${maoThreshold}%; background: linear-gradient(90deg, #7c3aed, #10b981); opacity: 0.85; border-radius: 999px;"></div>
+            <div style="position: absolute; left: ${maoThreshold}%; top: 0; bottom: 0; width: 2px; background: #fff; box-shadow: 0 0 6px #fff; z-index: 10;"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 8px;">
+            <span>Asking Price: ${money(asking)}</span>
+            <span style="font-weight: 700; color: ${warn ? 'var(--bad)' : 'var(--ok)'};">
+              ${warn ? `Exceeds MAO by ${money(asking - maoLimit)}` : `Under MAO by ${money(maoLimit - asking)}`}
+            </span>
+          </div>
+          <div style="height: 4px; background: rgba(255,255,255,0.03); border-radius: 999px; overflow: hidden; margin-top: 4px;">
+            <div style="height: 100%; width: ${askingPct}%; background: ${warn ? 'var(--bad)' : 'var(--ok)'}; border-radius: 999px; box-shadow: 0 0 6px ${warn ? 'var(--bad)' : 'var(--ok)'};"></div>
+          </div>
+        </div>
+      `;
+    };
+
     // Show authoritative Victor underwriting if available
     let victorHtml = "";
     if (o.underwriting) {
       const victorMao = Math.max(0, Math.round(o.underwriting.arv * 0.75 - o.underwriting.rehab - o.underwriting.fee - o.underwriting.holding));
+      const victorWarning = o.underwriting.askingPrice > victorMao;
       victorHtml = `
         <div class="panel" style="border-left: 2px solid var(--accent); background: rgba(139, 92, 246, 0.02);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -527,6 +586,7 @@
             <dt>Asking Price</dt><dd>${money(o.underwriting.askingPrice)}</dd>
             <dt>Victor 75% MAO</dt><dd style="font-family: var(--mono); font-weight: 700; color: var(--ok); font-size: 15px;">${money(victorMao)}</dd>
           </dl>
+          ${calcChartHtml(o.underwriting.arv, o.underwriting.rehab, o.underwriting.fee, o.underwriting.holding, o.underwriting.askingPrice, victorMao, victorWarning)}
         </div>
       `;
     }
@@ -610,6 +670,8 @@
                   : `<strong>75% RULE SATISFIED:</strong> Purchase price falls within standard safety constraints.`
                 }
               </div>
+
+              ${calcChartHtml(arvVal, rehabVal, feeVal, holdingVal, askingVal, mao, isWarning)}
               
               <div style="margin-top: 12px; text-align: right;">
                 <button onclick="window.saveDetailUnderwriting('${o.id}')">Save Underwriting Metrics</button>
@@ -665,11 +727,10 @@
       <div class="panel">${o.outcome ? esc(o.outcome.result + " — " + o.outcome.reason) : '<span class="muted">No outcome recorded.</span>'}</div>
     `;
 
-    // Operator state is fetched after the shell renders, so a slow read never
-    // blocks the record itself from appearing.
     renderChecklist(o.id);
     renderNotes(o.id);
     renderNextActions(o.id);
+    view.querySelectorAll(".panel").forEach(bindTiltEffect);
   }
 
   /** Server-backed next actions for the open opportunity. */
