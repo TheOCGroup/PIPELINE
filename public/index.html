@@ -63,7 +63,21 @@
 
         <!-- Context Awareness Banner -->
         <div id="piper-context-bar" class="piper-context-bar">
+          <div class="context-pulse"></div>
           <span id="piper-context-text">reading pipeline state</span>
+          <div id="piper-active-deal-card" class="piper-active-deal-card hidden"></div>
+        </div>
+
+        <!-- Live Work Canvas -->
+        <div id="piper-canvas" class="piper-canvas hidden">
+          <div class="canvas-glow"></div>
+          <div class="canvas-content">
+            <div class="canvas-indicator">
+              <span class="canvas-pulse"></span>
+              <span id="piper-canvas-title">Active Intelligence Stream</span>
+            </div>
+            <div id="piper-canvas-details" class="canvas-details">Retrieving pipeline data...</div>
+          </div>
         </div>
         
         <!-- Messages List -->

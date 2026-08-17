@@ -289,6 +289,8 @@
     try { body = await api("/api/v1/opportunities/" + encodeURIComponent(id)); }
     catch (e) { return errorState(e.message.includes("404") ? "Opportunity not found." : "Could not load opportunity: " + e.message); }
     const o = body.data;
+    state.activeOpp = o;
+    updatePiperContext();
 
     // Load Local overrides
     const overrides = getOverrides(o.id);
@@ -670,10 +672,17 @@
         if (!text) return;
         piperChatInput.value = "";
 
+        // Interrupt current work if busy
+        const busyStates = ["retrieving", "generating", "running_tool", "awaiting_approval"];
+        if (busyStates.includes(state.piperState)) {
+          state.piperMessages = state.piperMessages.filter((m) => !m.pending);
+          state.piperMessages.push({ sender: "system-interrupted", text: `[Interrupted: "${text}"]` });
+          renderPiperHistory();
+          await window.piperCancel();
+        }
+
         state.piperMessages.push({ sender: "user", text });
-        // A real pending state for a real request. The label tracks the run's
-        // actual state; nothing here simulates thinking.
-        state.piperMessages.push({ sender: "bot", text: "Reading PIPELINE state…", pending: true });
+        state.piperMessages.push({ sender: "bot", text: "Retrieving context...", pending: true });
         setPiperState("retrieving");
         renderPiperHistory();
 
@@ -720,6 +729,11 @@
     const chip = document.getElementById("piper-state-chip");
     const foot = document.getElementById("piper-state-note");
     const stop = document.getElementById("piper-stop");
+    const canvas = document.getElementById("piper-canvas");
+    const canvasTitle = document.getElementById("piper-canvas-title");
+    const canvasDetails = document.getElementById("piper-canvas-details");
+    const drawer = document.getElementById("piper-drawer");
+
     if (!chip) return;
 
     const busy = ["retrieving", "generating", "running_tool"].includes(runState);
@@ -729,6 +743,27 @@
     chip.className = `piper-state-chip s-${runState}${busy ? " pulsing" : ""}`;
     if (foot) foot.textContent = label || "";
     if (stop) stop.hidden = !cancellable;
+
+    // Control background pulse & glow based on state
+    if (drawer) {
+      drawer.className = `piper-drawer state-${runState}`;
+    }
+
+    // Live Work Canvas control
+    if (canvas && busy) {
+      canvas.classList.remove("hidden");
+      if (canvasTitle) {
+        if (runState === "retrieving") canvasTitle.textContent = "Querying SQLite Context";
+        else if (runState === "generating") canvasTitle.textContent = "Vertex AI Stream Active";
+        else if (runState === "running_tool") canvasTitle.textContent = "Executing Database Mutator";
+        else canvasTitle.textContent = "Piper Working";
+      }
+      if (canvasDetails) {
+        canvasDetails.textContent = label || (runState === "retrieving" ? "Reading opportunity status & history..." : runState === "generating" ? "Generating response..." : "Executing tool call...");
+      }
+    } else if (canvas) {
+      canvas.classList.add("hidden");
+    }
   }
 
   window.piperCancel = async () => {
@@ -871,11 +906,18 @@
 
   function renderPiperHistory() {
     if (!piperChatHistory) return;
-    piperChatHistory.innerHTML = state.piperMessages.map(m => `
-      <div class="msg ${m.sender === 'bot' ? 'bot' : 'user'}">
-        ${m.text}
-      </div>
-    `).join("");
+    piperChatHistory.innerHTML = state.piperMessages.map(m => {
+      let cls = m.sender;
+      if (cls === 'bot') cls = 'bot';
+      else if (cls === 'user') cls = 'user';
+      else if (cls === 'system-interrupted') cls = 'system-interrupted';
+      else cls = 'system';
+      return `
+        <div class="msg ${cls}">
+          ${m.text}
+        </div>
+      `;
+    }).join("");
     piperChatHistory.scrollTop = piperChatHistory.scrollHeight;
   }
 
@@ -893,11 +935,52 @@
 
   function updatePiperContext() {
     if (!piperContextText) return;
-    let text = `view ${location.pathname}`;
+    const activeOppCard = document.getElementById("piper-active-deal-card");
+    
     if (state.activeOppId) {
-      text = `opportunity ${state.activeOppId}`;
+      const o = state.activeOpp || state.opportunities.find(x => x.id === state.activeOppId);
+      const text = `focused on deal #${state.activeOppId.slice(0, 8)}`;
+      piperContextText.textContent = text;
+      
+      if (o && activeOppCard) {
+        const overrides = getOverrides(o.id);
+        const arvVal = overrides.arv || 250000;
+        const rehabVal = overrides.rehab || 50000;
+        const feeVal = overrides.fee || 5000;
+        const holdingVal = overrides.holding || 8000;
+        const mao = Math.max(0, Math.round(arvVal * 0.75 - rehabVal - feeVal - holdingVal));
+        
+        activeOppCard.innerHTML = `
+          <div class="active-deal-header">
+            <span class="deal-icon">✦</span>
+            <div class="deal-meta">
+              <span class="deal-address">${esc(o.property.address)}</span>
+              <span class="deal-apn">APN: ${esc(o.property.apn || "Unknown")}</span>
+            </div>
+          </div>
+          <div class="active-deal-metrics">
+            <div class="metric-mini">
+              <span class="lbl">Stage</span>
+              <span class="val stage-badge s-${esc(o.stage)}">${esc(formatStage(o.stage))}</span>
+            </div>
+            <div class="metric-mini">
+              <span class="lbl">MAO (75%)</span>
+              <span class="val">${money(mao)}</span>
+            </div>
+          </div>
+        `;
+        activeOppCard.classList.remove("hidden");
+      } else if (activeOppCard) {
+        activeOppCard.classList.add("hidden");
+      }
+    } else {
+      piperContextText.textContent = `view ${location.pathname}`;
+      if (activeOppCard) {
+        activeOppCard.innerHTML = "";
+        activeOppCard.classList.add("hidden");
+      }
+      state.activeOpp = null;
     }
-    piperContextText.textContent = text;
   }
 
   // ---- helpers ----

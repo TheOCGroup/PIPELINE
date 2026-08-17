@@ -662,3 +662,303 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   background: transparent; color: rgba(255,255,255,.7);
   border: 1px solid rgba(255,255,255,.2);
 }
+
+/* ==========================================================================
+   ANTIGRAVITY UI/UX PASS ENHANCEMENTS
+   ========================================================================== */
+
+/* Keyframe Animations */
+@keyframes nebula-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes intelligence-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.5); }
+  70% { box-shadow: 0 0 0 10px rgba(217, 70, 239, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(217, 70, 239, 0); }
+}
+
+@keyframes status-glow {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(217, 70, 239, 0.4)); }
+  50% { filter: drop-shadow(0 0 8px rgba(217, 70, 239, 0.8)); }
+}
+
+@keyframes float-gentle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* 1. Desktop 3-column Layout override */
+@media (min-width: 1024px) {
+  body {
+    grid-template-columns: 264px minmax(0, 1fr) 420px;
+    grid-template-areas:
+      "side top piper"
+      "side main piper"
+      "side foot piper";
+    overflow-x: hidden;
+  }
+
+  .piper-widget {
+    grid-area: piper;
+    position: sticky !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: auto !important;
+    width: 420px !important;
+    height: 100vh !important;
+    z-index: 40 !important;
+    margin: 0 !important;
+  }
+
+  .piper-toggle {
+    display: none !important;
+  }
+
+  .piper-drawer {
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100vh !important;
+    max-width: none !important;
+    border-left: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: none !important;
+    display: flex !important;
+    animation: none !important;
+  }
+}
+
+/* 2. Premium Nebula Background on Piper */
+.piper-drawer {
+  background: #08050e;
+  background-image: 
+    radial-gradient(circle at 10% 20%, rgba(79, 70, 229, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(217, 70, 239, 0.15) 0%, transparent 40%);
+  background-size: 200% 200%;
+  animation: nebula-flow 15s ease infinite;
+}
+
+/* state-dependent backgrounds */
+.piper-drawer.state-retrieving {
+  background-image: 
+    radial-gradient(circle at 10% 20%, rgba(79, 70, 229, 0.2) 0%, transparent 45%),
+    radial-gradient(circle at 90% 80%, rgba(217, 70, 239, 0.1) 0%, transparent 40%);
+}
+
+.piper-drawer.state-generating {
+  background-image: 
+    radial-gradient(circle at 10% 20%, rgba(79, 70, 229, 0.1) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(217, 70, 239, 0.25) 0%, transparent 45%);
+}
+
+.piper-drawer.state-awaiting_approval {
+  background-image: 
+    radial-gradient(circle at 50% 50%, rgba(251, 191, 36, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 10% 20%, rgba(79, 70, 229, 0.1) 0%, transparent 40%);
+  border-left: 1px solid rgba(251, 191, 36, 0.3) !important;
+}
+
+/* 3. Status Dot Pulse & Glow */
+.status-dot {
+  animation: status-glow 3s infinite, float-gentle 4s ease-in-out infinite;
+}
+.status-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  animation: intelligence-pulse 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+}
+
+/* 4. Active Context Deal Card in Piper */
+.piper-active-deal-card {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  animation: riseup 0.25s ease-out;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.active-deal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.deal-icon {
+  font-size: 14px;
+  color: #c084fc;
+  text-shadow: 0 0 8px rgba(192, 132, 252, 0.6);
+}
+
+.deal-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.deal-address {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f3f4f6;
+  line-height: 1.3;
+}
+
+.deal-apn {
+  font-size: 9.5px;
+  font-family: var(--mono);
+  color: #9ca3af;
+}
+
+.active-deal-metrics {
+  display: flex;
+  gap: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+}
+
+.metric-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metric-mini .lbl {
+  font-size: 8.5px;
+  text-transform: uppercase;
+  color: #6b7280;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.metric-mini .val {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.metric-mini .val.stage-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(124, 58, 237, 0.2);
+  color: #c084fc;
+}
+
+/* 5. Live Work Canvas Overlay/Panel */
+.piper-canvas {
+  margin: 12px 22px 4px;
+  padding: 14px 16px;
+  background: rgba(79, 70, 229, 0.08);
+  border: 1px solid rgba(79, 70, 229, 0.25);
+  border-radius: 14px;
+  position: relative;
+  overflow: hidden;
+  animation: riseup 0.3s ease;
+  box-shadow: 0 4px 15px rgba(79, 70, 229, 0.1);
+}
+
+.canvas-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 50%, rgba(217, 70, 239, 0.15), transparent 70%);
+  pointer-events: none;
+}
+
+.canvas-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.canvas-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@keyframes pulse-canvas {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.4; }
+}
+
+.canvas-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #c084fc;
+  box-shadow: 0 0 8px #c084fc;
+  animation: pulse-canvas 1.5s infinite;
+}
+
+#piper-canvas-title {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #d8b4fe;
+}
+
+.canvas-details {
+  font-size: 12px;
+  font-weight: 500;
+  color: #e9d5ff;
+}
+
+/* 6. Interrupted Message Styling */
+.msg.system-interrupted {
+  background: rgba(244, 63, 94, 0.06);
+  border: 1px dashed rgba(244, 63, 94, 0.3);
+  color: #fda4af;
+  align-self: center;
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 6px 12px;
+  border-radius: 8px;
+  margin: 4px 0;
+  text-align: center;
+  max-width: 90%;
+}
+
+/* 7. Hover effects and interactive microinteractions */
+.quick-action-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.quick-action-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(217, 70, 239, 0.08);
+  box-shadow: 0 0 10px rgba(217, 70, 239, 0.15);
+}
+
+.piper-send-btn {
+  transition: all 0.2s ease;
+}
+.piper-send-btn:hover {
+  transform: scale(1.03);
+  box-shadow: 0 0 12px rgba(217, 70, 239, 0.35);
+}
+
+.piper-item {
+  transition: all 0.2s ease;
+}
+.piper-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.msg.bot:hover {
+  border-color: rgba(148, 163, 184, 0.26);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
