@@ -11,23 +11,30 @@
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
-    <header class="topbar">
+    <nav class="nav" aria-label="Primary">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">◧</span>
         <span class="brand-name">OCG PIPELINE</span>
-        <span class="brand-sub">standalone · not OCG ONE</span>
+        <span class="brand-sub">not OCG ONE</span>
       </div>
-      <div id="demo-banner" class="demo-banner" role="status" hidden>DEMO DATA — fixtures, not production</div>
-      <div class="topbar-right"><span id="app-version" class="pill">v0.1.0</span></div>
-    </header>
+      
+      <div class="nav-links">
+        <a href="/" data-nav>Overview</a>
+        <a href="/opportunities" data-nav>Opportunities</a>
+        <a href="/provenance" data-nav>Provenance</a>
+        <a href="/classifications" data-nav>Classifications</a>
+        <a href="/data-quality" data-nav>Data Quality</a>
+        <a href="/system" data-nav>System</a>
+      </div>
 
-    <nav class="nav" aria-label="Primary">
-      <a href="/" data-nav>Overview</a>
-      <a href="/opportunities" data-nav>Opportunities</a>
-      <a href="/provenance" data-nav>Provenance</a>
-      <a href="/classifications" data-nav>Classifications</a>
-      <a href="/data-quality" data-nav>Data Quality</a>
-      <a href="/system" data-nav>System</a>
+      <div class="sidebar-telemetry">
+        <div id="demo-banner" class="demo-banner" role="status" hidden>DEMO FIXTURES</div>
+        <div class="system-health-status">
+          <span class="health-pulse"></span>
+          <span id="sidebar-connection-status">Operational</span>
+        </div>
+        <span id="app-version" class="telemetry-pill">v0.1.0</span>
+      </div>
     </nav>
 
     <main id="main" tabindex="-1">
@@ -56,6 +63,7 @@
           </div>
           <span class="piper-badge">PIPELINE</span>
           <button type="button" id="piper-collapse-btn" class="piper-collapse-btn" aria-label="Collapse panel">›</button>
+          <button type="button" id="piper-expand-btn" class="piper-expand-btn" aria-label="Expand panel">⤢</button>
           <!-- Run state and provider. Both reflect real state, never a guess. -->
           <span id="piper-state-chip" class="piper-state-chip s-idle">idle</span>
           <span id="piper-provider" class="piper-provider">model none</span>

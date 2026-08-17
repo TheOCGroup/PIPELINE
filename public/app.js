@@ -217,6 +217,7 @@
   // ---- views ----
   function bindTiltEffect(element) {
     if (!element) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     element.style.transition = "transform 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease-out";
     element.style.transformStyle = "preserve-3d";
     
@@ -229,12 +230,12 @@
       const dx = x - xc;
       const dy = y - yc;
       
-      const tiltX = -(dy / yc) * 6;
-      const tiltY = (dx / xc) * 6;
+      const tiltX = -(dy / yc) * 2.5;
+      const tiltY = (dx / xc) * 2.5;
       
-      element.style.transform = `perspective(1000px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateY(-4px)`;
-      element.style.boxShadow = "0 20px 40px rgba(0,0,0,0.6), 0 0 20px rgba(139,92,246,0.15)";
-      element.style.borderColor = "rgba(139, 92, 246, 0.4)";
+      element.style.transform = `perspective(1000px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateY(-2px)`;
+      element.style.boxShadow = "0 8px 24px rgba(0,0,0,0.5)";
+      element.style.borderColor = "rgba(139, 92, 246, 0.25)";
     });
     
     element.addEventListener("mouseleave", () => {
@@ -242,9 +243,7 @@
       element.style.boxShadow = "";
       element.style.borderColor = "";
     });
-  }
-
-  async function overview() {
+   async function overview() {
     loading();
     state.activeOppId = null;
     updatePiperContext();
@@ -263,69 +262,50 @@
       stageCounts[actualStage] = (stageCounts[actualStage] || 0) + 1;
     });
 
-    let briefHtml = "";
-    if (b && b.sections && b.sections.length > 0) {
-      briefHtml = b.sections.map(sec => {
-        const itemsHtml = sec.items.map(item => {
-          return `
-            <div class="priority-item" style="border-left: 2px solid var(--accent); padding-left: 10px; margin-bottom: 8px;">
-              <a href="/opportunities/${esc(item.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(item.opportunityId)}')">
-                <strong>${esc(item.address || item.opportunityId)}</strong>
-              </a>
-              <div class="priority-reasons" style="font-size: 11px; color: var(--muted); margin-top: 2px;">
-                ${(item.reasons || []).map(r => `<span style="background: rgba(255,255,255,0.05); padding: 1px 4px; border-radius: 4px; margin-right: 4px;">${esc(r)}</span>`).join("")}
-              </div>
-            </div>
-          `;
-        }).join("");
-        
-        return `
-          <div class="card" style="margin-bottom: 12px; border-color: rgba(255,255,255,0.08);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--line-soft); padding-bottom: 6px;">
-              <h3 style="margin:0; font-size: 13px; color: #fff;">${esc(sec.title)}</h3>
-              <span class="badge" style="font-size: 9px; padding: 1px 5px;">${sec.items.length}</span>
-            </div>
-            <div>
-              ${itemsHtml}
-            </div>
-          </div>
-        `;
-      }).join("");
-    } else {
-      briefHtml = `<div class="muted" style="padding: 20px; text-align: center;">No active issues flagged by Piper.</div>`;
-    }
-
     view.innerHTML = `
-      <div style="background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(217, 70, 239, 0.05)); border: 1px solid var(--line); padding: 30px; border-radius: var(--radius); position: relative; overflow: hidden; margin-bottom: 24px;">
-        <div style="position: absolute; inset: 0; background: radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 50%); pointer-events: none;"></div>
-        <div style="position: relative; z-index: 2;">
-          <div style="font-size: 9px; font-weight: 900; letter-spacing: 0.18em; text-transform: uppercase; color: #a78bfa; margin-bottom: 6px;">✦ PIPELINE COMMAND CENTER</div>
-          <h1 style="margin: 0 0 10px 0; font-size: 26px; line-height: 1.25; font-weight: 900; letter-spacing: -0.02em; color: #fff;">${esc(b?.headline || "Pipeline Operational")}</h1>
-          <p style="margin: 0; color: var(--muted); font-size: 13px;">Data Source: <strong>${esc(s.dataSource)}</strong> · Integration: <strong>${esc(s.integration)}</strong></p>
+      <!-- 1. Top Piper Operating Statement -->
+      <div class="operating-narrative-panel">
+        <div class="narrative-badge">✦ PIPER HEAD AGENT BRIEF</div>
+        <div class="narrative-text">
+          "${esc(b?.headline || "Pipeline Operational")}. Currently, ${esc(d.staleOpportunities)} opportunities are stalled, and ${esc(b?.sections?.reduce((acc, s) => acc + s.items.length, 0) || 0)} priority listings need manual operator validation."
+        </div>
+        <div class="narrative-meta">
+          System mode: <span class="mode-tag">${esc(s.dataSource)}</span> · Handoff keys: <span class="mode-tag">${esc(s.handoff)}</span>
         </div>
       </div>
 
-      <h2>KPI Constellation</h2>
-      <div class="cards" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin-bottom: 28px;">
-        ${card(state.opportunities.length, "Total Opportunities")}
-        ${card(d.originalProvenance, "Original Provenance")}
-        ${card(d.recoveredProvenance, "Recovered Provenance")}
-        ${card(d.unresolvedProvenance, "Unresolved Provenance")}
-        ${card(`${d.classificationCoverage.classified}/${d.classificationCoverage.total}`, "Classified")}
-        ${card(d.staleOpportunities, "Stale")}
-      </div>
-
-      <div class="detail-grid" style="grid-template-columns: 1fr; gap: 20px; display: grid;">
-        <div>
-          <h2>Piper Priorities Queue</h2>
-          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
-            ${briefHtml}
+      <!-- 2. Asymmetric Columns -->
+      <div class="bridge-grid">
+        <!-- Main Column -->
+        <div class="bridge-main-col">
+          <div class="bridge-panel">
+            <h2 class="bridge-section-header">Needs Attention / Priority Queue</h2>
+            <div class="priority-list">
+              ${b.sections && b.sections.length ? b.sections.map(sec => `
+                <div class="priority-group">
+                  <div class="priority-group-title">${esc(sec.title)}</div>
+                  ${sec.items.map(item => `
+                    <div class="priority-row">
+                      <div class="priority-row-left">
+                        <a class="deal-link" href="/opportunities/${esc(item.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(item.opportunityId)}')">
+                          ${esc(item.address || item.opportunityId)}
+                        </a>
+                        <div class="priority-meta-row">
+                          ${(item.reasons || []).map(r => `<span class="reason-tag">${esc(r)}</span>`).join("")}
+                        </div>
+                      </div>
+                      <div class="priority-row-right">
+                        <span class="status-indicator-pill">needs review</span>
+                      </div>
+                    </div>
+                  `).join("")}
+                </div>
+              `).join("") : `<div class="empty-state">No listings require attention. All systems nominal.</div>`}
+            </div>
           </div>
-        </div>
-        
-        <div>
-          <h2>Funnel stage breakdown</h2>
-          <div class="panel">
+
+          <div class="bridge-panel">
+            <h2 class="bridge-section-header">Pipeline Pulse</h2>
             <div class="funnel-stage-container">
               ${Object.keys(stageCounts).map(stage => `
                 <div class="funnel-stage-item">
@@ -336,9 +316,57 @@
             </div>
           </div>
         </div>
+
+        <!-- Sidebar Column -->
+        <div class="bridge-side-col">
+          <div class="bridge-panel telemetry-panel-compact">
+            <h2 class="bridge-section-header">KPI Telemetry</h2>
+            <div class="telemetry-grid">
+              <div class="telemetry-item">
+                <span class="telemetry-label">Total Listings</span>
+                <span class="telemetry-value">${esc(state.opportunities.length)}</span>
+              </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">Original Prov</span>
+                <span class="telemetry-value">${esc(d.originalProvenance)}</span>
+              </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">Recovered Prov</span>
+                <span class="telemetry-value">${esc(d.recoveredProvenance)}</span>
+              </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">Unresolved Prov</span>
+                <span class="telemetry-value">${esc(d.unresolvedProvenance)}</span>
+              </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">Stale Listings</span>
+                <span class="telemetry-value warning-val">${esc(d.staleOpportunities)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bridge-panel">
+            <h2 class="bridge-section-header">Active Opportunities</h2>
+            <div class="active-deals-list">
+              ${[...state.opportunities]
+                .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+                .slice(0, 5)
+                .map(opp => `
+                  <div class="active-deal-row">
+                    <a class="active-deal-title" href="/opportunities/${esc(opp.id)}" onclick="window.routeTo(event, '/opportunities/${esc(opp.id)}')">
+                      ${esc(opp.address)}
+                    </a>
+                    <div class="active-deal-meta">
+                      <span class="stage-tag">${esc(formatStage(opp.stage))}</span>
+                      <span class="date-tag">${esc(opp.updatedAt.slice(0, 10))}</span>
+                    </div>
+                  </div>
+                `).join("")}
+            </div>
+          </div>
+        </div>
       </div>
     `;
-    view.querySelectorAll(".card, .funnel-stage-item").forEach(bindTiltEffect);
   }
   const card = (n, l) => `<div class="card"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`;
 
@@ -368,23 +396,39 @@
       const cards = groups[col.key];
       const cardsHtml = cards.map(o => {
         const overrides = getOverrides(o.id);
-        const arvVal = overrides.arv || 250000;
-        const rehabVal = overrides.rehab || 50000;
-        const feeVal = overrides.fee || 5000;
-        const holdingVal = overrides.holding || 8000;
-        const mao = Math.max(0, Math.round(arvVal * 0.75 - rehabVal - feeVal - holdingVal));
         
+        let underwritingLabel = "";
+        let underwritingClass = "underwriting-unavailable";
+        if (o.underwriting) {
+          const victorMao = Math.max(0, Math.round(o.underwriting.arv * 0.75 - o.underwriting.rehab - o.underwriting.fee - o.underwriting.holding));
+          underwritingLabel = `Victor MAO: ${money(victorMao)}`;
+          underwritingClass = "underwriting-victor";
+        } else if (overrides.arv) {
+          const localMao = Math.max(0, Math.round(overrides.arv * 0.75 - (overrides.rehab || 0) - (overrides.fee || 0) - (overrides.holding || 0)));
+          underwritingLabel = `Scratchpad MAO: ${money(localMao)}`;
+          underwritingClass = "underwriting-scratchpad";
+        } else {
+          underwritingLabel = "Underwriting: unavailable";
+        }
+
+        const isHighPriority = o.provenanceState === "unresolved" || o.status === "stalled";
+        const priorityClass = isHighPriority ? "board-card-priority-high" : "";
+
         return `
-          <div class="board-card" draggable="true" data-opp-id="${esc(o.id)}" data-stage="${esc(o.stage)}">
+          <div class="board-card ${priorityClass}" draggable="true" data-opp-id="${esc(o.id)}" data-stage="${esc(o.stage)}">
             <div class="board-card-header">
               <span class="board-card-id"><a href="/opportunities/${esc(o.id)}" onclick="window.routeTo(event, '/opportunities/${esc(o.id)}')">${esc(o.id)}</a></span>
               <span class="board-card-badge prov-${esc(o.provenanceState)}">${esc(o.provenanceState)}</span>
             </div>
-            <span class="board-card-address">${esc(o.property.address)}</span>
-            <div class="board-card-sub">Seller: ${esc(o.sellerDisplayName)}</div>
-            <div class="board-card-meta">
-              <span class="board-card-badge" style="background: rgba(255,255,255,0.05); color: #fff; font-size: 8px;">${esc(formatStage(o.stage))}</span>
-              <span style="font-family: var(--mono); font-size: 11px; font-weight: 700; color: #34d399;">${money(mao)}</span>
+            
+            <div class="board-card-body">
+              <span class="board-card-address">${esc(o.property.address)}</span>
+              <div class="board-card-sub">Seller: ${esc(o.sellerDisplayName)}</div>
+            </div>
+
+            <div class="board-card-footer">
+              <span class="board-card-underwriting ${underwritingClass}">${esc(underwritingLabel)}</span>
+              <span class="board-card-stage-pill">${esc(formatStage(o.stage))}</span>
             </div>
           </div>
         `;
@@ -651,113 +695,67 @@
 
     // Render columns
     view.innerHTML = `
-      <p><a href="/opportunities" data-nav>← Opportunities</a></p>
-      <h1>${esc(o.sellerDisplayName)} <span class="muted">${esc(o.id)}</span></h1>
-      <p class="sub">${badge("cls", o.classification)} ${badge("prov", o.provenance.state)} ${badge("st", o.status)}${body.meta.demo ? " · DEMO DATA" : ""}</p>
+      <p class="back-link"><a href="/opportunities" data-nav onclick="window.routeTo(event, '/opportunities')">← Back to Opportunities</a></p>
       
-      <div class="detail-grid">
-        
-        <!-- COLUMN 1: Underwriting Calculator & Info -->
-        <div>
-          <div class="panel">
-            <h2>Opportunity Details</h2>
-            <dl class="kv">
-              <dt>Opportunity code</dt><dd>${esc(o.code)}</dd>
-              <dt>Current Stage</dt>
-              <dd>
-                <select id="detail-stage-select" onchange="window.saveStageChange('${o.id}')">
-                  ${["new_lead", "needs_review", "attempting_contact", "contacted", "qualified", "appointment_scheduled", "property_review", "strategy_development", "offer_preparation", "offer_approval_required", "offer_presented", "negotiating", "under_contract", "due_diligence", "closing_scheduled", "closed", "nurture", "disqualified", "lost", "archived"].map(st => `
-                    <option value="${st}" ${st === stageVal ? 'selected' : ''}>${esc(formatStage(st))}</option>
-                  `).join("")}
-                </select>
-              </dd>
-              <dt>Assigned operator</dt><dd>${esc(o.assignedOperator)}</dd>
-              <dt>External property ref</dt><dd>${o.property.externalPropertyId ? esc(o.property.externalPropertyId) : '<span class="muted">— missing (PIPELINE-owned) —</span>'}</dd>
-              <dt>Property address</dt><dd>${esc(o.property.address)}</dd>
-              <dt>Last activity</dt><dd>${esc((o.lastActivity || "").slice(0, 10))}</dd>
-            </dl>
-          </div>
-
-          ${victorHtml}
-
-          <!-- 75% Underwriting math calculator -->
-          <div class="panel" style="border: 1px dashed rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.02);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <h2 style="margin:0;">Operator Underwriting Scratchpad</h2>
-              <span class="scratchpad-badge">Local Scratchpad</span>
-            </div>
-            <p class="scratchpad-note"><span>⚠</span><span>Local overrides exist only in this browser and do NOT affect the database or Victor's authoritative analysis.</span></p>
-            <div class="calc-card" style="background: transparent; border: 0; padding: 0;">
-              <div class="form-grid">
-                <div class="form-group">
-                  <label>ARV Target ($)</label>
-                  <input type="number" id="detail-arv" value="${arvVal}" oninput="window.recalcMao()" />
-                </div>
-                <div class="form-group">
-                  <label>Estimated Rehab ($)</label>
-                  <input type="number" id="detail-rehab" value="${rehabVal}" oninput="window.recalcMao()" />
-                </div>
-                <div class="form-group">
-                  <label>Wholesale Fee ($)</label>
-                  <input type="number" id="detail-fee" value="${feeVal}" oninput="window.recalcMao()" />
-                </div>
-                <div class="form-group">
-                  <label>Holding Costs ($)</label>
-                  <input type="number" id="detail-holding" value="${holdingVal}" oninput="window.recalcMao()" />
-                </div>
-                <div class="form-group">
-                  <label>Asking Purchase Price ($)</label>
-                  <input type="number" id="detail-asking" value="${askingVal}" oninput="window.recalcMao()" />
-                </div>
-              </div>
-
-              <div class="calc-output">
-                <div class="calc-output-row">
-                  <span>Standard Rule</span>
-                  <span>75% of ARV</span>
-                </div>
-                <div class="calc-output-row highlight">
-                  <span>Maximum Allowable Offer (MAO)</span>
-                  <span id="detail-mao-val" style="color: var(--ok);">${money(mao)}</span>
-                </div>
-              </div>
-
-              <div id="detail-mao-alert" class="alert-box ${isWarning ? 'warn' : 'ok'}">
-                ${isWarning ? 
-                  `<strong>OFFER EXCEEDS 75% MAO:</strong> Current asking price is above standard institutional purchase limits. Offer must be reduced.` 
-                  : `<strong>75% RULE SATISFIED:</strong> Purchase price falls within standard safety constraints.`
-                }
-              </div>
-
-              ${calcChartHtml(arvVal, rehabVal, feeVal, holdingVal, askingVal, mao, isWarning)}
-              
-              <div style="margin-top: 12px; text-align: right;">
-                <button onclick="window.saveDetailUnderwriting('${o.id}')">Save Underwriting Metrics</button>
-              </div>
-            </div>
+      <!-- Property Hero -->
+      <div class="deal-hero">
+        <div class="deal-hero-main">
+          <div class="deal-hero-badge">${esc(o.id)}</div>
+          <h1>${esc(o.property.address)}</h1>
+          <div class="deal-hero-sub">
+            Seller Contact: <strong>${esc(o.sellerDisplayName)}</strong> · Assigned Operator: <strong>${esc(o.assignedOperator)}</strong>
           </div>
         </div>
+        <div class="deal-hero-actions">
+          <div class="stage-control-group">
+            <label for="detail-stage-select">Current Stage</label>
+            <select id="detail-stage-select" onchange="window.saveStageChange('${o.id}')">
+              ${["new_lead", "needs_review", "attempting_contact", "contacted", "qualified", "appointment_scheduled", "property_review", "strategy_development", "offer_preparation", "offer_approval_required", "offer_presented", "negotiating", "under_contract", "due_diligence", "closing_scheduled", "closed", "nurture", "disqualified", "lost", "archived"].map(st => `
+                <option value="${st}" ${st === stageVal ? 'selected' : ''}>${esc(formatStage(st))}</option>
+              `).join("")}
+            </select>
+          </div>
+        </div>
+      </div>
 
-        <!-- COLUMN 2: Tasks Checklist & Negotiation Logs -->
-        <div>
-          <!-- Interactive Task checklist -->
-          <div class="panel">
-            <h2>Acquisitions Checklist</h2>
-            <p class="scratchpad-note"><span>✓</span><span>Saved in PIPELINE. Checklist state is stored server-side and is visible to every operator.</span></p>
+      <!-- Decision Strip -->
+      <div class="decision-strip">
+        <div class="decision-item">
+          <span class="decision-label">Status</span>
+          <span class="decision-val active-status">${esc(o.status)}</span>
+        </div>
+        <div class="decision-item">
+          <span class="decision-label">Classification</span>
+          <span class="decision-val">${badge("cls", o.classification)}</span>
+        </div>
+        <div class="decision-item">
+          <span class="decision-label">Lineage State</span>
+          <span class="decision-val">${badge("prov", o.provenance.state)}</span>
+        </div>
+        <div class="decision-item">
+          <span class="decision-label">Underwriting Status</span>
+          <span class="decision-val ${isWarning ? 'bad-val' : 'good-val'}">
+            ${isWarning ? 'Exceeds MAO' : 'Under MAO'}
+          </span>
+        </div>
+      </div>
+
+      <!-- Split Columns -->
+      <div class="deal-room-grid">
+        <!-- Left Column: Deal Intelligence Canvas -->
+        <div class="deal-room-main">
+          <div class="bridge-panel">
+            <h2 class="bridge-section-header">Acquisitions Checklist</h2>
             <div class="checklist-box" id="detail-tasks-box">Loading…</div>
           </div>
 
-          <!-- Next actions (server-backed) -->
-          <div class="panel">
-            <h2>Next Actions</h2>
-            <p class="scratchpad-note"><span>✓</span><span>Saved in PIPELINE. Piper reads these when deciding what is stalled and what needs you.</span></p>
+          <div class="bridge-panel">
+            <h2 class="bridge-section-header">Next Actions Queue</h2>
             <div id="detail-next-actions">Loading…</div>
           </div>
 
-          <!-- Negotiation Logs -->
-          <div class="panel">
-            <h2>Seller Call Log &amp; Notes</h2>
-            <p class="scratchpad-note"><span>✓</span><span>Saved in PIPELINE. Notes are stored server-side, append-only, and visible to every operator.</span></p>
+          <div class="bridge-panel">
+            <h2 class="bridge-section-header">Call Logs & Notes</h2>
             <form class="log-form" onsubmit="window.submitSellerLog(event, '${o.id}')">
               <input type="text" id="detail-log-input" placeholder="Type new seller update..." required />
               <button type="submit">Add Log</button>
@@ -766,29 +764,90 @@
           </div>
         </div>
 
-      </div>
+        <!-- Right Column: Economics Desk & Evidence Canvas -->
+        <div class="deal-room-side">
+          <!-- Victor Underwriting -->
+          ${victorHtml}
 
-      <h2>Provenance resolution</h2>
-      <div class="panel"><dl class="kv">
-        <dt>State</dt><dd>${badge("prov", o.provenance.state)}</dd>
-        <dt>Resolved message</dt><dd>${o.provenance.resolvedSourceMessageId ? esc(o.provenance.resolvedSourceMessageId) : '<span class="muted">unresolved</span>'}</dd>
-        <dt>Original</dt><dd>${esc(o.provenance.originalSourceMessageId || "—")}</dd>
-        <dt>Recovered</dt><dd>${esc(o.provenance.recoveredSourceMessageId || "—")}</dd>
-        <dt>Recovery method</dt><dd>${esc(o.provenance.recoveryMethod || "—")}</dd>
-        <dt>Confidence</dt><dd>${esc(o.provenance.recoveryConfidence || "—")}</dd>
-      </dl></div>
-      <h2>Stage timeline</h2>
-      ${o.stageTimeline.length ? tbl(["Stage", "At", "By"], o.stageTimeline.map((s) => [formatStage(s.stage), (s.at || "").slice(0, 10), s.changedBy])) : empty("No stage events.")}
-      <h2>Offers</h2>
-      ${o.offers.length ? tbl(["ID", "Amount", "Status", "Version"], o.offers.map((f) => [f.id, f.amount, f.status, f.version])) : empty("No offers.")}
-      <h2>Outcome</h2>
-      <div class="panel">${o.outcome ? esc(o.outcome.result + " — " + o.outcome.reason) : '<span class="muted">No outcome recorded.</span>'}</div>
+          <!-- Operator Scratchpad -->
+          <div class="bridge-panel scratchpad-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 8px;">
+              <h2 style="margin:0; font-size: 14px;">Operator Underwriting Scratchpad</h2>
+              <span class="scratchpad-badge">Local Only</span>
+            </div>
+            <div class="form-grid-compact">
+              <div class="form-group-compact">
+                <label>ARV Target</label>
+                <input type="number" id="detail-arv" value="${arvVal}" oninput="window.recalcMao()" />
+              </div>
+              <div class="form-group-compact">
+                <label>Est Rehab</label>
+                <input type="number" id="detail-rehab" value="${rehabVal}" oninput="window.recalcMao()" />
+              </div>
+              <div class="form-group-compact">
+                <label>Fee</label>
+                <input type="number" id="detail-fee" value="${feeVal}" oninput="window.recalcMao()" />
+              </div>
+              <div class="form-group-compact">
+                <label>Holding</label>
+                <input type="number" id="detail-holding" value="${holdingVal}" oninput="window.recalcMao()" />
+              </div>
+              <div class="form-group-compact">
+                <label>Asking Price</label>
+                <input type="number" id="detail-asking" value="${askingVal}" oninput="window.recalcMao()" />
+              </div>
+            </div>
+
+            <div class="calc-output-compact">
+              <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                <span>Maximum Allowable Offer:</span>
+                <strong id="detail-mao-val" style="color: var(--ok); font-family: var(--mono);">${money(mao)}</strong>
+              </div>
+              <div id="detail-mao-alert" class="alert-box-compact ${isWarning ? 'warn' : 'ok'}">
+                ${isWarning ? 'Exceeds standard 75% MAO threshold' : '75% purchase rule satisfied'}
+              </div>
+            </div>
+
+            ${calcChartHtml(arvVal, rehabVal, feeVal, holdingVal, askingVal, mao, isWarning)}
+
+            <div style="margin-top: 14px; text-align: right;">
+              <button class="primary" onclick="window.saveDetailUnderwriting('${o.id}')">Save Local Assumptions</button>
+            </div>
+          </div>
+
+          <!-- Evidence & Lineage Canvas -->
+          <div class="bridge-panel">
+            <h2 class="bridge-section-header">Provenance & Lineage</h2>
+            <dl class="kv-compact">
+              <dt>Message ID</dt><dd class="code-val">${esc(o.provenance.resolvedSourceMessageId || "unresolved")}</dd>
+              <dt>Original Source</dt><dd class="code-val">${esc(o.provenance.originalSourceMessageId || "—")}</dd>
+              <dt>Recovered Source</dt><dd class="code-val">${esc(o.provenance.recoveredSourceMessageId || "—")}</dd>
+              <dt>Method</dt><dd>${esc(o.provenance.recoveryMethod || "—")}</dd>
+              <dt>Confidence</dt><dd>${esc(o.provenance.recoveryConfidence || "—")}</dd>
+            </dl>
+          </div>
+
+          <!-- Historical timeline / Offers -->
+          <div class="bridge-panel">
+            <h2 class="bridge-section-header">Stage History</h2>
+            ${o.stageTimeline.length ? `
+              <div class="timeline-compact">
+                ${o.stageTimeline.map(s => `
+                  <div class="timeline-row">
+                    <span class="timeline-time">${esc((s.at || "").slice(0, 10))}</span>
+                    <span class="timeline-desc"><strong>${esc(formatStage(s.stage))}</strong> by ${esc(s.changedBy)}</span>
+                  </div>
+                `).join("")}
+              </div>
+            ` : `<div class="empty-state">No events.</div>`}
+          </div>
+        </div>
+      </div>
     `;
 
     renderChecklist(o.id);
     renderNotes(o.id);
     renderNextActions(o.id);
-    view.querySelectorAll(".panel").forEach(bindTiltEffect);
   }
 
   /** Server-backed next actions for the open opportunity. */
@@ -1013,17 +1072,49 @@
     const widget = document.getElementById("piper-widget");
     
     if (collapseBtn && widget) {
+      const expandBtn = document.getElementById("piper-expand-btn");
+
       collapseBtn.addEventListener("click", () => {
-        widget.classList.toggle("collapsed");
-        const collapsed = widget.classList.contains("collapsed");
-        document.body.classList.toggle("has-collapsed-piper", collapsed);
+        const collapsed = !widget.classList.contains("collapsed");
+        if (collapsed) {
+          widget.classList.remove("expanded");
+          document.body.classList.remove("has-expanded-piper");
+          widget.classList.add("collapsed");
+          document.body.classList.add("has-collapsed-piper");
+        } else {
+          widget.classList.remove("collapsed");
+          document.body.classList.remove("has-collapsed-piper");
+        }
         collapseBtn.textContent = collapsed ? "‹" : "›";
         localStorage.setItem("piper_collapsed", collapsed);
+        localStorage.setItem("piper_expanded", "false");
       });
+
+      if (expandBtn) {
+        expandBtn.addEventListener("click", () => {
+          const expanded = !widget.classList.contains("expanded");
+          if (expanded) {
+            widget.classList.remove("collapsed");
+            document.body.classList.remove("has-collapsed-piper");
+            widget.classList.add("expanded");
+            document.body.classList.add("has-expanded-piper");
+            collapseBtn.textContent = "›";
+          } else {
+            widget.classList.remove("expanded");
+            document.body.classList.remove("has-expanded-piper");
+          }
+          localStorage.setItem("piper_expanded", expanded);
+          localStorage.setItem("piper_collapsed", "false");
+        });
+      }
+
       if (localStorage.getItem("piper_collapsed") === "true") {
         widget.classList.add("collapsed");
         document.body.classList.add("has-collapsed-piper");
         collapseBtn.textContent = "‹";
+      } else if (localStorage.getItem("piper_expanded") === "true") {
+        widget.classList.add("expanded");
+        document.body.classList.add("has-expanded-piper");
       }
       
       const statusDot = widget.querySelector(".status-dot");
@@ -1135,6 +1226,19 @@
     // Control background pulse & glow based on state
     if (drawer) {
       drawer.className = `piper-drawer state-${runState}`;
+      const statusDot = drawer.querySelector(".status-dot");
+      if (statusDot) {
+        statusDot.className = "status-dot";
+        if (busy) {
+          statusDot.classList.add("active-work");
+        } else if (runState === "awaiting_approval") {
+          statusDot.classList.add("active-approval");
+        } else if (["failed", "canceled", "not_connected"].includes(runState)) {
+          statusDot.classList.add("active-error");
+        } else {
+          statusDot.classList.add("active-idle");
+        }
+      }
     }
 
     // Live Work Canvas control
