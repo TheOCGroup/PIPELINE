@@ -953,12 +953,32 @@
     updatePiperContext();
     const { data, meta } = await api("/api/v1/classifications");
     const cur = data.current, hist = data.history;
-    const anyClassification = cur.some((c) => c.classification && c.classification !== "NOT_RECORDED");
-    view.innerHTML = `<h1>Classifications</h1><p class="sub">${cur.length} record(s)${meta.demo ? " · DEMO DATA" : ""}. Unresolved provenance is never auto-synthetic.</p>
-      ${!anyClassification && cur.length ? `<div class="panel"><strong>Classification is not recorded.</strong> REAL / SYNTHETIC / AMBIGUOUS is a determination about a source lead's classification status, and this database has no column storing it. The record classification and provenance columns below are read from stored values; classification is shown as NOT RECORDED rather than inferred.</div>` : ""}
-      ${cur.length ? tbl(["Opportunity", "Record classification", "Classification", "Provenance", "Determined by", "Reason"], cur.map((c) => [linkOpp(c.opportunityId), badgeHtml(c.recordClassification), badgeHtml(c.classification), badgeHtml(c.provenanceState), esc(c.determinedBy || "—"), esc(c.reason)]), true) : empty("No classifications recorded.")}
+    
+    view.innerHTML = `<h1>Classifications</h1><p class="sub">${cur.length} record(s)${meta.demo ? " · DEMO DATA" : ""}.</p>
+      ${cur.length ? tbl(
+        ["Opportunity", "Current Classification", "Provenance State", "Determined by", "Reason"], 
+        cur.map((c) => [
+          linkOpp(c.opportunityId), 
+          badgeHtml(c.recordClassification || "NOT RECORDED"), 
+          badgeHtml(c.provenanceState), 
+          esc(c.determinedBy || "—"), 
+          esc(c.reason)
+        ]), 
+        true
+      ) : empty("No classifications recorded.")}
       <h2>History (append-only)</h2>
-      ${hist.length ? tbl(["Opportunity", "Prior", "New", "Determined by", "Reason", "At"], hist.map((h) => [linkOpp(h.opportunityId), esc(h.priorClassification || "—"), esc(h.newClassification), esc(h.determinedBy || "—"), esc(h.reason), esc((h.changedAt || "").slice(0, 10))]), true) : empty("No classification history recorded.")}`;
+      ${hist.length ? tbl(
+        ["Opportunity", "Prior Classification", "New Classification", "Determined by", "Reason", "At"], 
+        hist.map((h) => [
+          linkOpp(h.opportunityId), 
+          badgeHtml(h.priorClassification || "NOT RECORDED"), 
+          badgeHtml(h.newClassification || "NOT RECORDED"), 
+          esc(h.determinedBy || "—"), 
+          esc(h.reason), 
+          esc((h.changedAt || "").slice(0, 10))
+        ]), 
+        true
+      ) : empty("No classification history recorded.")}`;
   }
 
   async function dataQuality() {
