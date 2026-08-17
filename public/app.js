@@ -22,7 +22,7 @@
     systemStatus: {},
     activeOppId: null,
     piperMessages: [
-      { sender: "bot", text: "I read stage, provenance, classification, and data-quality state from PIPELINE's read-only API. Ask about any opportunity, or open one and ask what its lineage actually shows." }
+      { sender: "bot", text: "I read stage, provenance, classification, and data-quality state from PIPELINE's read-only API. Ask about any opportunity, or open one and ask what its provenance actually shows." }
     ]
   };
 
@@ -262,12 +262,41 @@
       stageCounts[actualStage] = (stageCounts[actualStage] || 0) + 1;
     });
 
+    let attentionMsg = "";
+    if (b && b.sections) {
+      const parts = [];
+      b.sections.forEach(sec => {
+        const title = sec.title.toLowerCase();
+        if (title.includes("needs you") || title.includes("attention")) {
+          parts.push(`${sec.items.length} require operator attention`);
+        } else if (title.includes("risk")) {
+          parts.push(`${sec.items.length} flagged as risk`);
+        } else if (title.includes("changed") || title.includes("update")) {
+          parts.push(`${sec.items.length} updated recently`);
+        } else if (title.includes("new")) {
+          parts.push(`${sec.items.length} new arrivals`);
+        } else if (title.includes("stalled")) {
+          parts.push(`${sec.items.length} are stalled`);
+        }
+      });
+      if (d.staleOpportunities > 0) {
+        parts.push(`${d.staleOpportunities} stale opportunities`);
+      }
+      if (parts.length > 0) {
+        attentionMsg = "Currently, " + parts.join(", ") + ".";
+      } else {
+        attentionMsg = "All systems operational.";
+      }
+    } else {
+      attentionMsg = "All pipelines nominal.";
+    }
+
     view.innerHTML = `
       <!-- 1. Top Piper Operating Statement -->
       <div class="operating-narrative-panel">
         <div class="narrative-badge">✦ PIPER HEAD AGENT BRIEF</div>
         <div class="narrative-text">
-          "${esc(b?.headline || "Pipeline Operational")}. Currently, ${esc(d.staleOpportunities)} opportunities are stalled, and ${esc(b?.sections?.reduce((acc, s) => acc + s.items.length, 0) || 0)} priority listings need manual operator validation."
+          "${esc(b?.headline || "Pipeline Operational")}. ${esc(attentionMsg)}"
         </div>
         <div class="narrative-meta">
           System mode: <span class="mode-tag">${esc(s.dataSource)}</span> · Handoff keys: <span class="mode-tag">${esc(s.handoff)}</span>
@@ -401,7 +430,7 @@
         let underwritingClass = "underwriting-unavailable";
         if (o.underwriting) {
           const victorMao = Math.max(0, Math.round(o.underwriting.arv * 0.75 - o.underwriting.rehab - o.underwriting.fee - o.underwriting.holding));
-          underwritingLabel = `Victor MAO: ${money(victorMao)}`;
+          underwritingLabel = `75% Rule Ref — Victor inputs: ${money(victorMao)}`;
           underwritingClass = "underwriting-victor";
         } else if (overrides.arv) {
           const localMao = Math.max(0, Math.round(overrides.arv * 0.75 - (overrides.rehab || 0) - (overrides.fee || 0) - (overrides.holding || 0)));
@@ -686,7 +715,7 @@
             <dt>Wholesale Fee</dt><dd>${money(o.underwriting.fee)}</dd>
             <dt>Holding Costs</dt><dd>${money(o.underwriting.holding)}</dd>
             <dt>Asking Price</dt><dd>${money(o.underwriting.askingPrice)}</dd>
-            <dt>Victor 75% MAO</dt><dd style="font-family: var(--mono); font-weight: 700; color: var(--ok); font-size: 15px;">${money(victorMao)}</dd>
+            <dt>75% Rule Ref — Victor inputs</dt><dd style="font-family: var(--mono); font-weight: 700; color: var(--ok); font-size: 15px;">${money(victorMao)}</dd>
           </dl>
           ${calcChartHtml(o.underwriting.arv, o.underwriting.rehab, o.underwriting.fee, o.underwriting.holding, o.underwriting.askingPrice, victorMao, victorWarning)}
         </div>
@@ -729,7 +758,7 @@
           <span class="decision-val">${badge("cls", o.classification)}</span>
         </div>
         <div class="decision-item">
-          <span class="decision-label">Lineage State</span>
+          <span class="decision-label">Provenance State</span>
           <span class="decision-val">${badge("prov", o.provenance.state)}</span>
         </div>
         <div class="decision-item">
@@ -815,9 +844,9 @@
             </div>
           </div>
 
-          <!-- Evidence & Lineage Canvas -->
+          <!-- Evidence & Provenance Canvas -->
           <div class="bridge-panel">
-            <h2 class="bridge-section-header">Provenance & Lineage</h2>
+            <h2 class="bridge-section-header">Provenance & Evidence</h2>
             <dl class="kv-compact">
               <dt>Message ID</dt><dd class="code-val">${esc(o.provenance.resolvedSourceMessageId || "unresolved")}</dd>
               <dt>Original Source</dt><dd class="code-val">${esc(o.provenance.originalSourceMessageId || "—")}</dd>
@@ -924,10 +953,10 @@
     updatePiperContext();
     const { data, meta } = await api("/api/v1/classifications");
     const cur = data.current, hist = data.history;
-    const anyLineage = cur.some((c) => c.classification && c.classification !== "NOT_RECORDED");
+    const anyClassification = cur.some((c) => c.classification && c.classification !== "NOT_RECORDED");
     view.innerHTML = `<h1>Classifications</h1><p class="sub">${cur.length} record(s)${meta.demo ? " · DEMO DATA" : ""}. Unresolved provenance is never auto-synthetic.</p>
-      ${!anyLineage && cur.length ? `<div class="panel"><strong>Lineage is not recorded.</strong> REAL / SYNTHETIC / AMBIGUOUS is a determination about a source lead's lineage, and this database has no column storing it. The record classification and provenance columns below are read from stored values; lineage is shown as NOT RECORDED rather than inferred.</div>` : ""}
-      ${cur.length ? tbl(["Opportunity", "Record classification", "Lineage", "Provenance", "Determined by", "Reason"], cur.map((c) => [linkOpp(c.opportunityId), badgeHtml(c.recordClassification), badgeHtml(c.classification), badgeHtml(c.provenanceState), esc(c.determinedBy || "—"), esc(c.reason)]), true) : empty("No classifications recorded.")}
+      ${!anyClassification && cur.length ? `<div class="panel"><strong>Classification is not recorded.</strong> REAL / SYNTHETIC / AMBIGUOUS is a determination about a source lead's classification status, and this database has no column storing it. The record classification and provenance columns below are read from stored values; classification is shown as NOT RECORDED rather than inferred.</div>` : ""}
+      ${cur.length ? tbl(["Opportunity", "Record classification", "Classification", "Provenance", "Determined by", "Reason"], cur.map((c) => [linkOpp(c.opportunityId), badgeHtml(c.recordClassification), badgeHtml(c.classification), badgeHtml(c.provenanceState), esc(c.determinedBy || "—"), esc(c.reason)]), true) : empty("No classifications recorded.")}
       <h2>History (append-only)</h2>
       ${hist.length ? tbl(["Opportunity", "Prior", "New", "Determined by", "Reason", "At"], hist.map((h) => [linkOpp(h.opportunityId), esc(h.priorClassification || "—"), esc(h.newClassification), esc(h.determinedBy || "—"), esc(h.reason), esc((h.changedAt || "").slice(0, 10))]), true) : empty("No classification history recorded.")}`;
   }
