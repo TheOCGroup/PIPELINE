@@ -55,8 +55,12 @@
             <span>Piper</span>
           </div>
           <span class="piper-badge">PIPELINE</span>
+          <!-- Run state and provider. Both reflect real state, never a guess. -->
+          <span id="piper-state-chip" class="piper-state-chip s-idle">idle</span>
+          <span id="piper-provider" class="piper-provider">model none</span>
+          <button type="button" id="piper-stop" class="piper-stop" hidden onclick="piperCancel()">Stop</button>
         </div>
-        
+
         <!-- Context Awareness Banner -->
         <div id="piper-context-bar" class="piper-context-bar">
           <span id="piper-context-text">reading pipeline state</span>
@@ -81,7 +85,9 @@
           <input type="text" id="piper-chat-input" placeholder="Ask about an opportunity, stage, or lineage" required />
           <button type="submit" class="piper-send-btn">↑</button>
         </form>
-        <p class="piper-disclosure">Piper reports stored pipeline state. No language model is connected; Piper does not generate analysis, verify contact data, or assert lineage the API has not resolved.</p>
+        <!-- One line explaining the current state. Filled from the run, not guessed. -->
+        <p id="piper-state-note" class="piper-state-note"></p>
+        <p id="piper-disclosure" class="piper-disclosure">Piper answers from stored PIPELINE state. Facts come from the database, never from a model; actions are written only after you approve them.</p>
       </div>
     </div>
 

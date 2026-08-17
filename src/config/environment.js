@@ -57,6 +57,30 @@ export function loadConfig(env = process.env) {
   // explicitly turned on, so a default deployment exposes no write path.
   const piperIntakeEnabled = asBool(env.PIPELINE_ENABLE_PIPER_INTAKE);
   const piperIntakeSecret = env.PIPELINE_PIPER_INTAKE_SECRET || "";
+
+  // Piper's model provider. Absent by default: Piper answers from stored state
+  // deterministically, and only gains language understanding once a provider is
+  // configured. Facts always come from retrieval, never from the model.
+  const piperProvider = (env.PIPELINE_PIPER_PROVIDER || "none").toLowerCase();
+  if (!["none", "openai-compatible", "anthropic"].includes(piperProvider)) {
+    throw new Error("invalid PIPELINE_PIPER_PROVIDER: expected none, openai-compatible, or anthropic");
+  }
+  const piperBaseUrl = env.PIPELINE_PIPER_BASE_URL || "";
+  const piperModel = env.PIPELINE_PIPER_MODEL || "";
+  const piperApiKey = env.PIPELINE_PIPER_API_KEY || "";
+  const piperTimeoutMs = Number(env.PIPELINE_PIPER_TIMEOUT_MS || 60000);
+  if (!Number.isInteger(piperTimeoutMs) || piperTimeoutMs < 1000 || piperTimeoutMs > 600000) {
+    throw new Error("invalid PIPELINE_PIPER_TIMEOUT_MS: must be an integer between 1000 and 600000");
+  }
+  if (piperProvider !== "none" && !piperModel) {
+    throw new Error("PIPELINE_PIPER_MODEL is required when PIPELINE_PIPER_PROVIDER is set");
+  }
+  if (piperProvider === "openai-compatible" && !piperBaseUrl) {
+    throw new Error("PIPELINE_PIPER_BASE_URL is required for the openai-compatible provider");
+  }
+  if (piperProvider === "anthropic" && !piperApiKey) {
+    throw new Error("PIPELINE_PIPER_API_KEY is required for the anthropic provider");
+  }
   const ocgOneBaseUrl = env.OCG_ONE_BASE_URL || DEFAULTS.ocgOneBaseUrl;
 
   const handoffIssuer = env.OCG_ONE_HANDOFF_ISSUER || "ocg-one";
@@ -133,6 +157,11 @@ export function loadConfig(env = process.env) {
     handoffSecret,
     piperIntakeEnabled,
     piperIntakeSecret,
+    piperProvider,
+    piperBaseUrl,
+    piperModel,
+    piperApiKey,
+    piperTimeoutMs,
     ocgOneBaseUrl,
     dataSource,
     handoffIssuer,

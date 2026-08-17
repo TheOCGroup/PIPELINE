@@ -35,8 +35,12 @@ test("Piper's brief is derived from stored state", async (t) => {
   const body = await res.json();
 
   assert.equal(body.ok, true);
+  // Provider identity moved under meta.provider when the runtime landed; the
+  // claim being guarded is unchanged — with no provider configured, none is
+  // claimed and the answer is deterministic.
   assert.equal(body.meta.deterministic, true);
-  assert.equal(body.meta.model, null, "no language model may be claimed");
+  assert.equal(body.meta.provider.connected, false, "no language model may be claimed");
+  assert.equal(body.meta.provider.model, null);
   assert.ok(body.data.headline, "a headline is always produced");
 
   // Every referenced opportunity must exist.

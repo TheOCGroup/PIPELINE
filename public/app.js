@@ -671,8 +671,10 @@
         piperChatInput.value = "";
 
         state.piperMessages.push({ sender: "user", text });
-        // A real pending state for a real request — not a timer pretending to think.
+        // A real pending state for a real request. The label tracks the run's
+        // actual state; nothing here simulates thinking.
         state.piperMessages.push({ sender: "bot", text: "Reading PIPELINE state…", pending: true });
+        setPiperState("retrieving");
         renderPiperHistory();
 
         let reply;
@@ -680,12 +682,25 @@
           const res = await fetch("/api/v1/piper/ask", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ question: text, activeOpportunityId: state.activeOppId || null }),
+            body: JSON.stringify({
+              question: text,
+              threadId: state.piperThreadId || null,
+              activeOpportunityId: state.activeOppId || null,
+            }),
           });
           const body = await res.json();
-          reply = body.ok ? renderPiperAnswer(body.data) : "I couldn't read PIPELINE state just now.";
+          if (body.ok) {
+            state.piperThreadId = body.data.threadId;
+            state.piperRunId = body.data.runId;
+            setPiperState(body.data.state, body.data.stateLabel);
+            reply = renderPiperAnswer(body.data);
+          } else {
+            setPiperState("failed");
+            reply = "I couldn't read PIPELINE state just now. Nothing was written.";
+          }
         } catch {
-          reply = "I couldn't reach PIPELINE to answer that.";
+          setPiperState("failed");
+          reply = "I couldn't reach PIPELINE to answer that. Nothing was written.";
         }
 
         state.piperMessages = state.piperMessages.filter((m) => !m.pending);
@@ -694,6 +709,66 @@
       });
     }
   }
+
+  /**
+   * Reflects the run's real state. Busy states pulse; settled states don't, so
+   * "is Piper working" is answerable at a glance. Stop appears only while there
+   * is something to stop.
+   */
+  function setPiperState(runState, label) {
+    state.piperState = runState;
+    const chip = document.getElementById("piper-state-chip");
+    const foot = document.getElementById("piper-state-note");
+    const stop = document.getElementById("piper-stop");
+    if (!chip) return;
+
+    const busy = ["retrieving", "generating", "running_tool"].includes(runState);
+    const cancellable = ["retrieving", "generating", "awaiting_approval"].includes(runState);
+
+    chip.textContent = String(runState || "idle").replace(/_/g, " ");
+    chip.className = `piper-state-chip s-${runState}${busy ? " pulsing" : ""}`;
+    if (foot) foot.textContent = label || "";
+    if (stop) stop.hidden = !cancellable;
+  }
+
+  window.piperCancel = async () => {
+    if (!state.piperRunId) return;
+    try {
+      const res = await fetch("/api/v1/piper/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: state.piperRunId }),
+      });
+      const body = await res.json();
+      setPiperState(body.ok ? "canceled" : state.piperState, body.ok ? body.data.stateLabel : undefined);
+      if (body.ok) {
+        state.piperMessages = state.piperMessages.filter((m) => !m.pending);
+        state.piperMessages.push({ sender: "bot", text: "Canceled. Nothing was written." });
+        renderPiperHistory();
+      }
+    } catch { /* the run settles server-side regardless */ }
+  };
+
+  /** Approve or decline a proposed action. The only path to a Piper write. */
+  window.piperDecide = async (toolCallId, approve) => {
+    try {
+      const res = await fetch("/api/v1/piper/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolCallId, approve }),
+      });
+      const body = await res.json();
+      const text = body.ok
+        ? (body.data.wrote ? "Written to PIPELINE." : "Declined. Nothing was written.")
+        : `Could not complete that (${esc(body.error || "unknown")}). Nothing was written.`;
+      setPiperState(body.ok ? (body.data.wrote ? "complete" : "complete") : "failed");
+      state.piperMessages.push({ sender: "bot", text });
+      renderPiperHistory();
+    } catch {
+      state.piperMessages.push({ sender: "bot", text: "Could not reach PIPELINE. Nothing was written." });
+      renderPiperHistory();
+    }
+  };
 
   /** Renders a Piper answer plus the records it was derived from. */
   function renderPiperAnswer(data) {
@@ -711,7 +786,19 @@
       ? `<div class="piper-item"><button type="button" onclick="piperConfirmAction('${esc(data.proposal.opportunityId)}', '${esc(data.proposal.title).replace(/'/g, "\\'")}')">Create this next action</button></div>`
       : "";
 
-    return `${esc(data.answer)}${items}${proposal}${caps}`;
+    // Model-proposed writes. Explicitly labelled as unwritten until approved,
+    // so a recommendation can never read as an executed action.
+    const approvals = (data.pendingApprovals || []).map((p) => `
+      <div class="piper-item piper-approval">
+        <div class="piper-approval-title">Proposed — nothing written yet</div>
+        <div>${esc(p.summary)}</div>
+        <div class="piper-approval-actions">
+          <button type="button" onclick="piperDecide('${esc(p.id)}', true)">Approve &amp; write</button>
+          <button type="button" class="ghost" onclick="piperDecide('${esc(p.id)}', false)">Decline</button>
+        </div>
+      </div>`).join("");
+
+    return `${esc(data.answer)}${items}${approvals}${proposal}${caps}`;
   }
 
   window.piperConfirmAction = async (opportunityId, title) => {
@@ -735,9 +822,28 @@
     }
   };
 
+  /** Reports the provider actually configured, including when there is none. */
+  async function refreshPiperStatus() {
+    try {
+      const res = await fetch("/api/v1/piper/status");
+      const body = await res.json();
+      if (!body.ok) return;
+      const p = body.data.provider;
+      const el = document.getElementById("piper-provider");
+      if (el) el.textContent = p.connected ? `model ${p.model}` : "model none";
+      setPiperState(p.connected ? "idle" : "not_connected",
+        p.connected ? "" : "No model provider is configured. Piper answers from stored PIPELINE state only.");
+      const disc = document.getElementById("piper-disclosure");
+      if (disc && !p.connected) {
+        disc.textContent = "No language model is connected. Piper answers deterministically from stored PIPELINE state; actions are written only after you approve them.";
+      }
+    } catch { /* status is best-effort */ }
+  }
+
   /** The operating brief, fetched from real state when the panel opens. */
   async function loadPiperBrief() {
     try {
+      refreshPiperStatus();
       const res = await fetch("/api/v1/piper/brief");
       const body = await res.json();
       if (!body.ok) return;

@@ -10,6 +10,8 @@ import { ClassificationReadService } from "../services/classificationReadService
 import { DataQualityReadService } from "../services/dataQualityReadService.js";
 import { SqliteOperatorRepository } from "../repositories/sqlite/sqliteOperatorRepository.js";
 import { PiperContextService } from "../services/piperContextService.js";
+import { PiperRuntime } from "../services/piper/piperRuntime.js";
+import { createPiperProvider } from "../services/piper/providers/index.js";
 
 export function buildServices(config, db) {
   let repos;
@@ -33,5 +35,21 @@ export function buildServices(config, db) {
     // what is actually stored, never a demonstration set.
     operator: db ? new SqliteOperatorRepository(db) : null,
     piperContext: db ? new PiperContextService(db, config) : null,
+    piper: db ? buildPiperRuntime(config, db) : null,
   };
+}
+
+function buildPiperRuntime(config, db) {
+  const contextService = new PiperContextService(db, config);
+  const operator = new SqliteOperatorRepository(db);
+  // A misconfigured provider must not take the whole application down; Piper
+  // degrades to deterministic answers and the System view reports why.
+  let provider;
+  try {
+    provider = createPiperProvider(config);
+  } catch (err) {
+    console.error(`[piper] provider disabled: ${err.message}`);
+    provider = createPiperProvider({ piperProvider: "none" });
+  }
+  return new PiperRuntime({ db, config, contextService, operator, provider });
 }
