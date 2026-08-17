@@ -108,7 +108,7 @@
     lost: "Lost",
     archived: "Archived"
   };
-  const formatStage = (s) => stageLabels[s] || String(s || "any");
+  const formatStage = (s) => stageLabels[s] || String(s || "any").replace(/_/g, " ");
 
   // Helper: Money Formatter
   const money = (val) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(val || 0);
@@ -250,7 +250,7 @@
     const [dq, sys, opps, briefRes] = await Promise.all([
       api("/api/v1/data-quality"),
       api("/api/v1/system/status"),
-      api("/api/v1/opportunities?limit=100"),
+      api("/api/v1/opportunities?pageSize=100"),
       api("/api/v1/piper/brief").catch(() => ({ ok: true, data: { headline: "Pipeline active", sections: [] } }))
     ]);
     const d = dq.data, s = sys.data, b = briefRes.data;
@@ -560,7 +560,11 @@
     updatePiperContext();
     const params = new URLSearchParams(location.search);
     const qs = new URLSearchParams();
-    for (const k of ["stage", "provenanceState", "classification", "status", "page"]) if (params.get(k)) qs.set(k, params.get(k));
+    for (const k of ["stage", "provenanceState", "classification", "status", "page", "pageSize"]) if (params.get(k)) qs.set(k, params.get(k));
+    const currentView = localStorage.getItem("pipeline_view_mode") || "board";
+    if (currentView === "board" && !qs.has("pageSize")) {
+      qs.set("pageSize", "100");
+    }
     let body;
     try { body = await api("/api/v1/opportunities?" + qs.toString()); }
     catch (e) { return errorState("Could not load opportunities: " + e.message); }
@@ -632,7 +636,7 @@
     return `<div class="filters">
       ${sel("stage", ["new_lead", "needs_review", "attempting_contact", "contacted", "qualified", "appointment_scheduled", "property_review", "strategy_development", "offer_preparation", "offer_approval_required", "offer_presented", "negotiating", "under_contract", "due_diligence", "closing_scheduled", "closed", "nurture", "disqualified", "lost", "archived"])}
       ${sel("provenanceState", ["original", "recovered", "unresolved"])}
-      ${sel("classification", ["REAL", "SYNTHETIC", "AMBIGUOUS"])}
+      ${sel("classification", ["retail_listing", "wholesale_target", "investment_rehab", "land_hold", "disqualified", "unknown"])}
       ${sel("status", ["active", "closed"])}
       <label>&nbsp;<button class="secondary" data-clear>Clear</button></label>
     </div>`;
@@ -939,7 +943,7 @@
     state.activeOppId = null;
     updatePiperContext();
     const { data, meta } = await api("/api/v1/provenance");
-    view.innerHTML = `<h1>Provenance</h1><p class="sub">${data.length} source(s)${meta.demo ? " · DEMO DATA" : ""}. Unresolved is <strong>not</strong> synthetic.</p>
+    view.innerHTML = `<h1>Provenance</h1><p class="sub">${data.length} source(s)${meta.demo ? " · DEMO DATA" : ""}.</p>
       ${data.length ? tbl(
         ["Opportunity", "State", "Original", "Recovered", "Method", "Confidence"],
         data.map((r) => [linkOpp(r.opportunityId), badgeHtml(r.provenanceState), r.originalSourceMessageId || "—", r.recoveredSourceMessageId || "—", r.recoveryMethodLabel, r.recoveryConfidence || "—"]),
@@ -1133,6 +1137,10 @@
         } else {
           widget.classList.remove("collapsed");
           document.body.classList.remove("has-collapsed-piper");
+          if (!state.piperBriefLoaded) {
+            state.piperBriefLoaded = true;
+            loadPiperBrief();
+          }
         }
         collapseBtn.textContent = collapsed ? "‹" : "›";
         localStorage.setItem("piper_collapsed", collapsed);
@@ -1148,6 +1156,10 @@
             widget.classList.add("expanded");
             document.body.classList.add("has-expanded-piper");
             collapseBtn.textContent = "›";
+            if (!state.piperBriefLoaded) {
+              state.piperBriefLoaded = true;
+              loadPiperBrief();
+            }
           } else {
             widget.classList.remove("expanded");
             document.body.classList.remove("has-expanded-piper");
@@ -1164,6 +1176,15 @@
       } else if (localStorage.getItem("piper_expanded") === "true") {
         widget.classList.add("expanded");
         document.body.classList.add("has-expanded-piper");
+        if (!state.piperBriefLoaded) {
+          state.piperBriefLoaded = true;
+          loadPiperBrief();
+        }
+      } else {
+        if (window.innerWidth >= 1024 && !state.piperBriefLoaded) {
+          state.piperBriefLoaded = true;
+          loadPiperBrief();
+        }
       }
       
       const statusDot = widget.querySelector(".status-dot");
@@ -1174,6 +1195,10 @@
             document.body.classList.remove("has-collapsed-piper");
             collapseBtn.textContent = "›";
             localStorage.setItem("piper_collapsed", "false");
+            if (!state.piperBriefLoaded) {
+              state.piperBriefLoaded = true;
+              loadPiperBrief();
+            }
           }
         });
       }
