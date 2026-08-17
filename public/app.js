@@ -22,7 +22,7 @@
     systemStatus: {},
     activeOppId: null,
     piperMessages: [
-      { sender: "bot", text: "I read stage, provenance, classification, and data-quality state from PIPELINE's read-only API. Ask about any opportunity, or open one and ask what its lineage actually shows." }
+      { sender: "bot", text: "I read stage, provenance, classification, and data-quality state from PIPELINE's read-only API. Ask about any opportunity, or open one and ask what its provenance actually shows." }
     ]
   };
 
@@ -318,12 +318,40 @@
       stageCounts[actualStage] = (stageCounts[actualStage] || 0) + 1;
     });
 
+    let narrativeParts = [];
+    if (b && b.sections) {
+      for (const sec of b.sections) {
+        const count = sec.items.length;
+        if (count > 0) {
+          const t = sec.title;
+          if (t === "Needs You") {
+            narrativeParts.push(`${count} require(s) operator attention`);
+          } else if (t === "Risk") {
+            narrativeParts.push(`${count} flagged as risk`);
+          } else if (t === "Stalled") {
+            narrativeParts.push(`${count} stalled`);
+          } else if (t === "Changed") {
+            narrativeParts.push(`${count} updated recently`);
+          } else if (t === "New") {
+            narrativeParts.push(`${count} new arrival(s)`);
+          } else if (t === "Next Actions") {
+            narrativeParts.push(`${count} pending action(s)`);
+          } else {
+            narrativeParts.push(`${count} in ${esc(t.toLowerCase())}`);
+          }
+        }
+      }
+    }
+    const narrativeText = narrativeParts.length 
+      ? `Currently, ${narrativeParts.join(", ")}.` 
+      : "All systems nominal.";
+
     view.innerHTML = `
       <!-- 1. Top Piper Operating Statement -->
       <div class="operating-narrative-panel">
         <div class="narrative-badge">✦ PIPER HEAD AGENT BRIEF</div>
         <div class="narrative-text">
-          "${esc(b?.headline || "Pipeline Operational")}. Currently, ${esc(d.staleOpportunities)} opportunities are stalled, and ${esc(b?.sections?.reduce((acc, s) => acc + s.items.length, 0) || 0)} priority listings need manual operator validation."
+          "${esc(b?.headline || "Pipeline Operational")}. ${narrativeText}"
         </div>
         <div class="narrative-meta">
           System mode: <span class="mode-tag">${esc(s.dataSource)}</span> · Handoff keys: <span class="mode-tag">${esc(s.handoff)}</span>
@@ -457,7 +485,7 @@
         let underwritingClass = "underwriting-unavailable";
         if (o.underwriting) {
           const victorMao = Math.max(0, Math.round(o.underwriting.arv * 0.75 - o.underwriting.rehab - o.underwriting.fee - o.underwriting.holding));
-          underwritingLabel = `Victor MAO: ${money(victorMao)}`;
+          underwritingLabel = `75% Rule Ref — Victor inputs: ${money(victorMao)}`;
           underwritingClass = "underwriting-victor";
         } else if (overrides.arv) {
           const localMao = Math.max(0, Math.round(overrides.arv * 0.75 - (overrides.rehab || 0) - (overrides.fee || 0) - (overrides.holding || 0)));
@@ -744,7 +772,7 @@
             <dt>Wholesale Fee</dt><dd>${money(o.underwriting.fee)}</dd>
             <dt>Holding Costs</dt><dd>${money(o.underwriting.holding)}</dd>
             <dt>Asking Price</dt><dd>${money(o.underwriting.askingPrice)}</dd>
-            <dt>Victor 75% MAO</dt><dd style="font-family: var(--mono); font-weight: 700; color: var(--ok); font-size: 15px;">${money(victorMao)}</dd>
+            <dt>75% Rule Ref — Victor inputs</dt><dd style="font-family: var(--mono); font-weight: 700; color: var(--ok); font-size: 15px;">${money(victorMao)}</dd>
           </dl>
           ${calcChartHtml(o.underwriting.arv, o.underwriting.rehab, o.underwriting.fee, o.underwriting.holding, o.underwriting.askingPrice, victorMao, victorWarning)}
         </div>
@@ -787,7 +815,7 @@
           <span class="decision-val">${badge("cls", o.classification)}</span>
         </div>
         <div class="decision-item">
-          <span class="decision-label">Lineage State</span>
+          <span class="decision-label">Provenance State</span>
           <span class="decision-val">${badge("prov", o.provenance.state)}</span>
         </div>
         <div class="decision-item">
@@ -873,9 +901,9 @@
             </div>
           </div>
 
-          <!-- Evidence & Lineage Canvas -->
+          <!-- Evidence & Provenance Canvas -->
           <div class="bridge-panel">
-            <h2 class="bridge-section-header">Provenance & Lineage</h2>
+            <h2 class="bridge-section-header">Provenance & Evidence</h2>
             <dl class="kv-compact">
               <dt>Message ID</dt><dd class="code-val">${esc(o.provenance.resolvedSourceMessageId || "unresolved")}</dd>
               <dt>Original Source</dt><dd class="code-val">${esc(o.provenance.originalSourceMessageId || "—")}</dd>
@@ -1162,6 +1190,7 @@
         } else {
           widget.classList.remove("collapsed");
           document.body.classList.remove("has-collapsed-piper");
+          loadPiperBrief();
         }
         collapseBtn.textContent = collapsed ? "‹" : "›";
         localStorage.setItem("piper_collapsed", collapsed);
@@ -1177,6 +1206,7 @@
             widget.classList.add("expanded");
             document.body.classList.add("has-expanded-piper");
             collapseBtn.textContent = "›";
+            loadPiperBrief();
           } else {
             widget.classList.remove("expanded");
             document.body.classList.remove("has-expanded-piper");
@@ -1193,6 +1223,9 @@
       } else if (localStorage.getItem("piper_expanded") === "true") {
         widget.classList.add("expanded");
         document.body.classList.add("has-expanded-piper");
+        loadPiperBrief();
+      } else {
+        loadPiperBrief();
       }
       
       const statusDot = widget.querySelector(".status-dot");
@@ -1203,6 +1236,7 @@
             document.body.classList.remove("has-collapsed-piper");
             collapseBtn.textContent = "›";
             localStorage.setItem("piper_collapsed", "false");
+            loadPiperBrief();
           }
         });
       }
