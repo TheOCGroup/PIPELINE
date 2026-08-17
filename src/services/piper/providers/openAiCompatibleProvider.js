@@ -13,11 +13,11 @@
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 export class OpenAiCompatibleProvider {
-  constructor({ baseUrl, model, apiKey = "", timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  constructor({ baseUrl, model, apiKey = "", timeoutMs = DEFAULT_TIMEOUT_MS, kind = "openai-compatible" }) {
     if (!baseUrl) throw new Error("PIPELINE_PIPER_BASE_URL is required for the openai-compatible provider");
     if (!model) throw new Error("PIPELINE_PIPER_MODEL is required for the openai-compatible provider");
 
-    this.kind = "openai-compatible";
+    this.kind = kind;
     this.baseUrl = String(baseUrl).replace(/\/+$/, "");
     this.model = model;
     this.apiKey = apiKey;
@@ -29,9 +29,16 @@ export class OpenAiCompatibleProvider {
     return { provider: this.kind, model: this.model, baseUrl: this.baseUrl, connected: true };
   }
 
-  #headers() {
+  /**
+   * `apiKey` may be a string or an async function returning one. The function
+   * form lets a provider supply a short-lived credential that is refreshed per
+   * request — Vertex AI mints an OAuth token from ADC this way — without a
+   * second request path or a token stored on disk.
+   */
+  async #headers({ signal } = {}) {
     const h = { "Content-Type": "application/json" };
-    if (this.apiKey) h.Authorization = `Bearer ${this.apiKey}`;
+    const key = typeof this.apiKey === "function" ? await this.apiKey({ signal }) : this.apiKey;
+    if (key) h.Authorization = `Bearer ${key}`;
     return h;
   }
 
@@ -92,7 +99,7 @@ export class OpenAiCompatibleProvider {
 
       const res = await fetch(`${this.baseUrl}/chat/completions`, {
         method: "POST",
-        headers: this.#headers(),
+        headers: await this.#headers({ signal: controller.signal }),
         body: JSON.stringify(body),
         signal: controller.signal,
       });

@@ -62,12 +62,15 @@ export function loadConfig(env = process.env) {
   // deterministically, and only gains language understanding once a provider is
   // configured. Facts always come from retrieval, never from the model.
   const piperProvider = (env.PIPELINE_PIPER_PROVIDER || "none").toLowerCase();
-  if (!["none", "openai-compatible", "anthropic"].includes(piperProvider)) {
-    throw new Error("invalid PIPELINE_PIPER_PROVIDER: expected none, openai-compatible, or anthropic");
+  if (!["none", "openai-compatible", "anthropic", "vertex-ai"].includes(piperProvider)) {
+    throw new Error("invalid PIPELINE_PIPER_PROVIDER: expected none, openai-compatible, anthropic, or vertex-ai");
   }
   const piperBaseUrl = env.PIPELINE_PIPER_BASE_URL || "";
   const piperModel = env.PIPELINE_PIPER_MODEL || "";
   const piperApiKey = env.PIPELINE_PIPER_API_KEY || "";
+  // Vertex authenticates from ADC, so there is deliberately no key here.
+  const piperGcpProject = env.PIPELINE_PIPER_GCP_PROJECT || "";
+  const piperGcpLocation = env.PIPELINE_PIPER_GCP_LOCATION || "global";
   const piperTimeoutMs = Number(env.PIPELINE_PIPER_TIMEOUT_MS || 60000);
   if (!Number.isInteger(piperTimeoutMs) || piperTimeoutMs < 1000 || piperTimeoutMs > 600000) {
     throw new Error("invalid PIPELINE_PIPER_TIMEOUT_MS: must be an integer between 1000 and 600000");
@@ -80,6 +83,16 @@ export function loadConfig(env = process.env) {
   }
   if (piperProvider === "anthropic" && !piperApiKey) {
     throw new Error("PIPELINE_PIPER_API_KEY is required for the anthropic provider");
+  }
+  if (piperProvider === "vertex-ai") {
+    if (!piperGcpProject) {
+      throw new Error("PIPELINE_PIPER_GCP_PROJECT is required for the vertex-ai provider");
+    }
+    if (piperApiKey) {
+      // Refusing rather than ignoring: a key here means someone believes it is
+      // being used, and Vertex authenticates from ADC instead.
+      throw new Error("PIPELINE_PIPER_API_KEY must not be set for the vertex-ai provider; it authenticates from Application Default Credentials");
+    }
   }
   const ocgOneBaseUrl = env.OCG_ONE_BASE_URL || DEFAULTS.ocgOneBaseUrl;
 
@@ -161,6 +174,8 @@ export function loadConfig(env = process.env) {
     piperBaseUrl,
     piperModel,
     piperApiKey,
+    piperGcpProject,
+    piperGcpLocation,
     piperTimeoutMs,
     ocgOneBaseUrl,
     dataSource,
