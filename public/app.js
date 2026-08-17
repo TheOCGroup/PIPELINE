@@ -163,56 +163,236 @@
     loading();
     state.activeOppId = null;
     updatePiperContext();
-    const [dq, sys, opps] = await Promise.all([
+    const [dq, sys, opps, briefRes] = await Promise.all([
       api("/api/v1/data-quality"),
       api("/api/v1/system/status"),
-      api("/api/v1/opportunities?limit=100")
+      api("/api/v1/opportunities?limit=100"),
+      api("/api/v1/piper/brief").catch(() => ({ ok: true, data: { headline: "Pipeline active", sections: [] } }))
     ]);
-    const d = dq.data, s = sys.data;
+    const d = dq.data, s = sys.data, b = briefRes.data;
     state.opportunities = opps.data;
 
     // Compile local overrides to get actual stage metrics
-    // Counts come from the server's stage only. A browser-local override used
-    // to outrank it here, so the funnel disagreed with the database.
     const stageCounts = {};
     state.opportunities.forEach(o => {
       const actualStage = o.stage || "new_lead";
       stageCounts[actualStage] = (stageCounts[actualStage] || 0) + 1;
     });
 
+    let briefHtml = "";
+    if (b && b.sections && b.sections.length > 0) {
+      briefHtml = b.sections.map(sec => {
+        const itemsHtml = sec.items.map(item => {
+          return `
+            <div class="priority-item" style="border-left: 2px solid var(--accent); padding-left: 10px; margin-bottom: 8px;">
+              <a href="/opportunities/${esc(item.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(item.opportunityId)}')">
+                <strong>${esc(item.address || item.opportunityId)}</strong>
+              </a>
+              <div class="priority-reasons" style="font-size: 11px; color: var(--muted); margin-top: 2px;">
+                ${(item.reasons || []).map(r => `<span style="background: rgba(255,255,255,0.05); padding: 1px 4px; border-radius: 4px; margin-right: 4px;">${esc(r)}</span>`).join("")}
+              </div>
+            </div>
+          `;
+        }).join("");
+        
+        return `
+          <div class="card" style="margin-bottom: 12px; border-color: rgba(255,255,255,0.08);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--line-soft); padding-bottom: 6px;">
+              <h3 style="margin:0; font-size: 13px; color: #fff;">${esc(sec.title)}</h3>
+              <span class="badge" style="font-size: 9px; padding: 1px 5px;">${sec.items.length}</span>
+            </div>
+            <div>
+              ${itemsHtml}
+            </div>
+          </div>
+        `;
+      }).join("");
+    } else {
+      briefHtml = `<div class="muted" style="padding: 20px; text-align: center;">No active issues flagged by Piper.</div>`;
+    }
+
     view.innerHTML = `
-      <h1>Overview</h1>
-      <p class="sub">Standalone PIPELINE experience · data source: <strong>${esc(s.dataSource)}</strong> · OCG ONE integration: <strong>${esc(s.integration)}</strong></p>
-      
-      <!-- Metrics summary cards -->
-      <div class="cards">
-        ${card(state.opportunities.length, "Total opportunities")}
-        ${card(d.originalProvenance, "Original provenance")}
-        ${card(d.recoveredProvenance, "Recovered provenance")}
-        ${card(d.unresolvedProvenance, "Unresolved provenance")}
+      <div style="background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(217, 70, 239, 0.05)); border: 1px solid var(--line); padding: 30px; border-radius: var(--radius); position: relative; overflow: hidden; margin-bottom: 24px;">
+        <div style="position: absolute; inset: 0; background: radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 50%); pointer-events: none;"></div>
+        <div style="position: relative; z-index: 2;">
+          <div style="font-size: 9px; font-weight: 900; letter-spacing: 0.18em; text-transform: uppercase; color: #a78bfa; margin-bottom: 6px;">✦ PIPELINE COMMAND CENTER</div>
+          <h1 style="margin: 0 0 10px 0; font-size: 26px; line-height: 1.25; font-weight: 900; letter-spacing: -0.02em; color: #fff;">${esc(b?.headline || "Pipeline Operational")}</h1>
+          <p style="margin: 0; color: var(--muted); font-size: 13px;">Data Source: <strong>${esc(s.dataSource)}</strong> · Integration: <strong>${esc(s.integration)}</strong></p>
+        </div>
+      </div>
+
+      <h2>KPI Constellation</h2>
+      <div class="cards" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin-bottom: 28px;">
+        ${card(state.opportunities.length, "Total Opportunities")}
+        ${card(d.originalProvenance, "Original Provenance")}
+        ${card(d.recoveredProvenance, "Recovered Provenance")}
+        ${card(d.unresolvedProvenance, "Unresolved Provenance")}
         ${card(`${d.classificationCoverage.classified}/${d.classificationCoverage.total}`, "Classified")}
         ${card(d.staleOpportunities, "Stale")}
       </div>
 
-      <!-- Funnel Breakdown panel -->
-      <h2>Funnel stage breakdown</h2>
-      <div class="panel">
-        <div style="display: flex; gap: 20px; flex-wrap: wrap; font-size: 0.82rem;">
-          ${Object.keys(stageCounts).map(stage => `
-            <div style="background: var(--bg); border: 1px solid var(--line); padding: 8px 12px; border-radius: 6px;">
-              <strong>${esc(formatStage(stage))}</strong>: ${stageCounts[stage]}
+      <div class="detail-grid" style="grid-template-columns: 1fr; gap: 20px; display: grid;">
+        <div>
+          <h2>Piper Priorities Queue</h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+            ${briefHtml}
+          </div>
+        </div>
+        
+        <div>
+          <h2>Funnel stage breakdown</h2>
+          <div class="panel">
+            <div class="funnel-stage-container">
+              ${Object.keys(stageCounts).map(stage => `
+                <div class="funnel-stage-item">
+                  <span class="funnel-stage-name">${esc(formatStage(stage))}</span>
+                  <span class="funnel-stage-val">${stageCounts[stage]}</span>
+                </div>
+              `).join("")}
             </div>
-          `).join("")}
+          </div>
         </div>
       </div>
-      
-      <div class="panel"><strong>Data source disclosure.</strong> ${s.demo
-        ? "This view is backed by <strong>DEMO fixtures</strong>, not production data."
-        : state.opportunities.length
-          ? `Live data — ${state.opportunities.length} record(s) read from the PIPELINE database. No demonstration fixtures are loaded.`
-          : "Live data — the PIPELINE database holds no opportunity records yet."}</div>`;
+    `;
   }
   const card = (n, l) => `<div class="card"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`;
+
+  const KANBAN_COLUMNS = [
+    { key: "intake", title: "Intake", stages: ["new_lead", "needs_review"], defaultStage: "new_lead" },
+    { key: "qualifying", title: "Qualifying", stages: ["attempting_contact", "contacted", "qualified", "appointment_scheduled"], defaultStage: "attempting_contact" },
+    { key: "evaluation", title: "Evaluation", stages: ["property_review", "strategy_development"], defaultStage: "property_review" },
+    { key: "negotiation", title: "Negotiation", stages: ["offer_preparation", "offer_approval_required", "offer_presented", "negotiating"], defaultStage: "offer_preparation" },
+    { key: "contracting", title: "Contracting", stages: ["under_contract", "due_diligence", "closing_scheduled"], defaultStage: "under_contract" },
+    { key: "settle", title: "Archived & Settle", stages: ["closed", "nurture", "disqualified", "lost", "archived"], defaultStage: "closed" }
+  ];
+
+  function getColumnKey(stage) {
+    const col = KANBAN_COLUMNS.find(c => c.stages.includes(stage));
+    return col ? col.key : "intake";
+  }
+
+  function renderKanbanBoard(opps) {
+    const groups = {};
+    KANBAN_COLUMNS.forEach(c => { groups[c.key] = []; });
+    opps.forEach(o => {
+      const colKey = getColumnKey(o.stage);
+      groups[colKey].push(o);
+    });
+
+    const columnsHtml = KANBAN_COLUMNS.map(col => {
+      const cards = groups[col.key];
+      const cardsHtml = cards.map(o => {
+        const overrides = getOverrides(o.id);
+        const arvVal = overrides.arv || 250000;
+        const rehabVal = overrides.rehab || 50000;
+        const feeVal = overrides.fee || 5000;
+        const holdingVal = overrides.holding || 8000;
+        const mao = Math.max(0, Math.round(arvVal * 0.75 - rehabVal - feeVal - holdingVal));
+        
+        return `
+          <div class="board-card" draggable="true" data-opp-id="${esc(o.id)}" data-stage="${esc(o.stage)}">
+            <div class="board-card-header">
+              <span class="board-card-id"><a href="/opportunities/${esc(o.id)}" onclick="window.routeTo(event, '/opportunities/${esc(o.id)}')">${esc(o.id)}</a></span>
+              <span class="board-card-badge prov-${esc(o.provenanceState)}">${esc(o.provenanceState)}</span>
+            </div>
+            <span class="board-card-address">${esc(o.property.address)}</span>
+            <div class="board-card-sub">Seller: ${esc(o.sellerDisplayName)}</div>
+            <div class="board-card-meta">
+              <span class="board-card-badge" style="background: rgba(255,255,255,0.05); color: #fff; font-size: 8px;">${esc(formatStage(o.stage))}</span>
+              <span style="font-family: var(--mono); font-size: 11px; font-weight: 700; color: #34d399;">${money(mao)}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div class="board-column" data-col-key="${esc(col.key)}">
+          <div class="column-header">
+            <span class="column-title">${esc(col.title)}</span>
+            <span class="column-count">${cards.length}</span>
+          </div>
+          <div class="column-cards">
+            ${cardsHtml || `<div class="muted" style="text-align: center; padding: 20px; font-size: 11px;">Drag here</div>`}
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    return `<div class="board-container">${columnsHtml}</div>`;
+  }
+
+  function wireKanbanDragAndDrop() {
+    const cards = view.querySelectorAll(".board-card");
+    const columns = view.querySelectorAll(".board-column");
+
+    cards.forEach(card => {
+      card.addEventListener("dragstart", (e) => {
+        card.classList.add("dragging");
+        e.dataTransfer.setData("text/plain", card.dataset.oppId);
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+      });
+    });
+
+    columns.forEach(col => {
+      col.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        col.classList.add("drag-over");
+      });
+      col.addEventListener("dragleave", () => {
+        col.classList.remove("drag-over");
+      });
+      col.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        col.classList.remove("drag-over");
+        const oppId = e.dataTransfer.getData("text/plain");
+        if (!oppId) return;
+
+        const card = view.querySelector(`.board-card[data-opp-id="${oppId}"]`);
+        if (!card) return;
+
+        const originalStage = card.dataset.stage;
+        const colKey = col.dataset.colKey;
+        const targetCol = KANBAN_COLUMNS.find(c => c.key === colKey);
+        if (!targetCol) return;
+
+        const targetStage = targetCol.defaultStage;
+        if (originalStage === targetStage) return;
+
+        const currentStageLabel = formatStage(originalStage);
+        const proposedStageLabel = formatStage(targetStage);
+        
+        const title = `Proposed stage change: ${currentStageLabel} → ${proposedStageLabel} [AWAITING APPROVAL]`;
+        
+        if (!confirm(`PIPELINE has no stage-change endpoint, so the record cannot be moved from here.\n\nRecord a proposed stage change as a Next Action instead?\n\n"${title}"`)) {
+          return;
+        }
+
+        try {
+          const res = await fetch("/api/v1/operator/next-actions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ opportunityId: oppId, title }),
+          });
+          const body = await res.json();
+          if (body.ok) {
+            alert(`Stage change proposed: ${currentStageLabel} → ${proposedStageLabel}. Persisted as a Next Action waiting for approval.`);
+            opportunities();
+          } else {
+            alert(`Could not save next action: ${body.error}`);
+          }
+        } catch {
+          alert("Could not reach PIPELINE.");
+        }
+      });
+    });
+  }
+
+  window.setViewMode = (mode) => {
+    localStorage.setItem("pipeline_view_mode", mode);
+    opportunities();
+  };
 
   async function opportunities() {
     loading();
@@ -225,30 +405,54 @@
     try { body = await api("/api/v1/opportunities?" + qs.toString()); }
     catch (e) { return errorState("Could not load opportunities: " + e.message); }
     
-    // No local stage rewriting: the list shows what PIPELINE stores.
     state.opportunities = body.data;
     
+    const currentView = localStorage.getItem("pipeline_view_mode") || "board";
     const pg = body.meta.pagination;
-    view.innerHTML = `
-      <h1>Opportunities</h1>
-      <p class="sub">${pg.total} record(s)${body.meta.demo ? " · DEMO DATA" : ""}</p>
+    
+    let viewHtml = `
+      <div class="view-header-row">
+        <div>
+          <h1>Opportunities</h1>
+          <p class="sub">${pg.total} record(s)${body.meta.demo ? " · DEMO DATA" : ""}</p>
+        </div>
+        <div class="toggle-group">
+          <button class="toggle-btn ${currentView === 'board' ? 'active' : ''}" onclick="window.setViewMode('board')">Board</button>
+          <button class="toggle-btn ${currentView === 'table' ? 'active' : ''}" onclick="window.setViewMode('table')">Table</button>
+        </div>
+      </div>
       ${filterBar(params)}
-      ${state.opportunities.length === 0 ? empty("No opportunities match these filters.") : `
-      <div class="table-wrap"><table>
-        <thead><tr>
-          <th>ID</th><th>Seller</th><th>Property</th><th>Stage</th><th>Provenance</th><th>Classification</th><th>Status</th><th>Operator</th><th>Last activity</th>
-        </tr></thead>
-        <tbody>${state.opportunities.map(oppRow).join("")}</tbody>
-      </table></div>
-      <div class="pager">
-        <button class="secondary" ${pg.page <= 1 ? "disabled" : ""} data-page="${pg.page - 1}">Prev</button>
-        <span class="muted">Page ${pg.page} / ${pg.totalPages}</span>
-        <button class="secondary" ${pg.page >= pg.totalPages ? "disabled" : ""} data-page="${pg.page + 1}">Next</button>
-      </div>`}`;
-    view.querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => {
+    `;
+    
+    if (state.opportunities.length === 0) {
+      viewHtml += empty("No opportunities match these filters.");
+    } else if (currentView === "table") {
+      viewHtml += `
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>ID</th><th>Seller</th><th>Property</th><th>Stage</th><th>Provenance</th><th>Classification</th><th>Status</th><th>Operator</th><th>Last activity</th>
+          </tr></thead>
+          <tbody>${state.opportunities.map(oppRow).join("")}</tbody>
+        </table></div>
+        <div class="pager">
+          <button class="secondary" ${pg.page <= 1 ? "disabled" : ""} data-page="${pg.page - 1}">Prev</button>
+          <span class="muted">Page ${pg.page} / ${pg.totalPages}</span>
+          <button class="secondary" ${pg.page >= pg.totalPages ? "disabled" : ""} data-page="${pg.page + 1}">Next</button>
+        </div>
+      `;
+    } else {
+      viewHtml += renderKanbanBoard(state.opportunities);
+    }
+    
+    view.innerHTML = viewHtml;
+
+    view.querySelectorAll(".pager [data-page]").forEach((b) => b.addEventListener("click", () => {
       const p = new URLSearchParams(location.search); p.set("page", b.dataset.page); navigate("/opportunities?" + p.toString());
     }));
     wireFilters();
+    if (currentView === "board") {
+      wireKanbanDragAndDrop();
+    }
   }
   const oppRow = (o) => `<tr>
       <td><a href="/opportunities/${esc(o.id)}" data-nav>${esc(o.id)}</a></td>
@@ -305,6 +509,28 @@
     const mao = Math.max(0, Math.round(arvVal * 0.75 - rehabVal - feeVal - holdingVal));
     const isWarning = askingVal > mao;
 
+    // Show authoritative Victor underwriting if available
+    let victorHtml = "";
+    if (o.underwriting) {
+      const victorMao = Math.max(0, Math.round(o.underwriting.arv * 0.75 - o.underwriting.rehab - o.underwriting.fee - o.underwriting.holding));
+      victorHtml = `
+        <div class="panel" style="border-left: 2px solid var(--accent); background: rgba(139, 92, 246, 0.02);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="margin:0;">Authoritative Underwriting (Victor)</h2>
+            <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Victor</span>
+          </div>
+          <dl class="kv">
+            <dt>ARV Target</dt><dd>${money(o.underwriting.arv)}</dd>
+            <dt>Estimated Rehab</dt><dd>${money(o.underwriting.rehab)}</dd>
+            <dt>Wholesale Fee</dt><dd>${money(o.underwriting.fee)}</dd>
+            <dt>Holding Costs</dt><dd>${money(o.underwriting.holding)}</dd>
+            <dt>Asking Price</dt><dd>${money(o.underwriting.askingPrice)}</dd>
+            <dt>Victor 75% MAO</dt><dd style="font-family: var(--mono); font-weight: 700; color: var(--ok); font-size: 15px;">${money(victorMao)}</dd>
+          </dl>
+        </div>
+      `;
+    }
+
     // Render columns
     view.innerHTML = `
       <p><a href="/opportunities" data-nav>← Opportunities</a></p>
@@ -334,11 +560,16 @@
             </dl>
           </div>
 
+          ${victorHtml}
+
           <!-- 75% Underwriting math calculator -->
-          <div class="panel">
-            <h2>Deal Underwriting Analyzer</h2>
-            <p class="scratchpad-note"><span>⚠</span><span>Every figure below, and the MAO derived from it, is stored in this browser only. PIPELINE's API is read-only and does not persist it — it will not appear for other operators and is lost if site data is cleared.</span></p>
-            <div class="calc-card">
+          <div class="panel" style="border: 1px dashed rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.02);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h2 style="margin:0;">Operator Underwriting Scratchpad</h2>
+              <span class="scratchpad-badge">Local Scratchpad</span>
+            </div>
+            <p class="scratchpad-note"><span>⚠</span><span>Local overrides exist only in this browser and do NOT affect the database or Victor's authoritative analysis.</span></p>
+            <div class="calc-card" style="background: transparent; border: 0; padding: 0;">
               <div class="form-grid">
                 <div class="form-group">
                   <label>ARV Target ($)</label>
