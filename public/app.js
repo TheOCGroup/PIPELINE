@@ -22,7 +22,7 @@
     systemStatus: {},
     activeOppId: null,
     piperMessages: [
-      { sender: "bot", text: "I read stage, provenance, classification, and data-quality state from PIPELINE's read-only API. Ask about any opportunity, or open one and ask what its provenance actually shows." }
+      { sender: "bot", text: "I read stage, provenance, classification, and data-quality state from PIPELINE's read-only API. Ask about any opportunity, or open one and ask what its lineage actually shows." }
     ]
   };
 
@@ -115,7 +115,61 @@
 
   // Helper: Badges
   const badge = (cls, val) => `<span class="badge b-${esc(val)}">${esc(val)}</span>`;
-  const loading = () => { view.innerHTML = `<div class="state">Loading…</div>`; };
+  const loading = () => {
+    const path = location.pathname;
+    const isDetail = path.match(/^\/opportunities\/([^/]+)$/);
+    
+    let skeletonHtml = '';
+    if (path === "/" || path === "/index.html") {
+      skeletonHtml = `
+        <div class="skeleton-narrative-panel skeleton-pulse"></div>
+        <div class="skeleton-bridge-grid" style="margin-top: 20px;">
+          <div class="skeleton-main-col">
+            <div class="skeleton-panel skeleton-pulse" style="height: 300px; margin-bottom: 20px;"></div>
+            <div class="skeleton-panel skeleton-pulse" style="height: 250px;"></div>
+          </div>
+          <div class="skeleton-side-col">
+            <div class="skeleton-panel skeleton-pulse" style="height: 200px; margin-bottom: 20px;"></div>
+            <div class="skeleton-panel skeleton-pulse" style="height: 350px;"></div>
+          </div>
+        </div>
+      `;
+    } else if (path === "/opportunities") {
+      skeletonHtml = `
+        <div class="skeleton-header skeleton-pulse" style="height: 60px; margin-bottom: 20px; width: 300px;"></div>
+        <div class="skeleton-filters skeleton-pulse" style="height: 50px; margin-bottom: 20px;"></div>
+        <div class="skeleton-board">
+          <div class="skeleton-column skeleton-pulse"></div>
+          <div class="skeleton-column skeleton-pulse"></div>
+          <div class="skeleton-column skeleton-pulse"></div>
+          <div class="skeleton-column skeleton-pulse"></div>
+          <div class="skeleton-column skeleton-pulse"></div>
+          <div class="skeleton-column skeleton-pulse"></div>
+        </div>
+      `;
+    } else if (isDetail) {
+      skeletonHtml = `
+        <div class="skeleton-hero skeleton-pulse" style="height: 120px; margin-bottom: 20px;"></div>
+        <div class="skeleton-strip skeleton-pulse" style="height: 60px; margin-bottom: 20px;"></div>
+        <div class="skeleton-deal-room-grid">
+          <div class="skeleton-room-main">
+            <div class="skeleton-panel skeleton-pulse" style="height: 200px; margin-bottom: 20px;"></div>
+            <div class="skeleton-panel skeleton-pulse" style="height: 250px; margin-bottom: 20px;"></div>
+          </div>
+          <div class="skeleton-room-side">
+            <div class="skeleton-panel skeleton-pulse" style="height: 300px; margin-bottom: 20px;"></div>
+            <div class="skeleton-panel skeleton-pulse" style="height: 200px; margin-bottom: 20px;"></div>
+          </div>
+        </div>
+      `;
+    } else {
+      skeletonHtml = `
+        <div class="skeleton-header skeleton-pulse" style="height: 50px; margin-bottom: 20px; width: 250px;"></div>
+        <div class="skeleton-panel skeleton-pulse" style="height: 400px;"></div>
+      `;
+    }
+    view.innerHTML = `<div class="skeleton-container">${skeletonHtml}</div>`;
+  };
   const errorState = (msg) => { view.innerHTML = `<div class="state error">${esc(msg)}</div>`; };
   const empty = (msg) => `<div class="state">${esc(msg)}</div>`;
 
@@ -243,7 +297,9 @@
       element.style.boxShadow = "";
       element.style.borderColor = "";
     });
-   async function overview() {
+  }
+
+  async function overview() {
     loading();
     state.activeOppId = null;
     updatePiperContext();
@@ -262,41 +318,12 @@
       stageCounts[actualStage] = (stageCounts[actualStage] || 0) + 1;
     });
 
-    let attentionMsg = "";
-    if (b && b.sections) {
-      const parts = [];
-      b.sections.forEach(sec => {
-        const title = sec.title.toLowerCase();
-        if (title.includes("needs you") || title.includes("attention")) {
-          parts.push(`${sec.items.length} require operator attention`);
-        } else if (title.includes("risk")) {
-          parts.push(`${sec.items.length} flagged as risk`);
-        } else if (title.includes("changed") || title.includes("update")) {
-          parts.push(`${sec.items.length} updated recently`);
-        } else if (title.includes("new")) {
-          parts.push(`${sec.items.length} new arrivals`);
-        } else if (title.includes("stalled")) {
-          parts.push(`${sec.items.length} are stalled`);
-        }
-      });
-      if (d.staleOpportunities > 0) {
-        parts.push(`${d.staleOpportunities} stale opportunities`);
-      }
-      if (parts.length > 0) {
-        attentionMsg = "Currently, " + parts.join(", ") + ".";
-      } else {
-        attentionMsg = "All systems operational.";
-      }
-    } else {
-      attentionMsg = "All pipelines nominal.";
-    }
-
     view.innerHTML = `
       <!-- 1. Top Piper Operating Statement -->
       <div class="operating-narrative-panel">
         <div class="narrative-badge">✦ PIPER HEAD AGENT BRIEF</div>
         <div class="narrative-text">
-          "${esc(b?.headline || "Pipeline Operational")}. ${esc(attentionMsg)}"
+          "${esc(b?.headline || "Pipeline Operational")}. Currently, ${esc(d.staleOpportunities)} opportunities are stalled, and ${esc(b?.sections?.reduce((acc, s) => acc + s.items.length, 0) || 0)} priority listings need manual operator validation."
         </div>
         <div class="narrative-meta">
           System mode: <span class="mode-tag">${esc(s.dataSource)}</span> · Handoff keys: <span class="mode-tag">${esc(s.handoff)}</span>
@@ -430,7 +457,7 @@
         let underwritingClass = "underwriting-unavailable";
         if (o.underwriting) {
           const victorMao = Math.max(0, Math.round(o.underwriting.arv * 0.75 - o.underwriting.rehab - o.underwriting.fee - o.underwriting.holding));
-          underwritingLabel = `75% Rule Ref — Victor inputs: ${money(victorMao)}`;
+          underwritingLabel = `Victor MAO: ${money(victorMao)}`;
           underwritingClass = "underwriting-victor";
         } else if (overrides.arv) {
           const localMao = Math.max(0, Math.round(overrides.arv * 0.75 - (overrides.rehab || 0) - (overrides.fee || 0) - (overrides.holding || 0)));
@@ -570,8 +597,6 @@
     catch (e) { return errorState("Could not load opportunities: " + e.message); }
     
     state.opportunities = body.data;
-    
-    const currentView = localStorage.getItem("pipeline_view_mode") || "board";
     const pg = body.meta.pagination;
     
     let viewHtml = `
@@ -719,7 +744,7 @@
             <dt>Wholesale Fee</dt><dd>${money(o.underwriting.fee)}</dd>
             <dt>Holding Costs</dt><dd>${money(o.underwriting.holding)}</dd>
             <dt>Asking Price</dt><dd>${money(o.underwriting.askingPrice)}</dd>
-            <dt>75% Rule Ref — Victor inputs</dt><dd style="font-family: var(--mono); font-weight: 700; color: var(--ok); font-size: 15px;">${money(victorMao)}</dd>
+            <dt>Victor 75% MAO</dt><dd style="font-family: var(--mono); font-weight: 700; color: var(--ok); font-size: 15px;">${money(victorMao)}</dd>
           </dl>
           ${calcChartHtml(o.underwriting.arv, o.underwriting.rehab, o.underwriting.fee, o.underwriting.holding, o.underwriting.askingPrice, victorMao, victorWarning)}
         </div>
@@ -762,7 +787,7 @@
           <span class="decision-val">${badge("cls", o.classification)}</span>
         </div>
         <div class="decision-item">
-          <span class="decision-label">Provenance State</span>
+          <span class="decision-label">Lineage State</span>
           <span class="decision-val">${badge("prov", o.provenance.state)}</span>
         </div>
         <div class="decision-item">
@@ -848,9 +873,9 @@
             </div>
           </div>
 
-          <!-- Evidence & Provenance Canvas -->
+          <!-- Evidence & Lineage Canvas -->
           <div class="bridge-panel">
-            <h2 class="bridge-section-header">Provenance & Evidence</h2>
+            <h2 class="bridge-section-header">Provenance & Lineage</h2>
             <dl class="kv-compact">
               <dt>Message ID</dt><dd class="code-val">${esc(o.provenance.resolvedSourceMessageId || "unresolved")}</dd>
               <dt>Original Source</dt><dd class="code-val">${esc(o.provenance.originalSourceMessageId || "—")}</dd>
@@ -1137,10 +1162,6 @@
         } else {
           widget.classList.remove("collapsed");
           document.body.classList.remove("has-collapsed-piper");
-          if (!state.piperBriefLoaded) {
-            state.piperBriefLoaded = true;
-            loadPiperBrief();
-          }
         }
         collapseBtn.textContent = collapsed ? "‹" : "›";
         localStorage.setItem("piper_collapsed", collapsed);
@@ -1156,10 +1177,6 @@
             widget.classList.add("expanded");
             document.body.classList.add("has-expanded-piper");
             collapseBtn.textContent = "›";
-            if (!state.piperBriefLoaded) {
-              state.piperBriefLoaded = true;
-              loadPiperBrief();
-            }
           } else {
             widget.classList.remove("expanded");
             document.body.classList.remove("has-expanded-piper");
@@ -1176,15 +1193,6 @@
       } else if (localStorage.getItem("piper_expanded") === "true") {
         widget.classList.add("expanded");
         document.body.classList.add("has-expanded-piper");
-        if (!state.piperBriefLoaded) {
-          state.piperBriefLoaded = true;
-          loadPiperBrief();
-        }
-      } else {
-        if (window.innerWidth >= 1024 && !state.piperBriefLoaded) {
-          state.piperBriefLoaded = true;
-          loadPiperBrief();
-        }
       }
       
       const statusDot = widget.querySelector(".status-dot");
@@ -1195,10 +1203,6 @@
             document.body.classList.remove("has-collapsed-piper");
             collapseBtn.textContent = "›";
             localStorage.setItem("piper_collapsed", "false");
-            if (!state.piperBriefLoaded) {
-              state.piperBriefLoaded = true;
-              loadPiperBrief();
-            }
           }
         });
       }
