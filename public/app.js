@@ -29,6 +29,62 @@
   // Helper: Escape HTML
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+  // Custom Modals
+  window.showCustomConfirm = (message, title, onConfirm, onCancel) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "custom-modal-backdrop";
+    
+    const modal = document.createElement("div");
+    modal.className = "custom-modal";
+    modal.innerHTML = `
+      <div class="custom-modal-header">${esc(title || "PIPELINE DECISION PORTAL")}</div>
+      <div class="custom-modal-body">${message}</div>
+      <div class="custom-modal-actions">
+        <button class="primary" id="confirm-btn">Approve</button>
+        <button class="secondary" id="cancel-btn">Decline</button>
+      </div>
+    `;
+    
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    
+    backdrop.querySelector("#confirm-btn").focus();
+    
+    backdrop.querySelector("#confirm-btn").addEventListener("click", () => {
+      document.body.removeChild(backdrop);
+      if (onConfirm) onConfirm();
+    });
+    
+    backdrop.querySelector("#cancel-btn").addEventListener("click", () => {
+      document.body.removeChild(backdrop);
+      if (onCancel) onCancel();
+    });
+  };
+
+  window.showCustomAlert = (message, title) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "custom-modal-backdrop";
+    
+    const modal = document.createElement("div");
+    modal.className = "custom-modal";
+    modal.innerHTML = `
+      <div class="custom-modal-header">${esc(title || "SYSTEM NOTIFICATION")}</div>
+      <div class="custom-modal-body">${message}</div>
+      <div class="custom-modal-actions">
+        <button class="primary" id="ok-btn">Acknowledge</button>
+      </div>
+    `;
+    
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    
+    backdrop.querySelector("#ok-btn").focus();
+    
+    backdrop.querySelector("#ok-btn").addEventListener("click", () => {
+      document.body.removeChild(backdrop);
+    });
+  };
+
   // Helper: Stage Labels mapping
   const stageLabels = {
     new_lead: "New Lead",
@@ -394,26 +450,28 @@
         
         const title = `Proposed stage change: ${currentStageLabel} → ${proposedStageLabel} [AWAITING APPROVAL]`;
         
-        if (!confirm(`PIPELINE has no stage-change endpoint, so the record cannot be moved from here.\n\nRecord a proposed stage change as a Next Action instead?\n\n"${title}"`)) {
-          return;
-        }
-
-        try {
-          const res = await fetch("/api/v1/operator/next-actions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ opportunityId: oppId, title }),
-          });
-          const body = await res.json();
-          if (body.ok) {
-            alert(`Stage change proposed: ${currentStageLabel} → ${proposedStageLabel}. Persisted as a Next Action waiting for approval.`);
-            opportunities();
-          } else {
-            alert(`Could not save next action: ${body.error}`);
+        window.showCustomConfirm(
+          `PIPELINE has no stage-change endpoint, so the record cannot be moved from here.<br/><br/>Record a proposed stage change as a Next Action instead?<br/><br/><strong>"${title}"</strong>`,
+          "Proposed Stage Change Approval",
+          async () => {
+            try {
+              const res = await fetch("/api/v1/operator/next-actions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ opportunityId: oppId, title }),
+              });
+              const body = await res.json();
+              if (body.ok) {
+                window.showCustomAlert(`Stage change proposed: ${currentStageLabel} → ${proposedStageLabel}. Persisted as a Next Action waiting for approval.`, "Proposal Recorded");
+                opportunities();
+              } else {
+                window.showCustomAlert(`Could not save next action: ${body.error}`, "Error Recording Proposal");
+              }
+            } catch {
+              window.showCustomAlert("Could not reach PIPELINE.", "Network Error");
+            }
           }
-        } catch {
-          alert("Could not reach PIPELINE.");
-        }
+        );
       });
     });
   }
@@ -768,7 +826,7 @@
       await renderNextActions(oppId);
     } catch (err) {
       input.value = title;
-      alert(`Could not save the next action to PIPELINE (${err.message}).`);
+      window.showCustomAlert(`Could not save the next action to PIPELINE (${err.message}).`, "Action Save Failed");
     }
   };
 
@@ -783,7 +841,7 @@
       if (!body.ok) throw new Error(body.error);
       await renderNextActions(oppId);
     } catch (err) {
-      alert(`Could not update the next action (${err.message}).`);
+      window.showCustomAlert(`Could not update the next action (${err.message}).`, "Action Update Failed");
       await renderNextActions(oppId);
     }
   };
@@ -888,7 +946,7 @@
     setOverride(oppId, "holding", holding);
     setOverride(oppId, "askingPrice", asking);
 
-    alert("Saved to this browser only. PIPELINE does not persist underwriting assumptions \u2014 the API is read-only.");
+    window.showCustomAlert("Saved to this browser only. PIPELINE does not persist underwriting assumptions \u2014 the API is read-only.", "Local Underwriting Saved");
   };
 
   window.saveStageChange = (oppId) => {
@@ -899,18 +957,26 @@
     const select = document.getElementById("detail-stage-select");
     const target = select ? formatStage(select.value) : "another stage";
     const title = `Review stage placement — proposed: ${target}`;
-    if (!confirm(`PIPELINE has no stage-change endpoint, so the record cannot be moved from here.\n\nRecord a next action instead?\n\n"${title}"`)) return;
-
-    fetch("/api/v1/operator/next-actions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ opportunityId: oppId, title }),
-    })
-      .then((r) => r.json())
-      .then((b) => alert(b.ok
-        ? "Saved as a next action in PIPELINE. The stage itself is unchanged."
-        : `Could not save the next action (${b.error || "unknown error"}).`))
-      .catch(() => alert("Could not reach PIPELINE to save the next action."));
+    window.showCustomConfirm(
+      `PIPELINE has no stage-change endpoint, so the record cannot be moved from here.<br/><br/>Record a Next Action instead?<br/><br/><strong>"${title}"</strong>`,
+      "Stage Mutation Gated",
+      () => {
+        fetch("/api/v1/operator/next-actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ opportunityId: oppId, title }),
+        })
+          .then((r) => r.json())
+          .then((b) => {
+            if (b.ok) {
+              window.showCustomAlert("Saved as a next action in PIPELINE. The stage itself is unchanged.", "Next Action Saved");
+            } else {
+              window.showCustomAlert(`Could not save the next action (${b.error || "unknown error"}).`, "Error Saving Next Action");
+            }
+          })
+          .catch(() => window.showCustomAlert("Could not reach PIPELINE to save the next action.", "Network Error"));
+      }
+    );
   };
 
   window.toggleDetailTask = async (oppId, key, label, checked) => {
@@ -918,7 +984,7 @@
       await operatorPost("checklist", { opportunityId: oppId, key, label, checked });
       await renderChecklist(oppId);
     } catch (err) {
-      alert(`Could not save checklist state to PIPELINE (${err.message}).`);
+      window.showCustomAlert(`Could not save checklist state to PIPELINE (${err.message}).`, "Checklist Error");
       await renderChecklist(oppId);
     }
   };
@@ -936,13 +1002,43 @@
       await renderNotes(oppId);
     } catch (err) {
       input.value = text;
-      alert(`Could not save the note to PIPELINE (${err.message}).`);
+      window.showCustomAlert(`Could not save the note to PIPELINE (${err.message}).`, "Note Save Error");
     }
   };
 
   // PIPER Co-pilot Widget Controls
   function initPiperWidget() {
     const toggle = document.getElementById("piper-toggle");
+    const collapseBtn = document.getElementById("piper-collapse-btn");
+    const widget = document.getElementById("piper-widget");
+    
+    if (collapseBtn && widget) {
+      collapseBtn.addEventListener("click", () => {
+        widget.classList.toggle("collapsed");
+        const collapsed = widget.classList.contains("collapsed");
+        document.body.classList.toggle("has-collapsed-piper", collapsed);
+        collapseBtn.textContent = collapsed ? "‹" : "›";
+        localStorage.setItem("piper_collapsed", collapsed);
+      });
+      if (localStorage.getItem("piper_collapsed") === "true") {
+        widget.classList.add("collapsed");
+        document.body.classList.add("has-collapsed-piper");
+        collapseBtn.textContent = "‹";
+      }
+      
+      const statusDot = widget.querySelector(".status-dot");
+      if (statusDot) {
+        statusDot.addEventListener("click", () => {
+          if (widget.classList.contains("collapsed")) {
+            widget.classList.remove("collapsed");
+            document.body.classList.remove("has-collapsed-piper");
+            collapseBtn.textContent = "›";
+            localStorage.setItem("piper_collapsed", "false");
+          }
+        });
+      }
+    }
+
     if (toggle) {
       toggle.addEventListener("click", () => {
         piperDrawer.classList.toggle("hidden");

@@ -714,6 +714,11 @@ button:disabled { opacity: .4; cursor: not-allowed; }
       "side main piper"
       "side foot piper";
     overflow-x: hidden;
+    transition: grid-template-columns 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+
+  body.has-collapsed-piper {
+    grid-template-columns: 264px minmax(0, 1fr) 60px;
   }
 
   .piper-widget {
@@ -726,6 +731,11 @@ button:disabled { opacity: .4; cursor: not-allowed; }
     height: 100vh !important;
     z-index: 40 !important;
     margin: 0 !important;
+    transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+
+  .piper-widget.collapsed {
+    width: 60px !important;
   }
 
   .piper-toggle {
@@ -745,6 +755,36 @@ button:disabled { opacity: .4; cursor: not-allowed; }
     box-shadow: none !important;
     display: flex !important;
     animation: none !important;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+
+  .piper-widget.collapsed .piper-drawer {
+    overflow: hidden;
+  }
+
+  .piper-widget.collapsed .piper-header {
+    flex-direction: column;
+    padding: 20px 0;
+    gap: 20px;
+  }
+
+  .piper-widget.collapsed .piper-status span:not(.status-dot),
+  .piper-widget.collapsed .piper-badge,
+  .piper-widget.collapsed .piper-state-chip,
+  .piper-widget.collapsed .piper-provider,
+  .piper-widget.collapsed .piper-stop,
+  .piper-widget.collapsed .piper-context-bar,
+  .piper-widget.collapsed .piper-canvas,
+  .piper-widget.collapsed .piper-chat-history,
+  .piper-widget.collapsed .quick-actions-bar,
+  .piper-widget.collapsed .piper-chat-form,
+  .piper-widget.collapsed .piper-state-note,
+  .piper-widget.collapsed .piper-disclosure {
+    display: none !important;
+  }
+
+  .piper-widget.collapsed .status-dot {
+    cursor: pointer;
   }
 }
 
@@ -1273,6 +1313,109 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   margin-left: 8px;
   display: inline-block;
   vertical-align: middle;
+}.piper-collapse-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 8px;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+.piper-collapse-btn:hover {
+  color: #fff;
+  transform: scale(1.15);
 }
 
+/* Custom In-App Modal Dialogs */
+.custom-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 2, 8, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: modalFadeIn 0.2s ease-out;
+}
 
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.custom-modal {
+  background: rgba(16, 12, 30, 0.95);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  box-shadow: 0 0 35px rgba(139, 92, 246, 0.25), 0 20px 50px rgba(0,0,0,0.85);
+  border-radius: var(--radius);
+  padding: 24px;
+  width: 440px;
+  max-width: 90vw;
+  animation: modalScaleUp 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+  backdrop-filter: blur(16px);
+}
+
+@keyframes modalScaleUp {
+  from { transform: scale(0.92) translateY(12px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.custom-modal-header {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11.5px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #a78bfa;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding-bottom: 8px;
+}
+
+.custom-modal-body {
+  font-size: 13.5px;
+  color: #e5e7eb;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.custom-modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.custom-modal-actions button {
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.custom-modal-actions button.primary {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+}
+
+.custom-modal-actions button.primary:hover {
+  background: var(--accent-dk);
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+}
+
+.custom-modal-actions button.secondary {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.custom-modal-actions button.secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
