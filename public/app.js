@@ -289,7 +289,7 @@
       
       element.style.transform = `perspective(1000px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateY(-2px)`;
       element.style.boxShadow = "0 8px 24px rgba(0,0,0,0.5)";
-      element.style.borderColor = "rgba(139, 92, 246, 0.25)";
+      element.style.borderColor = "rgba(0, 240, 255, 0.25)";
     });
     
     element.addEventListener("mouseleave", () => {
@@ -739,7 +739,7 @@
             <span>ARV Target: ${money(arv)}</span>
           </div>
           <div style="height: 8px; background: rgba(255,255,255,0.05); border-radius: 999px; overflow: hidden; position: relative;">
-            <div style="position: absolute; left: 0; top: 0; bottom: 0; width: ${maoThreshold}%; background: linear-gradient(90deg, #7c3aed, #10b981); opacity: 0.85; border-radius: 999px;"></div>
+            <div style="position: absolute; left: 0; top: 0; bottom: 0; width: ${maoThreshold}%; background: linear-gradient(90deg, #00f0ff, #10b981); opacity: 0.85; border-radius: 999px;"></div>
             <div style="position: absolute; left: ${maoThreshold}%; top: 0; bottom: 0; width: 2px; background: #fff; box-shadow: 0 0 6px #fff; z-index: 10;"></div>
           </div>
           <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 8px;">
@@ -761,7 +761,7 @@
       const victorMao = Math.max(0, Math.round(o.underwriting.arv * 0.75 - o.underwriting.rehab - o.underwriting.fee - o.underwriting.holding));
       const victorWarning = o.underwriting.askingPrice > victorMao;
       victorHtml = `
-        <div class="panel" style="border-left: 2px solid var(--accent); background: rgba(139, 92, 246, 0.02);">
+        <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <h2 style="margin:0;">Authoritative Underwriting (Victor)</h2>
             <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Victor</span>
