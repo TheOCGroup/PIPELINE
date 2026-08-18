@@ -17,5 +17,9 @@ export function healthPayload({ db, config }) {
     version: applicationInfo.version,
     database,
     integration: config.integrationEnabled ? "enabled" : "disabled",
+    // Safe operational metadata only. Never expose keys, credentials, paths,
+    // tokens, or provider secrets through this unauthenticated endpoint.
+    piperProvider: config.piperProvider || "none",
+    piperModelConfigured: Boolean(config.piperModel),
   };
 }
