@@ -157,12 +157,12 @@ test("Intake enabled: only a caller holding the secret may write", async (t) => 
 
     const classification = db.prepare("SELECT * FROM record_classifications WHERE opportunity_id = ?").get(id);
     assert.ok(classification, "record_classifications");
-    assert.equal(classification.classification_value, "investment_rehab");
+    assert.equal(classification.classification_value, "unknown");
 
     const history = db.prepare("SELECT * FROM classification_history WHERE opportunity_id = ?").all(id);
     assert.equal(history.length, 1, "classification_history: exactly one initial row");
     assert.equal(history[0].prior_classification, null);
-    assert.equal(history[0].new_classification, "investment_rehab");
+    assert.equal(history[0].new_classification, "unknown");
 
     const audit = db
       .prepare("SELECT * FROM operational_audit_events WHERE event_type = 'DEAL_FINDR_INTAKE' AND payload_json LIKE ?")

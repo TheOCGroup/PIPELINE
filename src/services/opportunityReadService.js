@@ -78,6 +78,7 @@ export class OpportunityReadService {
       stage: opp.stage,
       status: statusForStage(opp.stage),
       classification: opp.classification,
+      isFixture: opp.isFixture ?? false,
       provenance: {
         state: opportunityProvenanceState(opp),
         resolvedSourceMessageId: resolved.resolvedSourceMessageId,
@@ -85,6 +86,7 @@ export class OpportunityReadService {
         recoveredSourceMessageId: opp.source?.recoveredSourceMessageId ?? null,
         recoveryMethod: opp.source?.recoveryMethod ?? null,
         recoveryConfidence: opp.source?.recoveryConfidence ?? null,
+        metadata: opp.source?.provenanceMetadata ?? null
       },
       participants: opp.participants ?? [],
       sources: opp.sources ?? [],

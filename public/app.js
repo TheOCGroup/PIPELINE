@@ -310,7 +310,10 @@
       api("/api/v1/piper/brief").catch(() => ({ ok: true, data: { headline: "Pipeline active", sections: [] } }))
     ]);
     const d = dq.data, s = sys.data, b = briefRes.data;
-    state.opportunities = opps.data;
+    
+    const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
+    const fixtureIds = new Set(opps.data.filter(o => o.isFixture).map(o => o.id));
+    state.opportunities = showFixtures ? opps.data : opps.data.filter(o => !o.isFixture);
 
     const stageCounts = {};
     state.opportunities.forEach(o => {
@@ -318,9 +321,17 @@
       stageCounts[actualStage] = (stageCounts[actualStage] || 0) + 1;
     });
 
+    let filteredSections = b.sections || [];
+    if (!showFixtures) {
+      filteredSections = filteredSections.map(sec => ({
+        ...sec,
+        items: sec.items.filter(item => !item.opportunityId || !fixtureIds.has(item.opportunityId))
+      })).filter(sec => sec.items.length > 0);
+    }
+
     let narrativeParts = [];
-    if (b && b.sections) {
-      for (const sec of b.sections) {
+    if (filteredSections) {
+      for (const sec of filteredSections) {
         const count = sec.items.length;
         if (count > 0) {
           const t = sec.title;
@@ -365,7 +376,7 @@
           <div class="bridge-panel">
             <h2 class="bridge-section-header">Needs Attention / Priority Queue</h2>
             <div class="priority-list">
-              ${b.sections && b.sections.length ? b.sections.map(sec => `
+              ${filteredSections && filteredSections.length ? filteredSections.map(sec => `
                 <div class="priority-group">
                   <div class="priority-group-title">${esc(sec.title)}</div>
                   ${sec.items.map(item => `
@@ -609,6 +620,11 @@
     opportunities();
   };
 
+  window.toggleFixtures = (checked) => {
+    localStorage.setItem("pipeline_show_fixtures", checked ? "true" : "false");
+    opportunities();
+  };
+
   async function opportunities() {
     loading();
     state.activeOppId = null;
@@ -624,16 +640,22 @@
     try { body = await api("/api/v1/opportunities?" + qs.toString()); }
     catch (e) { return errorState("Could not load opportunities: " + e.message); }
     
-    state.opportunities = body.data;
+    const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
+    state.opportunities = showFixtures ? body.data : body.data.filter(o => !o.isFixture);
     const pg = body.meta.pagination;
+    const currentTotal = state.opportunities.length;
     
     let viewHtml = `
       <div class="view-header-row">
         <div>
           <h1>Opportunities</h1>
-          <p class="sub">${pg.total} record(s)${body.meta.demo ? " · DEMO DATA" : ""}</p>
+          <p class="sub">${currentTotal} record(s) active${!showFixtures && body.data.some(o => o.isFixture) ? " (demo fixtures hidden)" : ""}</p>
         </div>
-        <div class="toggle-group">
+        <div class="toggle-group" style="display:flex; align-items:center; gap:16px;">
+          <label class="switch-label" style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; user-select:none;">
+            <input type="checkbox" id="show-fixtures-checkbox" ${showFixtures ? 'checked' : ''} onchange="window.toggleFixtures(this.checked)">
+            <span class="muted" style="font-weight: 500;">Show Demo Fixtures</span>
+          </label>
           <button class="toggle-btn ${currentView === 'board' ? 'active' : ''}" onclick="window.setViewMode('board')">Board</button>
           <button class="toggle-btn ${currentView === 'table' ? 'active' : ''}" onclick="window.setViewMode('table')">Table</button>
         </div>
@@ -779,13 +801,56 @@
       `;
     }
 
+    let heroImgUrl = "";
+    let heroImgBadge = "";
+    
+    const meta = o.provenance?.metadata || {};
+    const imgVerification = meta.imageVerification || {};
+
+    if (meta.operatorPhotoUrl) {
+      heroImgUrl = meta.operatorPhotoUrl;
+      heroImgBadge = "OPERATOR PHOTO";
+    } else if (meta.verifiedSourcePhotoUrl) {
+      heroImgUrl = meta.verifiedSourcePhotoUrl;
+      heroImgBadge = "SOURCE PHOTO";
+    } else if (imgVerification.status === "GOOGLE_STREET_VIEW" && imgVerification.url) {
+      heroImgUrl = imgVerification.url;
+      heroImgBadge = "GOOGLE STREET VIEW";
+    } else if (meta.googlePlaceImageUrl) {
+      heroImgUrl = meta.googlePlaceImageUrl;
+      heroImgBadge = "GOOGLE PLACE IMAGERY";
+    } else if (o.isFixture && o.property && o.property.image) {
+      heroImgUrl = o.property.image;
+      heroImgBadge = "FIXTURE SOURCE PHOTO";
+    }
+
+    let heroImageHtml = "";
+    if (heroImgUrl) {
+      heroImageHtml = `
+        <div class="deal-hero-image-wrap">
+          <img class="deal-hero-img" src="${esc(heroImgUrl)}" alt="Property Image">
+          <span class="deal-hero-img-badge">${esc(heroImgBadge)}</span>
+        </div>
+      `;
+    } else {
+      heroImageHtml = `
+        <div class="deal-hero-image-wrap no-image">
+          <svg class="deal-hero-empty-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 24px; height: 24px; opacity: 0.6; margin-bottom: 4px;">
+            <path d="M3 9.5L12 4l9 5.5M19 8.5V19a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8.5m7 5.5v5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <div class="deal-hero-empty-text">NO VERIFIED PROPERTY IMAGE</div>
+        </div>
+      `;
+    }
+
     // Render columns
     view.innerHTML = `
       <p class="back-link"><a href="/opportunities" data-nav onclick="window.routeTo(event, '/opportunities')">← Back to Opportunities</a></p>
       
       <!-- Property Hero -->
-      <div class="deal-hero">
-        <div class="deal-hero-main">
+      <div class="deal-hero" style="display: flex; gap: 24px; align-items: center;">
+        ${heroImageHtml}
+        <div class="deal-hero-main" style="flex: 1;">
           <div class="deal-hero-badge">${esc(o.id)}</div>
           <h1>${esc(o.property.address)}</h1>
           <div class="deal-hero-sub">

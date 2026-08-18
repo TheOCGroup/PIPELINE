@@ -31,12 +31,14 @@ export class SqliteOpportunityRepository {
         o.pipeline_stage AS stage,
         c.classification_value AS classification,
         o.created_at AS lastActivity,
-        o.created_by AS assignedOperator,
+        o.created_by AS createdBy,
+        o.assigned_acquisition_manager_id AS assignedOperator,
         src.source_type,
         src.source_record_id,
         src.source_message_id,
         src.original_address,
         src.source_timestamp,
+        src.provenance_metadata_json,
         src.conversion_actor,
         o.asking_price
       FROM seller_opportunities o
@@ -58,10 +60,6 @@ export class SqliteOpportunityRepository {
         if (payload.sellerName) sellerName = payload.sellerName;
       }
 
-      let derivedCls = "REAL";
-      if (r.id === "FX-OPP-0004") derivedCls = "SYNTHETIC";
-      else if (r.id === "FX-OPP-0003") derivedCls = "AMBIGUOUS";
-
       return {
         id: r.id,
         code: r.code,
@@ -72,14 +70,16 @@ export class SqliteOpportunityRepository {
         },
         assignedOperator: r.assignedOperator || "operator.demo",
         stage: r.stage || "new_lead",
-        classification: derivedCls,
+        classification: r.classification || "unknown",
         lastActivity: r.lastActivity || new Date().toISOString(),
+        isFixture: r.createdBy === 'system-seed',
         source: {
           sourceType: r.source_type || "property_lead_inbox",
           originalSourceMessageId: r.source_message_id || null,
           recoveredSourceMessageId: null,
           recoveryMethod: null,
-          recoveryConfidence: null
+          recoveryConfidence: null,
+          provenanceMetadata: r.provenance_metadata_json ? parseJson(r.provenance_metadata_json) : null
         },
         participants: [],
         sources: [],
@@ -98,12 +98,14 @@ export class SqliteOpportunityRepository {
         o.pipeline_stage AS stage,
         c.classification_value AS classification,
         o.created_at AS lastActivity,
-        o.created_by AS assignedOperator,
+        o.created_by AS createdBy,
+        o.assigned_acquisition_manager_id AS assignedOperator,
         src.source_type,
         src.source_record_id,
         src.source_message_id,
         src.original_address,
         src.source_timestamp,
+        src.provenance_metadata_json,
         o.asking_price
       FROM seller_opportunities o
       LEFT JOIN seller_opportunity_sources src ON src.opportunity_id = o.id
@@ -129,10 +131,6 @@ export class SqliteOpportunityRepository {
       if (payload.rehab) rehab = payload.rehab;
     }
 
-    let derivedCls = "REAL";
-    if (opp.id === "FX-OPP-0004") derivedCls = "SYNTHETIC";
-    else if (opp.id === "FX-OPP-0003") derivedCls = "AMBIGUOUS";
-
     return {
       id: opp.id,
       code: opp.code,
@@ -143,14 +141,16 @@ export class SqliteOpportunityRepository {
       },
       assignedOperator: opp.assignedOperator || "operator.demo",
       stage: opp.stage || "new_lead",
-      classification: derivedCls,
+      classification: opp.classification || "unknown",
       lastActivity: opp.lastActivity || new Date().toISOString(),
+      isFixture: opp.createdBy === 'system-seed',
       source: {
         sourceType: opp.source_type || "property_lead_inbox",
         originalSourceMessageId: opp.source_message_id || null,
         recoveredSourceMessageId: null,
         recoveryMethod: null,
-        recoveryConfidence: null
+        recoveryConfidence: null,
+        provenanceMetadata: opp.provenance_metadata_json ? parseJson(opp.provenance_metadata_json) : null
       },
       underwriting: {
         arv,

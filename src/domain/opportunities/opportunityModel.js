@@ -19,8 +19,10 @@ export function opportunityProvenanceState(opp) {
 export function toListItem(opp) {
   return {
     id: opp.id,
+    code: opp.code,
     sellerDisplayName: opp.sellerDisplayName,
     propertyRef: opp.property?.externalPropertyId ?? null,
+    property: opp.property ? { address: opp.property.address } : null,
     stage: opp.stage,
     source: opp.source?.sourceType ?? null,
     provenanceState: opportunityProvenanceState(opp),
@@ -28,5 +30,7 @@ export function toListItem(opp) {
     lastActivity: opp.lastActivity,
     assignedOperator: opp.assignedOperator ?? null,
     status: statusForStage(opp.stage),
+    isFixture: opp.isFixture ?? false,
+    provenanceMetadata: opp.source?.provenanceMetadata ?? null
   };
 }
