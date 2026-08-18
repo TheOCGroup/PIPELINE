@@ -340,7 +340,24 @@ export class PiperRuntime {
   brief({ excludeFixtures = false } = {}) {
     const snapshot = this.context.snapshot();
     if (excludeFixtures) {
+      const fixtureIds = new Set(
+        snapshot.opportunities.filter((o) => o.isFixture).map((o) => o.id)
+      );
       snapshot.opportunities = snapshot.opportunities.filter((o) => !o.isFixture);
+      if (snapshot.recent) {
+        if (snapshot.recent.stageEvents) {
+          snapshot.recent.stageEvents = snapshot.recent.stageEvents.filter((e) => !fixtureIds.has(e.opportunity_id));
+        }
+        if (snapshot.recent.classificationChanges) {
+          snapshot.recent.classificationChanges = snapshot.recent.classificationChanges.filter((c) => !fixtureIds.has(c.opportunity_id));
+        }
+        if (snapshot.recent.victorUpdates) {
+          snapshot.recent.victorUpdates = snapshot.recent.victorUpdates.filter((v) => !fixtureIds.has(v.opportunity_id));
+        }
+        if (snapshot.recent.intakes) {
+          snapshot.recent.intakes = snapshot.recent.intakes.filter((i) => !fixtureIds.has(i.opportunityId));
+        }
+      }
     }
     return { brief: buildBrief(snapshot), provider: this.provider.describe() };
   }
