@@ -188,6 +188,13 @@ export class PiperContextService {
         source: {
           sourceType: r.source_type || null,
           originalSourceMessageId: r.source_message_id || null,
+          apn: (() => {
+            try {
+              return r.original_source_json ? (JSON.parse(r.original_source_json).apn || null) : null;
+            } catch {
+              return null;
+            }
+          })()
         },
         provenanceState: r.resolution_status || null,
         recordClassification: r.classification_value || null,

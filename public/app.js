@@ -895,7 +895,7 @@
                     <input type="number" id="prep-price" value="${Math.round(o.underwriting.mao)}" />
                   </div>
                   <div class="form-group-compact">
-                    <label>Strategy Type (Operator Default)</label>
+                    <label>Strategy Type (Piper Suggested)</label>
                     <select id="prep-strategy" style="background:#111; color:#fff; border:1px solid #333; padding: 4px; border-radius: 4px;">
                       <option value="cash_purchase" selected>Cash Purchase</option>
                       <option value="assignment">Assignment</option>
@@ -908,15 +908,15 @@
                     </select>
                   </div>
                   <div class="form-group-compact">
-                    <label>Earnest Money (Operator Default)</label>
+                    <label>Earnest Money (Piper Suggested)</label>
                     <input type="number" id="prep-earnest" value="1000" />
                   </div>
                   <div class="form-group-compact">
-                    <label>Inspection Days (Operator Default)</label>
+                    <label>Inspection Days (Piper Suggested)</label>
                     <input type="number" id="prep-inspection" value="10" />
                   </div>
                   <div class="form-group-compact">
-                    <label>Closing Days (Operator Default)</label>
+                    <label>Closing Days (Piper Suggested)</label>
                     <input type="number" id="prep-closing" value="30" />
                   </div>
                   <div class="form-group-compact" style="grid-column: span 2;">

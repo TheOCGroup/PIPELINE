@@ -437,10 +437,10 @@ function generatePreDecisionBrief(o, s) {
   const recPrice = Math.round(o.underwriting.mao);
   
   const answer = `**SUBJECT**: ${o.address || o.id} (${o.id})
-**SOURCE / HUNTER**: Originated from Hunter / Deal Finder under source type '${o.source.sourceType || "deal_scout_handoff"}' with APN ${o.source.originalSourceMessageId || "N/A"}.
+**SOURCE / HUNTER**: Originated from Hunter / Deal Finder under source type '${o.source.sourceType || "deal_scout_handoff"}' with APN ${o.source.apn || "N/A"}.
 **VICTOR FINDINGS**: Target ARV of ${money(o.underwriting.arv)} and rehab cost of ${money(o.underwriting.rehab)}. Calculated Maximum Allowable Offer (MAO) is ${money(o.underwriting.mao)}.
 **EVIDENCE STRENGTH**: Strong (${Math.round(o.underwriting.confidence * 100)}% confidence). Supported by ${compLabel} in the local neighborhood.
-**RISKS**: Structure is active, but ${o.underwriting.limitations || "standard minor renovations needed"}.
+**RISKS**: Structure is active, but ${o.underwriting.limitations || "Limitations not recorded"}.
 **UNKNOWNS**: Property interior condition has not been physically inspected.
 **ASKING PRICE**: ${money(o.underwriting.askingPrice)}.
 **REFERENCE ECONOMICS**: Asking price is ${money(o.underwriting.askingPrice)}, which is ${money(Math.abs(o.underwriting.askingPrice - o.underwriting.mao))} ${o.underwriting.askingPrice <= o.underwriting.mao ? "below" : "above"} Victor's MAO (${money(o.underwriting.mao)}).

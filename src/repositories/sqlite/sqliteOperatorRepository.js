@@ -180,17 +180,23 @@ export class SqliteOperatorRepository {
   }
 
   prepareOffer({ opportunityId, proposedPrice, strategyType, earnestMoney, inspectionDays, closingDays, contingencies, internalNotes, actor }) {
+    if (proposedPrice === undefined || proposedPrice === null) throw new Error("proposedPrice is required");
+    if (!strategyType) throw new Error("strategyType is required");
+    if (earnestMoney === undefined || earnestMoney === null) throw new Error("earnestMoney is required");
+    if (inspectionDays === undefined || inspectionDays === null) throw new Error("inspectionDays is required");
+    if (closingDays === undefined || closingDays === null) throw new Error("closingDays is required");
+
     const opp = this.db.prepare("SELECT * FROM seller_opportunities WHERE id = ?").get(opportunityId);
     if (!opp) throw new Error("opportunity_not_found");
 
     const uw = this.db.prepare("SELECT * FROM opportunity_underwriting_refs WHERE opportunity_id = ?").get(opportunityId);
     if (!uw) throw new Error("underwriting_not_found");
 
-    const strategy = strategyType || "cash_purchase";
-    const price = proposedPrice !== undefined ? proposedPrice : Math.round(uw.mao || opp.asking_price * 0.75);
-    const em = earnestMoney !== undefined ? earnestMoney : 1000;
-    const insp = inspectionDays !== undefined ? inspectionDays : 10;
-    const cls = closingDays !== undefined ? closingDays : 30;
+    const strategy = strategyType;
+    const price = proposedPrice;
+    const em = earnestMoney;
+    const insp = inspectionDays;
+    const cls = closingDays;
     const cont = contingencies || JSON.stringify(["Subject to satisfactory inspection of major systems"]);
     const notes = internalNotes || "Initial draft prepared by operator via Victor underwriting recommendation.";
 
