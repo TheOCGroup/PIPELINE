@@ -863,6 +863,9 @@
             <div style="font-size: 12px; margin-bottom: 8px; opacity: 0.8; font-weight: 600;">PIPELINE — 75% Rule Reference</div>
             ${calcChartHtml(arv, rehab, fee, holding, o.underwriting.askingPrice || 0, victorMao, victorWarning)}
           </div>
+        `;
+      }
+    }
           let offersHtml = "";
     if (o.underwriting) {
       const hasOffer = o.offers && o.offers.length > 0;
