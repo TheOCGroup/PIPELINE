@@ -12,6 +12,7 @@ export function healthPayload({ db, config }) {
   }
   return {
     status: "ok",
+    application: applicationInfo.name,
     service: applicationInfo.service,
     version: applicationInfo.version,
     database,
