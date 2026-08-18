@@ -9,11 +9,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/reactor-runtime-fixes.css" />
+    <link rel="stylesheet" href="/reactor-tone-lock.css" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
     
-    <!-- Navigation Rail -->
     <nav class="nav" aria-label="Primary">
       <div class="brand">
         <div class="brand-header">
@@ -26,38 +26,17 @@
       </div>
       
       <div class="nav-links">
-        <a href="/" data-nav id="nav-overview">
-          <span class="nav-icon">◈</span>
-          <span>Overview</span>
-        </a>
-        <a href="/opportunities" data-nav id="nav-opportunities">
-          <span class="nav-icon">▤</span>
-          <span>Opportunities</span>
-        </a>
-        <a href="/provenance" data-nav id="nav-provenance">
-          <span class="nav-icon">◎</span>
-          <span>Provenance</span>
-        </a>
-        <a href="/classifications" data-nav id="nav-classifications">
-          <span class="nav-icon">❖</span>
-          <span>Classifications</span>
-        </a>
-        <a href="/data-quality" data-nav id="nav-data-quality">
-          <span class="nav-icon">◉</span>
-          <span>Data Quality</span>
-        </a>
-        <a href="/system" data-nav id="nav-system">
-          <span class="nav-icon">⚙</span>
-          <span>System</span>
-        </a>
+        <a href="/" data-nav id="nav-overview"><span class="nav-icon">◈</span><span>Overview</span></a>
+        <a href="/opportunities" data-nav id="nav-opportunities"><span class="nav-icon">▤</span><span>Opportunities</span></a>
+        <a href="/provenance" data-nav id="nav-provenance"><span class="nav-icon">◎</span><span>Provenance</span></a>
+        <a href="/classifications" data-nav id="nav-classifications"><span class="nav-icon">❖</span><span>Classifications</span></a>
+        <a href="/data-quality" data-nav id="nav-data-quality"><span class="nav-icon">◉</span><span>Data Quality</span></a>
+        <a href="/system" data-nav id="nav-system"><span class="nav-icon">⚙</span><span>System</span></a>
       </div>
 
       <div class="sidebar-telemetry">
         <div id="demo-banner" class="demo-banner" role="status" hidden>DEMO FIXTURES</div>
-        <div class="system-health-status">
-          <span class="health-pulse"></span>
-          <span id="sidebar-connection-status">Operational</span>
-        </div>
+        <div class="system-health-status"><span class="health-pulse"></span><span id="sidebar-connection-status">Operational</span></div>
         <div class="sidebar-meta-row">
           <span id="sidebar-active-provider" class="provider-pill">Vertex AI · gemini-2.5-flash</span>
           <span id="app-version" class="telemetry-pill">v0.1.0</span>
@@ -65,46 +44,27 @@
       </div>
     </nav>
 
-    <!-- Main Workspace -->
     <main id="main" tabindex="-1">
       <div id="view" aria-live="polite"><p class="muted">Loading workspace...</p></div>
     </main>
 
-    <!-- Piper Operating Workspace -->
     <aside id="piper-widget" class="piper-widget" aria-label="Piper Intelligence Workspace">
-      <!-- Collapsed Toggle Button -->
       <button id="piper-toggle" class="piper-toggle" aria-label="Expand Piper Operating Layer">
-        <span class="piper-orb-mini"></span>
-        <span class="piper-toggle-text">Piper</span>
+        <span class="piper-orb-mini"></span><span class="piper-toggle-text">Piper</span>
       </button>
-      
-      <!-- Primary Operating Drawer -->
       <div id="piper-drawer" class="piper-drawer">
-        <!-- Header -->
         <div class="piper-header">
           <div class="piper-status">
-            <span class="status-dot">
-              <span class="status-orb"></span>
-              <span class="status-ring"></span>
-            </span>
+            <span class="status-dot"><span class="status-orb"></span><span class="status-ring"></span></span>
             <div class="piper-title-group">
-              <div class="piper-title-row">
-                <span class="piper-name">Piper</span>
-                <span class="piper-badge">OPERATING LAYER</span>
-              </div>
+              <div class="piper-title-row"><span class="piper-name">Piper</span><span class="piper-badge">OPERATING LAYER</span></div>
               <div class="piper-subtext">Primary Operating Intelligence</div>
             </div>
           </div>
-
           <div class="piper-header-actions">
-            <!-- Run state and provider badge -->
-            <span id="piper-provider" class="piper-provider connected">
-              <span class="provider-pulse"></span>
-              <span id="piper-provider-text">Vertex AI · gemini-2.5-flash</span>
-            </span>
+            <span id="piper-provider" class="piper-provider connected"><span class="provider-pulse"></span><span id="piper-provider-text">Vertex AI · gemini-2.5-flash</span></span>
             <span id="piper-state-chip" class="piper-state-chip s-idle">idle</span>
             <button type="button" id="piper-stop" class="piper-stop" hidden onclick="window.piperCancel()" title="Interrupt Piper execution">■ Stop</button>
-            
             <div class="workspace-mode-toggles">
               <button type="button" id="piper-expand-btn" class="piper-tool-btn" title="Toggle Expanded Operating Workspace (Wide)">⤢</button>
               <button type="button" id="piper-collapse-btn" class="piper-tool-btn" title="Collapse Operating Panel">›</button>
@@ -112,37 +72,21 @@
           </div>
         </div>
 
-        <!-- Context & Directives Banner -->
         <div id="piper-context-bar" class="piper-context-bar">
-          <div class="context-indicator">
-            <span class="context-pulse"></span>
-            <span id="piper-context-text">Live Workspace: 14 Active Opportunities</span>
-          </div>
+          <div class="context-indicator"><span class="context-pulse"></span><span id="piper-context-text">Live Workspace: 14 Active Opportunities</span></div>
           <div id="piper-active-deal-card" class="piper-active-deal-card hidden"></div>
         </div>
 
-        <!-- Active Intelligence Stream & Work Canvas -->
         <div id="piper-canvas" class="piper-canvas">
           <div class="canvas-glow"></div>
           <div class="canvas-content">
-            <div class="canvas-indicator">
-              <span class="canvas-pulse"></span>
-              <span id="piper-canvas-title">Active Operational Intelligence</span>
-            </div>
-            <div id="piper-canvas-details" class="canvas-details">
-              <div class="intel-event-list" id="piper-intelligence-stream">
-                <!-- Clickable Stream Events -->
-              </div>
-            </div>
+            <div class="canvas-indicator"><span class="canvas-pulse"></span><span id="piper-canvas-title">Active Operational Intelligence</span></div>
+            <div id="piper-canvas-details" class="canvas-details"><div class="intel-event-list" id="piper-intelligence-stream"></div></div>
           </div>
         </div>
         
-        <!-- Operating Chat & Decision Stream -->
-        <div id="piper-chat-history" class="piper-chat-history">
-          <!-- Live conversation & structured cards -->
-        </div>
+        <div id="piper-chat-history" class="piper-chat-history"></div>
         
-        <!-- Interactive Prompt Suggestions & Quick Actions -->
         <div class="quick-actions-bar" id="piper-quick-actions">
           <button type="button" onclick="window.triggerPiperQuickAction('attention')" class="quick-action-btn pulse-glow">What needs attention?</button>
           <button type="button" onclick="window.triggerPiperQuickAction('why')" class="quick-action-btn">Show me why</button>
@@ -150,14 +94,11 @@
           <button type="button" onclick="window.triggerPiperQuickAction('unresolved')" class="quick-action-btn">Unresolved classifications</button>
         </div>
         
-        <!-- Operating Command Input Bar -->
         <div class="piper-input-container">
           <form id="piper-chat-form" class="piper-chat-form">
             <div class="input-wrapper">
               <input type="text" id="piper-chat-input" placeholder="Command Piper: e.g. 'What needs my attention?', 'Show me why', 'Go to underwriting'..." required autocomplete="off" />
-              <button type="submit" class="piper-send-btn" title="Execute instruction">
-                <span class="send-icon">▲</span>
-              </button>
+              <button type="submit" class="piper-send-btn" title="Execute instruction"><span class="send-icon">▲</span></button>
             </div>
           </form>
           <div class="piper-input-footer">
@@ -173,9 +114,7 @@
       <span id="footer-mode" class="muted">Live Provider: Vertex AI (google/gemini-2.5-flash)</span>
     </footer>
 
-    <!-- Testing Compatibility Anchor -->
     <div style="display: none;" aria-hidden="true">PIPELINE Overview standalone</div>
-
     <script src="/app.js"></script>
   </body>
 </html>
