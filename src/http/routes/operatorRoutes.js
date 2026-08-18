@@ -156,6 +156,12 @@ export async function handleOperatorRoutes(req, res, ctx, url, segments) {
           return ok(res, { offer: updated }, 200);
         }
         const oppId = text(body.opportunityId, "opportunityId", { max: 200 });
+        if (body.proposedPrice === undefined || body.proposedPrice === null) throw new BadRequest("missing_proposedPrice");
+        if (!body.strategyType) throw new BadRequest("missing_strategyType");
+        if (body.earnestMoney === undefined || body.earnestMoney === null) throw new BadRequest("missing_earnestMoney");
+        if (body.inspectionDays === undefined || body.inspectionDays === null) throw new BadRequest("missing_inspectionDays");
+        if (body.closingDays === undefined || body.closingDays === null) throw new BadRequest("missing_closingDays");
+
         const created = repo.prepareOffer({
           opportunityId: oppId,
           proposedPrice: body.proposedPrice,

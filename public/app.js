@@ -863,11 +863,7 @@
             <div style="font-size: 12px; margin-bottom: 8px; opacity: 0.8; font-weight: 600;">PIPELINE — 75% Rule Reference</div>
             ${calcChartHtml(arv, rehab, fee, holding, o.underwriting.askingPrice || 0, victorMao, victorWarning)}
           </div>
-        `;
-      }
-    }
-
-    let offersHtml = "";
+          let offersHtml = "";
     if (o.underwriting) {
       const hasOffer = o.offers && o.offers.length > 0;
       if (!hasOffer) {
@@ -878,14 +874,69 @@
           recText = "Hold. Insufficient comparable sales evidence is available for this property. Do not prepare an offer at this time.";
           recActionHtml = `<div style="color: #ff4444; font-weight: 600; font-size: 13px; margin-top: 8px;">HOLD / INSUFFICIENT EVIDENCE</div>`;
         } else {
-          recText = `Prepare Offer. High-confidence underwriting exists based on ${o.underwriting.evidence?.comps?.length || 3} local comps. Recommend starting at Victor MAO of ${money(o.underwriting.mao)} using a Cash Purchase strategy.`;
+          const compsCount = o.underwriting.evidence?.comps?.length;
+          const compLabel = compsCount !== undefined ? `${compsCount} comps` : "Comparable count unavailable";
+          recText = `High-confidence underwriting exists based on ${compLabel}.`;
+          
           recActionHtml = `
-            <div style="margin-top: 12px; display: flex; gap: 8px;">
-              <button class="primary" style="background: var(--ok); border-color: var(--ok); color: #000; font-size: 12px; padding: 6px 12px;" onclick="window.prepareOffer('${esc(o.id)}')">Prepare Offer</button>
+            <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">
+              <button class="primary" style="background: var(--ok); border-color: var(--ok); color: #000; font-size: 12px; padding: 6px 12px; align-self: flex-start;" onclick="window.togglePrepareOfferForm()">Prepare Offer</button>
+              
+              <div id="prepare-offer-form" style="display: none; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px; margin-top: 12px; width: 100%;">
+                <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase;">Prepare Offer terms</h4>
+                <div style="font-size: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
+                  <div><strong>Victor Analysis (Victor MAO):</strong> ${money(o.underwriting.mao)}</div>
+                  <div><strong>Piper Recommended Opening Price:</strong> ${money(Math.round(o.underwriting.mao))}</div>
+                  <div class="muted" style="margin-top: 4px;">(Recommendation is based on Cash Purchase under standard 75% rule pricing guidelines)</div>
+                </div>
+                <div class="form-grid-compact">
+                  <div class="form-group-compact">
+                    <label>Proposed Purchase Price</label>
+                    <input type="number" id="prep-price" value="${Math.round(o.underwriting.mao)}" />
+                  </div>
+                  <div class="form-group-compact">
+                    <label>Strategy Type (Operator Default)</label>
+                    <select id="prep-strategy" style="background:#111; color:#fff; border:1px solid #333; padding: 4px; border-radius: 4px;">
+                      <option value="cash_purchase" selected>Cash Purchase</option>
+                      <option value="assignment">Assignment</option>
+                      <option value="novation">Novation</option>
+                      <option value="seller_finance">Seller Finance</option>
+                      <option value="subject_to">Subject To</option>
+                      <option value="lease_option">Lease Option</option>
+                      <option value="listing_referral">Listing Referral</option>
+                      <option value="no_offer">No Offer</option>
+                    </select>
+                  </div>
+                  <div class="form-group-compact">
+                    <label>Earnest Money (Operator Default)</label>
+                    <input type="number" id="prep-earnest" value="1000" />
+                  </div>
+                  <div class="form-group-compact">
+                    <label>Inspection Days (Operator Default)</label>
+                    <input type="number" id="prep-inspection" value="10" />
+                  </div>
+                  <div class="form-group-compact">
+                    <label>Closing Days (Operator Default)</label>
+                    <input type="number" id="prep-closing" value="30" />
+                  </div>
+                  <div class="form-group-compact" style="grid-column: span 2;">
+                    <label>Contingencies</label>
+                    <input type="text" id="prep-contingencies" style="width: 100%; background:#111; color:#fff; border: 1px solid #333; padding:4px;" value="Subject to satisfactory inspection of major systems" />
+                  </div>
+                  <div class="form-group-compact" style="grid-column: span 2;">
+                    <label>Internal Notes</label>
+                    <textarea id="prep-notes" style="width: 100%; height: 40px; background:#111; color:#fff; border: 1px solid #333; padding:4px; border-radius:4px;">Initial draft prepared by operator.</textarea>
+                  </div>
+                </div>
+                <div style="margin-top: 12px; text-align: right; display: flex; gap: 8px; justify-content: flex-end;">
+                  <button class="primary" style="font-size: 11px; padding: 4px 8px; background: var(--ok); color: #000; border-color: var(--ok);" onclick="window.submitPrepareOffer('${esc(o.id)}')">Submit Draft Offer</button>
+                  <button style="font-size: 11px; padding: 4px 8px;" onclick="window.togglePrepareOfferForm(false)">Cancel</button>
+                </div>
+              </div>
             </div>
           `;
         }
-
+ 
         offersHtml = `
           <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -1394,11 +1445,45 @@
   };
 
   window.prepareOffer = async (oppId) => {
+    window.togglePrepareOfferForm(true);
+  };
+
+  window.togglePrepareOfferForm = (forceOpen) => {
+    const el = document.getElementById("prepare-offer-form");
+    if (el) {
+      if (forceOpen === true) {
+        el.style.display = "block";
+      } else if (forceOpen === false) {
+        el.style.display = "none";
+      } else {
+        el.style.display = el.style.display === "none" ? "block" : "none";
+      }
+    }
+  };
+
+  window.submitPrepareOffer = async (oppId) => {
+    const price = Number(document.getElementById("prep-price").value || 0);
+    const strategyType = document.getElementById("prep-strategy").value;
+    const earnestMoney = Number(document.getElementById("prep-earnest").value || 0);
+    const inspectionDays = Number(document.getElementById("prep-inspection").value || 0);
+    const closingDays = Number(document.getElementById("prep-closing").value || 0);
+    const contingencies = JSON.stringify([document.getElementById("prep-contingencies").value]);
+    const internalNotes = document.getElementById("prep-notes").value;
+
     try {
       const res = await fetch("/api/v1/operator/offers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opportunityId: oppId })
+        body: JSON.stringify({
+          opportunityId: oppId,
+          proposedPrice: price,
+          strategyType,
+          earnestMoney,
+          inspectionDays,
+          closingDays,
+          contingencies,
+          internalNotes
+        })
       });
       const body = await res.json();
       if (!body.ok) throw new Error(body.error);

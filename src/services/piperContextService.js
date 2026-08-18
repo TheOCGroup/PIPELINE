@@ -61,10 +61,10 @@ export class PiperContextService {
         ref.arv AS ref_arv, ref.rehab AS ref_rehab,
         ref.mao AS ref_mao, ref.confidence AS ref_confidence,
         ref.limitations AS ref_limitations, ref.created_at AS ref_timestamp,
-        ref.analysis_status AS ref_status,
+        ref.analysis_status AS ref_status, ref.evidence_summary_json AS ref_evidence_summary_json,
         o.last_contacted_at, o.next_scheduled_contact_at,
         o.created_by, o.created_at, o.updated_at,
-        src.original_address, src.source_type, src.conversion_actor,
+        src.original_address, src.source_type, src.source_message_id, src.conversion_actor,
         prov.resolution_status, prov.original_source_json, prov.recovered_source_json,
         cls.classification_value, cls.reason AS classification_reason, cls.determined_by AS classified_by
       FROM seller_opportunities o
@@ -183,6 +183,11 @@ export class PiperContextService {
           recordedAt: r.ref_timestamp,
           attributedTo: r.ref_id ? "Victor" : null,
           status: r.ref_status || null,
+          evidence: r.ref_evidence_summary_json ? JSON.parse(r.ref_evidence_summary_json) : null,
+        },
+        source: {
+          sourceType: r.source_type || null,
+          originalSourceMessageId: r.source_message_id || null,
         },
         provenanceState: r.resolution_status || null,
         recordClassification: r.classification_value || null,

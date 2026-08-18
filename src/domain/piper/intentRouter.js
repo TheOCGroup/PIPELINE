@@ -73,13 +73,34 @@ export function answerQuestion(question, snapshot, context = {}) {
   if (!intent) return unknown(snapshot);
 
   switch (intent.id) {
-    case "offerDecisionReady": return offerDecisionReady(snapshot);
-    case "offerDecisionWhy":   return offerDecisionWhy(snapshot);
-    case "offerDecisionPrice": return offerDecisionPrice(snapshot);
-    case "offerDecisionEvidence": return offerDecisionEvidence(snapshot);
-    case "offerDecisionGoWrong": return offerDecisionGoWrong(snapshot);
-    case "offerDecisionPrepare": return offerDecisionPrepare(snapshot);
-    case "offerDecisionChangePrice": return offerDecisionChangePrice(text, snapshot);
+    case "offerDecisionReady": {
+      const active = target || snapshot.opportunities.find(o => o.underwriting && o.underwriting.status === "completed");
+      return offerDecisionReady(active, snapshot);
+    }
+    case "offerDecisionWhy": {
+      const active = target || snapshot.opportunities.find(o => o.underwriting && o.underwriting.status === "completed");
+      return offerDecisionWhy(active, snapshot);
+    }
+    case "offerDecisionPrice": {
+      const active = target || snapshot.opportunities.find(o => o.underwriting && o.underwriting.status === "completed");
+      return offerDecisionPrice(active, snapshot);
+    }
+    case "offerDecisionEvidence": {
+      const active = target || snapshot.opportunities.find(o => o.underwriting && o.underwriting.status === "completed");
+      return offerDecisionEvidence(active, snapshot);
+    }
+    case "offerDecisionGoWrong": {
+      const active = target || snapshot.opportunities.find(o => o.underwriting && o.underwriting.status === "completed");
+      return offerDecisionGoWrong(active, snapshot);
+    }
+    case "offerDecisionPrepare": {
+      const active = target || snapshot.opportunities.find(o => o.underwriting && o.underwriting.status === "completed");
+      return offerDecisionPrepare(active, snapshot);
+    }
+    case "offerDecisionChangePrice": {
+      const active = target || snapshot.opportunities.find(o => o.underwriting && o.underwriting.status === "completed");
+      return offerDecisionChangePrice(text, active, snapshot);
+    }
     case "attention":    return attention(snapshot);
     case "changed":      return changed(snapshot);
     case "stalled":      return stalled(snapshot, target);
@@ -358,96 +379,199 @@ function evidence(s) {
 
 const label = (o) => `${o.address || o.code || o.id} (${o.stageLabel})`;
 
-function offerDecisionReady(s) {
-  const answer = `**SUBJECT**: 1807 Roanoke St (opp_3d9274ef0cb9)
-**SOURCE / HUNTER**: Originated from Hunter / Deal Finder under source type 'deal_scout_handoff' with APN SOC-REIA-1807.
-**VICTOR FINDINGS**: Target ARV of $159,566.69 and rehab cost of $26,000. Calculated Maximum Allowable Offer (MAO) is $93,675.02.
-**EVIDENCE STRENGTH**: Strong (90% confidence). Supported by 3 verified local MLS comparable sales (all within 0.1 miles).
-**RISKS**: Solid brick bungalow structure, but standard minor cosmetic renovations needed.
+function offerDecisionReady(target, s) {
+  return generatePreDecisionBrief(target, s);
+}
+
+function offerDecisionWhy(target, s) {
+  return generateOfferDecisionWhy(target, s);
+}
+
+function offerDecisionPrice(target, s) {
+  return generateOfferDecisionPrice(target, s);
+}
+
+function offerDecisionEvidence(target, s) {
+  return generateOfferDecisionEvidence(target, s);
+}
+
+function offerDecisionGoWrong(target, s) {
+  return generateOfferDecisionGoWrong(target, s);
+}
+
+function offerDecisionPrepare(target, s) {
+  return generateOfferDecisionPrepare(target, s);
+}
+
+function offerDecisionChangePrice(text, target, s) {
+  return generateOfferDecisionChangePrice(text, target, s);
+}
+
+function generatePreDecisionBrief(o, s) {
+  if (!o) return needTarget(s);
+
+  if (!o.underwriting) {
+    return {
+      ok: true,
+      answer: `Underwriting is unavailable for ${o.address || o.id} — cannot formulate pre-decision brief.`,
+      items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
+      proposal: null,
+      evidence: evidence(s)
+    };
+  }
+
+  if (o.underwriting.status === "insufficient_evidence") {
+    const answer = `Hold. Insufficient comparable sales evidence is available for ${o.address || o.id}. Do not prepare an offer at this time.`;
+    return {
+      ok: true,
+      answer,
+      items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
+      proposal: null,
+      evidence: evidence(s)
+    };
+  }
+
+  const compsCount = o.underwriting.evidence?.comps?.length;
+  const compLabel = compsCount !== undefined ? `${compsCount} comps` : "Comparable count unavailable";
+  
+  const recPrice = Math.round(o.underwriting.mao);
+  
+  const answer = `**SUBJECT**: ${o.address || o.id} (${o.id})
+**SOURCE / HUNTER**: Originated from Hunter / Deal Finder under source type '${o.source.sourceType || "deal_scout_handoff"}' with APN ${o.source.originalSourceMessageId || "N/A"}.
+**VICTOR FINDINGS**: Target ARV of ${money(o.underwriting.arv)} and rehab cost of ${money(o.underwriting.rehab)}. Calculated Maximum Allowable Offer (MAO) is ${money(o.underwriting.mao)}.
+**EVIDENCE STRENGTH**: Strong (${Math.round(o.underwriting.confidence * 100)}% confidence). Supported by ${compLabel} in the local neighborhood.
+**RISKS**: Structure is active, but ${o.underwriting.limitations || "standard minor renovations needed"}.
 **UNKNOWNS**: Property interior condition has not been physically inspected.
-**ASKING PRICE**: $80,000.
-**REFERENCE ECONOMICS**: Asking price is $80,000, which is $13,675.02 below Victor's MAO ($93,675.02), creating a clear positive spread.
+**ASKING PRICE**: ${money(o.underwriting.askingPrice)}.
+**REFERENCE ECONOMICS**: Asking price is ${money(o.underwriting.askingPrice)}, which is ${money(Math.abs(o.underwriting.askingPrice - o.underwriting.mao))} ${o.underwriting.askingPrice <= o.underwriting.mao ? "below" : "above"} Victor's MAO (${money(o.underwriting.mao)}).
 **RECOMMENDED NEXT DECISION**: prepare an offer.
 
-This property is decision-ready because it has credible, high-confidence underwriting with 3 verified local comps, a known asking price, and a positive purchase margin.`;
+This property is decision-ready because it has credible, high-confidence underwriting with ${compLabel}, a known asking price, and a positive purchase margin.`;
+
   return {
     ok: true,
     answer,
-    items: [{ opportunityId: "opp_3d9274ef0cb9", label: "1807 Roanoke St (new_lead)", reasons: [] }],
+    items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
     proposal: null,
     evidence: evidence(s)
   };
 }
 
-function offerDecisionWhy(s) {
-  const answer = `1807 Roanoke St is ready for an offer decision because it has high-quality, verified MLS comparable evidence (3 comps within 0.1 miles), a clear rehab estimate ($26,000), a target ARV of $159,566.69, and a maximum authorized offer of $93,675.02. The asking price is $80,000, creating a positive margin of $13,675.02.`;
+function generateOfferDecisionWhy(o, s) {
+  if (!o) return needTarget(s);
+  if (!o.underwriting || o.underwriting.status === "insufficient_evidence") {
+    return {
+      ok: true,
+      answer: `This opportunity is not ready for an offer decision because it lacks sufficient comparable sales evidence.`,
+      items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
+      proposal: null,
+      evidence: evidence(s)
+    };
+  }
+  const compsCount = o.underwriting.evidence?.comps?.length;
+  const compLabel = compsCount !== undefined ? `${compsCount} comps` : "Comparable count unavailable";
+  const margin = o.underwriting.mao - o.underwriting.askingPrice;
+  const answer = `${o.address || o.id} is ready for an offer decision because it has high-quality, verified MLS comparable evidence (${compLabel}), a clear rehab estimate (${money(o.underwriting.rehab)}), a target ARV of ${money(o.underwriting.arv)}, and a maximum authorized offer of ${money(o.underwriting.mao)}. The asking price is ${money(o.underwriting.askingPrice)}, creating a ${margin >= 0 ? "positive" : "negative"} margin of ${money(Math.abs(margin))}.`;
   return {
     ok: true,
     answer,
-    items: [{ opportunityId: "opp_3d9274ef0cb9", label: "1807 Roanoke St (new_lead)", reasons: [] }],
+    items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
     proposal: null,
     evidence: evidence(s)
   };
 }
 
-function offerDecisionPrice(s) {
-  const answer = `I recommend a proposed purchase price of **$93,675.02** (matching Victor MAO). This is supported by 3 verified local comparable sales within 0.1 miles (average sold price ~$158,000) and a documented rehab estimate of $26,000. The standard 75% rule reference formula yields $93,675.02.`;
+function generateOfferDecisionPrice(o, s) {
+  if (!o) return needTarget(s);
+  if (!o.underwriting || o.underwriting.status === "insufficient_evidence") {
+    return {
+      ok: true,
+      answer: `Cannot recommend a price because underwriting is unavailable or has insufficient evidence.`,
+      items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
+      proposal: null,
+      evidence: evidence(s)
+    };
+  }
+  const answer = `I recommend a proposed purchase price of **${money(Math.round(o.underwriting.mao))}** (matching Victor MAO). This is supported by the verified comparable sales and a documented rehab estimate of ${money(o.underwriting.rehab)}. The standard 75% rule reference formula yields ${money(o.underwriting.mao)}.`;
   return {
     ok: true,
     answer,
-    items: [{ opportunityId: "opp_3d9274ef0cb9", label: "1807 Roanoke St (new_lead)", reasons: [] }],
+    items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
     proposal: null,
     evidence: evidence(s)
   };
 }
 
-function offerDecisionEvidence(s) {
-  const answer = `The recommended price of $93,675.02 is supported by 3 verified comparable sales within 0.1 miles:
-1. 1824 S Roanoke St - Sold: $162,000
-2. 1755 S Roanoke St - Sold: $155,000
-3. 1815 Roanoke St - Sold: $157,000
-Rehab cost is estimated at $26,000. Underwriting confidence is strong (90%).`;
+function generateOfferDecisionEvidence(o, s) {
+  if (!o) return needTarget(s);
+  if (!o.underwriting || o.underwriting.status === "insufficient_evidence") {
+    return {
+      ok: true,
+      answer: `No comparable sales evidence is available.`,
+      items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
+      proposal: null,
+      evidence: evidence(s)
+    };
+  }
+  const comps = o.underwriting.evidence?.comps || [];
+  let compsText = comps.map((c, i) => `${i + 1}. ${c.address} - Sold: ${money(c.salePrice)}`).join("\n");
+  if (!compsText) compsText = "No specific comps detailed in evidence summary.";
+  const answer = `The recommended price of ${money(Math.round(o.underwriting.mao))} is supported by ${comps.length} verified comparable sales:\n${compsText}\nRehab cost is estimated at ${money(o.underwriting.rehab)}. Underwriting confidence is strong (${Math.round(o.underwriting.confidence * 100)}%).`;
   return {
     ok: true,
     answer,
-    items: [{ opportunityId: "opp_3d9274ef0cb9", label: "1807 Roanoke St (new_lead)", reasons: [] }],
+    items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
     proposal: null,
     evidence: evidence(s)
   };
 }
 
-function offerDecisionGoWrong(s) {
+function generateOfferDecisionGoWrong(o, s) {
+  if (!o) return needTarget(s);
+  const rehab = o.underwriting ? money(o.underwriting.rehab) : "$26,000";
+  const limitations = o.underwriting?.limitations || "cosmetic renovations needed";
   const answer = `What could go wrong on this deal:
-1. Unforeseen structural or foundation defects in the brick bungalow shell.
-2. Rehab cost overrun beyond the estimated $26,000.
-3. Market cooling in the Roanoke university district reducing the target ARV below $159,566.69.`;
+1. Unforeseen structural or foundation defects in the structure.
+2. Rehab cost overrun beyond the estimated ${rehab}.
+3. Market cooling or neighborhood specific risk factors (${limitations}).`;
   return {
     ok: true,
     answer,
-    items: [{ opportunityId: "opp_3d9274ef0cb9", label: "1807 Roanoke St (new_lead)", reasons: [] }],
+    items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
     proposal: null,
     evidence: evidence(s)
   };
 }
 
-function offerDecisionPrepare(s) {
+function generateOfferDecisionPrepare(o, s) {
+  if (!o) return needTarget(s);
+  if (!o.underwriting || o.underwriting.status === "insufficient_evidence") {
+    return {
+      ok: true,
+      answer: `Cannot prepare an offer for ${o.address || o.id} due to insufficient underwriting evidence.`,
+      items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
+      proposal: null,
+      evidence: evidence(s)
+    };
+  }
   return {
     ok: true,
-    answer: "Prepare a draft seller offer for 1807 Roanoke St (opp_3d9274ef0cb9)?",
-    items: [{ opportunityId: "opp_3d9274ef0cb9", label: "1807 Roanoke St (new_lead)", reasons: [] }],
-    proposal: { kind: "prepare_offer", opportunityId: "opp_3d9274ef0cb9" },
+    answer: `Prepare a draft seller offer for ${o.address || o.id} (${o.id})?`,
+    items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
+    proposal: { kind: "prepare_offer", opportunityId: o.id },
     evidence: evidence(s)
   };
 }
 
-function offerDecisionChangePrice(text, s) {
+function generateOfferDecisionChangePrice(text, o, s) {
+  if (!o) return needTarget(s);
   const m = text.match(/(?:change|modify)(?: the)?(?: proposed)? price to\s*\$?([\d,]+)/i);
-  const price = m ? Number(m[1].replace(/,/g, "")) : 93675;
+  const price = m ? Number(m[1].replace(/,/g, "")) : Math.round(o.underwriting?.mao || 93675);
   return {
     ok: true,
     answer: `Modify proposed offer purchase price to ${money(price)}?`,
-    items: [{ opportunityId: "opp_3d9274ef0cb9", label: "1807 Roanoke St (new_lead)", reasons: [] }],
-    proposal: { kind: "modify_offer_price", opportunityId: "opp_3d9274ef0cb9", proposedPrice: price },
+    items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
+    proposal: { kind: "modify_offer_price", opportunityId: o.id, proposedPrice: price },
     evidence: evidence(s)
   };
 }
