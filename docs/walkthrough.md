@@ -73,6 +73,6 @@ The exact acceptance sequence was run against the live runtime:
 
 ## Git Commit & Active Configuration
 
-- **Commit**: Pushed to remote main (`43b5b18` + final verification cleanup) (`Milestone 6: Connect Piper live Vertex AI provider, eliminate layout dead space, elevate Piper to workspace operating layer, and enhance Classifications triage`)
+- **Commit**: 91bb91a (`Milestone 6: Connect Piper live Vertex AI provider, eliminate layout dead space, elevate Piper to workspace operating layer, and enhance Classifications triage`)
 - **Active Model Provider**: `vertex-ai` (`google/gemini-2.5-flash` via ADC on project `ocg-pipeline`)
 - **Remaining Blockers**: None. The live server is running and healthy on `http://127.0.0.1:8090`.
