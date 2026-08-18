@@ -50,7 +50,19 @@ export const TOOL_SCHEMAS = Object.freeze([
     type: "function",
     function: {
       name: "get_opportunity",
-      description: "Everything PIPELINE holds about one opportunity, including provenance, classification, underwriting attribution, risks and missing fields.",
+      description: "Everything PIPELINE's bounded operating snapshot holds about one opportunity, including provenance, classification, underwriting attribution, risks and missing fields.",
+      parameters: {
+        type: "object",
+        properties: { opportunityId: { type: "string" } },
+        required: ["opportunityId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_outreach_state",
+      description: "Read the canonical seller contact, offer versions, and immutable communication history for one opportunity. Use this before discussing seller outreach, whether the seller was contacted, or which offer version was sent.",
       parameters: {
         type: "object",
         properties: { opportunityId: { type: "string" } },
@@ -108,14 +120,20 @@ export const TOOL_SCHEMAS = Object.freeze([
     type: "function",
     function: {
       name: "prepare_offer",
-      description: "Prepare a draft seller offer for an opportunity. Requires operator approval.",
+      description: "Propose a draft seller offer using explicit operator-reviewed terms. Requires operator approval before PIPELINE writes the draft.",
       parameters: {
         type: "object",
         properties: {
           opportunityId: { type: "string" },
-          proposedPrice: { type: "number", description: "Optional custom proposed purchase price." }
+          proposedPrice: { type: "number" },
+          strategyType: { type: "string" },
+          earnestMoney: { type: "number" },
+          inspectionDays: { type: "number" },
+          closingDays: { type: "number" },
+          contingencies: { type: ["string", "array"], items: { type: "string" } },
+          internalNotes: { type: "string" }
         },
-        required: ["opportunityId"]
+        required: ["opportunityId", "proposedPrice", "strategyType", "earnestMoney", "inspectionDays", "closingDays"]
       }
     }
   },
@@ -123,21 +141,51 @@ export const TOOL_SCHEMAS = Object.freeze([
     type: "function",
     function: {
       name: "modify_offer",
-      description: "Modify terms of an existing seller offer. Requires operator approval.",
+      description: "Propose a new immutable version of an existing seller offer. Requires operator approval.",
       parameters: {
         type: "object",
         properties: {
           offerId: { type: "string" },
           proposedPrice: { type: "number" },
-          strategyType: { type: "string" }
+          strategyType: { type: "string" },
+          earnestMoney: { type: "number" },
+          inspectionDays: { type: "number" },
+          closingDays: { type: "number" },
+          contingencies: { type: ["string", "array"], items: { type: "string" } },
+          internalNotes: { type: "string" }
         },
         required: ["offerId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "prepare_outreach_draft",
+      description: "Propose creation of an immutable seller outreach draft tied to a real approved offer version and the canonical resolved contact. This only creates a draft after operator approval; it never authorizes or sends outreach.",
+      parameters: {
+        type: "object",
+        properties: {
+          opportunityId: { type: "string" },
+          offerVersionId: { type: "string" },
+          subject: { type: "string" },
+          contentText: { type: "string" },
+          templateVersion: { type: "string" }
+        },
+        required: ["opportunityId", "offerVersionId", "contentText"]
       }
     }
   }
 ]);
 
-const WRITE_TOOLS = new Set(["create_next_action", "add_note", "log_interaction", "prepare_offer", "modify_offer"]);
+const WRITE_TOOLS = new Set([
+  "create_next_action",
+  "add_note",
+  "log_interaction",
+  "prepare_offer",
+  "modify_offer",
+  "prepare_outreach_draft",
+]);
 
 export const isWriteTool = (name) => WRITE_TOOLS.has(name);
 export const isKnownTool = (name) => TOOL_SCHEMAS.some((t) => t.function.name === name);
@@ -189,6 +237,28 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
       return { ok: true, data: o };
     }
 
+    case "get_outreach_state": {
+      const opportunityId = str(args.opportunityId, 200);
+      const exists = snapshot.opportunities.some((o) => o.id === opportunityId);
+      if (!exists) return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
+      const contact = operator.resolveContact(opportunityId);
+      const offers = operator.listOffers(opportunityId);
+      const communications = operator.listCommunications(opportunityId);
+      const activeApprovedOffer = offers.find((o) => o.status === "approved" || o.status === "presented") || null;
+      return {
+        ok: true,
+        data: {
+          opportunityId,
+          contact,
+          activeApprovedOffer,
+          offers,
+          communications,
+          sellerContacted: communications.some((c) => c.direction === "outbound" && ["sent", "delivered"].includes(c.status)),
+          sellerReplied: communications.some((c) => c.direction === "inbound" && c.status === "received"),
+        },
+      };
+    }
+
     case "create_next_action": {
       const created = operator.createNextAction({
         opportunityId: str(args.opportunityId, 200),
@@ -224,6 +294,12 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
       const offer = operator.prepareOffer({
         opportunityId: str(args.opportunityId, 200),
         proposedPrice: args.proposedPrice,
+        strategyType: str(args.strategyType, 100),
+        earnestMoney: args.earnestMoney,
+        inspectionDays: args.inspectionDays,
+        closingDays: args.closingDays,
+        contingencies: args.contingencies,
+        internalNotes: str(args.internalNotes, 4000),
         actor,
       });
       return { ok: true, data: { offer } };
@@ -234,10 +310,35 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
         offerId: str(args.offerId, 200),
         action: "modify",
         proposedPrice: args.proposedPrice,
-        strategyType: args.strategyType,
+        strategyType: str(args.strategyType, 100),
+        earnestMoney: args.earnestMoney,
+        inspectionDays: args.inspectionDays,
+        closingDays: args.closingDays,
+        contingencies: args.contingencies,
+        internalNotes: str(args.internalNotes, 4000),
         actor,
       });
       return { ok: true, data: { offer } };
+    }
+
+    case "prepare_outreach_draft": {
+      const opportunityId = str(args.opportunityId, 200);
+      const contact = operator.resolveContact(opportunityId);
+      if (!contact || contact.status === "MISSING" || !contact.value || !contact.channel || !contact.personId) {
+        return { ok: false, error: "seller_contact_required" };
+      }
+      const communication = operator.createOutreachDraft({
+        opportunityId,
+        offerVersionId: str(args.offerVersionId, 200),
+        recipientPersonId: contact.personId,
+        recipientValueSnapshot: contact.value,
+        recipientChannel: contact.channel,
+        subject: str(args.subject, 300),
+        contentText: str(args.contentText, 12000),
+        templateVersion: str(args.templateVersion, 100),
+        actor,
+      });
+      return { ok: true, data: { communication } };
     }
 
     default:
@@ -255,9 +356,11 @@ export function describeToolCall(name, args = {}) {
     case "log_interaction":
       return `Log a ${args.direction} ${args.channel} on ${args.opportunityId}: "${String(args.summary || "").slice(0, 120)}"`;
     case "prepare_offer":
-      return `Prepare a draft seller offer for ${args.opportunityId}${args.proposedPrice ? ` at ${args.proposedPrice}` : ""}`;
+      return `Prepare a draft seller offer for ${args.opportunityId} at ${args.proposedPrice} (${args.strategyType}, ${args.earnestMoney} earnest, ${args.inspectionDays} inspection days, ${args.closingDays} closing days)`;
     case "modify_offer":
-      return `Modify offer ${args.offerId}: set price to ${args.proposedPrice}`;
+      return `Create a new version of offer ${args.offerId}${args.proposedPrice !== undefined ? ` at ${args.proposedPrice}` : ""}`;
+    case "prepare_outreach_draft":
+      return `Create an immutable outreach draft for ${args.opportunityId} tied to approved offer version ${args.offerVersionId}. This does not authorize or send it.`;
     default:
       return `${name}(${Object.keys(args).join(", ")})`;
   }
