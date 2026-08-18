@@ -17,6 +17,7 @@ export function opportunityProvenanceState(opp) {
 
 /** Compact projection for list views and the list API. */
 export function toListItem(opp) {
+  const lastActivity = opp.lastActivity ?? null;
   return {
     id: opp.id,
     code: opp.code,
@@ -27,7 +28,11 @@ export function toListItem(opp) {
     source: opp.source?.sourceType ?? null,
     provenanceState: opportunityProvenanceState(opp),
     classification: opp.classification,
-    lastActivity: opp.lastActivity,
+    lastActivity,
+    // The Reactor overview sorts on updatedAt. Preserve the existing
+    // lastActivity contract while also providing the explicit timestamp alias
+    // expected by the client so older/real records cannot crash rendering.
+    updatedAt: opp.updatedAt ?? lastActivity,
     assignedOperator: opp.assignedOperator ?? null,
     status: statusForStage(opp.stage),
     isFixture: opp.isFixture ?? false,
