@@ -1,0 +1,278 @@
+/* OCG PIPELINE — Reactor tonal authority lock
+   Premium dark, not pitch black. This layer changes lighting and contrast only;
+   layout, semantics, business logic, and Piper authority remain untouched. */
+
+:root {
+  --reactor-canvas: #0d131c;
+  --reactor-canvas-2: #101823;
+  --reactor-nav: #090e15;
+  --reactor-nav-2: #0b111a;
+  --reactor-piper: #101a24;
+  --reactor-piper-2: #0c151e;
+  --reactor-panel: rgba(20, 30, 42, .88);
+  --reactor-panel-raised: rgba(24, 36, 50, .94);
+  --reactor-panel-soft: rgba(17, 27, 39, .78);
+  --reactor-border: rgba(129, 190, 205, .16);
+  --reactor-border-soft: rgba(129, 190, 205, .09);
+  --reactor-text: #eef5f8;
+  --reactor-muted: #a8bac5;
+  --reactor-faint: #718792;
+  --reactor-cyan: #39d8e8;
+  --reactor-cyan-soft: rgba(57, 216, 232, .10);
+  --reactor-gold: #e9b95d;
+}
+
+html,
+body {
+  background: var(--reactor-canvas) !important;
+  color: var(--reactor-text) !important;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 72% 8%, rgba(57, 216, 232, .075), transparent 28%),
+    radial-gradient(circle at 18% 82%, rgba(233, 185, 93, .045), transparent 32%),
+    linear-gradient(145deg, var(--reactor-canvas-2), var(--reactor-canvas)) !important;
+}
+
+/* Navigation: dark anchor, but no pure-black slab. */
+.nav {
+  background: linear-gradient(180deg, var(--reactor-nav-2), var(--reactor-nav)) !important;
+  border-right-color: var(--reactor-border) !important;
+}
+
+.brand-name,
+h1,
+h2,
+.card .n,
+dl.kv dd,
+.piper-name,
+.piper-title-row,
+.column-title {
+  color: var(--reactor-text) !important;
+}
+
+.brand-sub,
+.sub,
+.muted,
+.nav a,
+.card .l,
+dl.kv dt,
+th,
+.piper-subtext,
+.piper-state-note,
+.piper-disclosure,
+.footer {
+  color: var(--reactor-muted) !important;
+}
+
+.nav a:hover {
+  color: var(--reactor-text) !important;
+  background: rgba(255,255,255,.045) !important;
+}
+
+.nav a[aria-current="page"] {
+  color: #72ecf5 !important;
+  background: linear-gradient(90deg, rgba(57,216,232,.16), rgba(57,216,232,.05)) !important;
+  border-color: rgba(57,216,232,.22) !important;
+  box-shadow: inset 2px 0 0 var(--reactor-cyan), 0 8px 24px rgba(0,0,0,.12) !important;
+}
+
+.nav a[aria-current="page"]::before {
+  background: var(--reactor-cyan) !important;
+  box-shadow: 0 0 9px rgba(57,216,232,.72) !important;
+}
+
+/* Main canvas should visibly separate from nav and Piper. */
+main {
+  background:
+    radial-gradient(circle at 56% 0%, rgba(74, 153, 174, .065), transparent 36%),
+    linear-gradient(180deg, rgba(18,28,40,.96), rgba(13,20,30,.98)) !important;
+}
+
+.panel,
+.table-wrap,
+.filters,
+.bridge-panel,
+.narrative-panel,
+.card,
+.board-column,
+.piper-item,
+.piper-active-deal-card {
+  background: linear-gradient(145deg, var(--reactor-panel-raised), var(--reactor-panel)) !important;
+  border-color: var(--reactor-border) !important;
+  box-shadow:
+    0 14px 34px rgba(0,0,0,.20),
+    inset 0 1px 0 rgba(255,255,255,.025) !important;
+}
+
+.panel:hover,
+.card:hover,
+.board-column:hover {
+  border-color: rgba(57,216,232,.26) !important;
+}
+
+.card {
+  background: linear-gradient(145deg, rgba(27,40,55,.94), rgba(20,31,44,.92)) !important;
+}
+
+/* Priority queue rows need readable separation without screaming red. */
+tbody tr,
+.board-card {
+  background: rgba(17, 27, 39, .52);
+}
+
+tbody tr:hover,
+.board-card:hover {
+  background: rgba(33, 52, 68, .78) !important;
+}
+
+th {
+  background: rgba(27, 40, 54, .96) !important;
+  color: #b8c8d1 !important;
+}
+
+td {
+  color: #dfe9ee !important;
+}
+
+/* Piper: brighter active intelligence zone, not a black sidebar. */
+.piper-widget {
+  background: var(--reactor-piper-2) !important;
+  border-left-color: rgba(57,216,232,.20) !important;
+  box-shadow: -18px 0 58px rgba(0,0,0,.18) !important;
+}
+
+.piper-drawer {
+  background:
+    radial-gradient(circle at 68% 7%, rgba(57,216,232,.14), transparent 30%),
+    radial-gradient(circle at 20% 88%, rgba(233,185,93,.055), transparent 34%),
+    linear-gradient(180deg, #14212d 0%, var(--reactor-piper) 52%, var(--reactor-piper-2) 100%) !important;
+}
+
+.piper-header {
+  background: rgba(18, 31, 43, .72) !important;
+  border-bottom-color: rgba(145,195,208,.13) !important;
+}
+
+.piper-context-bar {
+  background: rgba(57,216,232,.065) !important;
+  border-bottom-color: rgba(57,216,232,.12) !important;
+}
+
+.piper-canvas {
+  background: linear-gradient(135deg, rgba(57,216,232,.10), rgba(25,39,52,.86)) !important;
+  border-color: rgba(57,216,232,.22) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 10px 28px rgba(0,0,0,.16) !important;
+}
+
+.piper-chat-history {
+  background: linear-gradient(180deg, rgba(18,29,40,.28), rgba(13,22,31,.40));
+}
+
+.quick-actions-bar,
+.piper-input-container {
+  background: rgba(13,22,31,.82) !important;
+  border-color: rgba(145,195,208,.10) !important;
+}
+
+.input-wrapper,
+.piper-chat-form input,
+select,
+input {
+  background: rgba(31, 45, 58, .88) !important;
+  color: var(--reactor-text) !important;
+  border-color: rgba(145,195,208,.18) !important;
+}
+
+input::placeholder {
+  color: #8196a2 !important;
+}
+
+.input-wrapper:focus-within,
+select:focus,
+input:focus {
+  border-color: rgba(57,216,232,.48) !important;
+  box-shadow: 0 0 0 3px rgba(57,216,232,.09) !important;
+}
+
+/* Signal colors: brighter, less neon. */
+a,
+.b-active,
+.column-count,
+.metric-mini .val.stage-badge,
+.piper-item a {
+  color: var(--reactor-cyan) !important;
+}
+
+button,
+.toggle-btn.active,
+.piper-send-btn {
+  background: linear-gradient(135deg, #2cc6d6, #21aebb) !important;
+  color: #041014 !important;
+  box-shadow: 0 8px 24px rgba(33,174,187,.18);
+}
+
+button:hover,
+.piper-send-btn:hover {
+  background: linear-gradient(135deg, #4adbe8, #29bdca) !important;
+}
+
+button.secondary,
+.quick-action-btn {
+  background: rgba(31, 45, 58, .74) !important;
+  color: #dce8ed !important;
+  border: 1px solid rgba(145,195,208,.16) !important;
+}
+
+button.secondary:hover,
+.quick-action-btn:hover {
+  background: rgba(43, 61, 76, .92) !important;
+  border-color: rgba(57,216,232,.34) !important;
+}
+
+/* Attention remains gold; errors remain red. */
+.b-unresolved,
+.badge.b-unresolved {
+  color: #ff8b9e !important;
+  background: rgba(255,72,103,.11) !important;
+  border-color: rgba(255,72,103,.25) !important;
+}
+
+.b-recovered,
+.badge.b-recovered,
+.piper-state-chip.s-awaiting_approval {
+  color: #f2c66f !important;
+  background: rgba(233,185,93,.10) !important;
+  border-color: rgba(233,185,93,.24) !important;
+}
+
+/* Footer should recede without disappearing. */
+.footer {
+  background: rgba(10,16,24,.96) !important;
+  border-top-color: rgba(145,195,208,.09) !important;
+  color: #7f949f !important;
+}
+
+/* Scrollbars should be visible enough to communicate scrollability. */
+::-webkit-scrollbar-track {
+  background: rgba(12,20,29,.55) !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(123,151,164,.24) !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(123,151,164,.36) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
