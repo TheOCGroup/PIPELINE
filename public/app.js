@@ -495,9 +495,18 @@
         let underwritingLabel = "";
         let underwritingClass = "underwriting-unavailable";
         if (o.underwriting) {
-          const victorMao = Math.max(0, Math.round(o.underwriting.arv * 0.75 - o.underwriting.rehab - o.underwriting.fee - o.underwriting.holding));
-          underwritingLabel = `75% Rule Ref — Victor inputs: ${money(victorMao)}`;
-          underwritingClass = "underwriting-victor";
+          if (o.underwriting.status === "insufficient_evidence" || o.underwriting.arv === null || o.underwriting.arv === undefined) {
+            underwritingLabel = "Underwriting: Insufficient Evidence";
+            underwritingClass = "underwriting-unavailable";
+          } else {
+            const arv = o.underwriting.arv || 0;
+            const rehab = o.underwriting.rehab || 0;
+            const fee = o.underwriting.fee || 5000;
+            const holding = o.underwriting.holding || 8000;
+            const victorMao = Math.max(0, Math.round(arv * 0.75 - rehab - fee - holding));
+            underwritingLabel = `75% Rule Ref — Victor inputs: ${money(victorMao)}`;
+            underwritingClass = "underwriting-victor";
+          }
         } else if (overrides.arv) {
           const localMao = Math.max(0, Math.round(overrides.arv * 0.75 - (overrides.rehab || 0) - (overrides.fee || 0) - (overrides.holding || 0)));
           underwritingLabel = `Scratchpad MAO: ${money(localMao)}`;
@@ -780,25 +789,82 @@
     // Show authoritative Victor underwriting if available
     let victorHtml = "";
     if (o.underwriting) {
-      const victorMao = Math.max(0, Math.round(o.underwriting.arv * 0.75 - o.underwriting.rehab - o.underwriting.fee - o.underwriting.holding));
-      const victorWarning = o.underwriting.askingPrice > victorMao;
-      victorHtml = `
-        <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h2 style="margin:0;">Authoritative Underwriting (Victor)</h2>
-            <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Victor</span>
+      if (o.underwriting.status === "insufficient_evidence" || o.underwriting.arv === null || o.underwriting.arv === undefined) {
+        victorHtml = `
+          <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h2 style="margin:0; font-size: 16px;">Victor / Deal Scout — Underwriting</h2>
+              <span class="badge" style="background: rgba(255, 68, 68, 0.1); color: #ff4444; border-color: #ff4444;">Victor</span>
+            </div>
+            <div style="margin-bottom: 16px;">
+              <strong style="color: #ff4444; display: block; font-size: 14px; margin-bottom: 4px;">INSUFFICIENT COMPARABLE EVIDENCE</strong>
+              <span style="opacity: 0.7; font-size: 13px;">Rehab Cost: <span style="font-family: var(--mono);">REHAB NOT DETERMINED</span></span>
+            </div>
+            <dl class="kv" style="font-size: 13px; margin-bottom: 12px;">
+              <dt>Comps Found</dt><dd>0 traceable comps</dd>
+              <dt>Confidence</dt><dd>Low (0%)</dd>
+              <dt>Limitations</dt><dd style="color: #ffb83d;">${esc(o.underwriting.limitations || "No local comps match coordinates.")}</dd>
+              <dt>Analyzed At</dt><dd>${esc(o.underwriting.analyzedAt ? new Date(o.underwriting.analyzedAt).toLocaleString() : "N/A")}</dd>
+            </dl>
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.06); margin: 12px 0;">
+            <div style="font-size: 12px; opacity: 0.6; line-height: 1.4;">
+              <strong>PIPELINE — 75% Rule Reference</strong><br>
+              Reference math requires active ARV and Rehab inputs. Use the scratchpad below to test custom assumptions.
+            </div>
           </div>
-          <dl class="kv">
-            <dt>ARV Target</dt><dd>${money(o.underwriting.arv)}</dd>
-            <dt>Estimated Rehab</dt><dd>${money(o.underwriting.rehab)}</dd>
-            <dt>Wholesale Fee</dt><dd>${money(o.underwriting.fee)}</dd>
-            <dt>Holding Costs</dt><dd>${money(o.underwriting.holding)}</dd>
-            <dt>Asking Price</dt><dd>${money(o.underwriting.askingPrice)}</dd>
-            <dt>75% Rule Ref — Victor inputs</dt><dd style="font-family: var(--mono); font-weight: 700; color: var(--ok); font-size: 15px;">${money(victorMao)}</dd>
-          </dl>
-          ${calcChartHtml(o.underwriting.arv, o.underwriting.rehab, o.underwriting.fee, o.underwriting.holding, o.underwriting.askingPrice, victorMao, victorWarning)}
-        </div>
-      `;
+        `;
+      } else {
+        const arv = o.underwriting.arv || 0;
+        const rehab = o.underwriting.rehab || 0;
+        const fee = o.underwriting.fee || 5000;
+        const holding = o.underwriting.holding || 8000;
+        const victorMao = Math.max(0, Math.round(arv * 0.75 - rehab - fee - holding));
+        const victorWarning = o.underwriting.askingPrice > victorMao;
+        
+        let compsHtml = "";
+        if (o.underwriting.evidence && o.underwriting.evidence.comps && o.underwriting.evidence.comps.length) {
+          compsHtml = `
+            <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8;">Comparable Evidence</h4>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                ${o.underwriting.evidence.comps.map(c => `
+                  <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; font-size: 12px;">
+                    <div style="display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 2px;">
+                      <span>${esc(c.address)}</span>
+                      <span style="color: var(--accent); font-family: var(--mono);">${money(c.salePrice)}</span>
+                    </div>
+                    <div style="opacity: 0.6; display: flex; justify-content: space-between;">
+                      <span>${c.beds || 3}b / ${c.baths || 2}ba · ${c.sqft || 1200} sqft</span>
+                      <span>Distance: ${c.distance ? c.distance.toFixed(1) + ' mi' : 'N/A'}</span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }
+
+        victorHtml = `
+          <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h2 style="margin:0; font-size: 16px;">Victor / Deal Scout — Underwriting</h2>
+              <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Victor</span>
+            </div>
+            <dl class="kv" style="font-size: 13px; margin-bottom: 12px;">
+              <dt>ARV Target</dt><dd>${money(arv)}</dd>
+              <dt>Estimated Rehab</dt><dd>${money(rehab)}</dd>
+              <dt>Calculated MAO (75%)</dt><dd style="font-weight: 700; color: var(--ok); font-family: var(--mono);">${money(o.underwriting.mao || victorMao)}</dd>
+              <dt>Confidence</dt><dd>${Math.round(o.underwriting.confidence * 100)}%</dd>
+              <dt>Limitations</dt><dd style="color: #ffb83d;">${esc(o.underwriting.limitations || "None")}</dd>
+              <dt>Analyzed At</dt><dd>${esc(o.underwriting.analyzedAt ? new Date(o.underwriting.analyzedAt).toLocaleString() : "N/A")}</dd>
+            </dl>
+            ${compsHtml}
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.06); margin: 12px 0;">
+            <div style="font-size: 12px; margin-bottom: 8px; opacity: 0.8; font-weight: 600;">PIPELINE — 75% Rule Reference</div>
+            ${calcChartHtml(arv, rehab, fee, holding, o.underwriting.askingPrice || 0, victorMao, victorWarning)}
+          </div>
+        `;
+      }
     }
 
     let heroImgUrl = "";

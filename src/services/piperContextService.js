@@ -56,10 +56,12 @@ export class PiperContextService {
         o.id, o.opportunity_code, o.pipeline_stage, o.opportunity_status,
         o.assigned_acquisition_manager_id, o.asking_price, o.seller_expected_price,
         o.target_purchase_price, o.max_authorized_offer,
-        o.underwriting_source_type, o.underwriting_source_id,
-        o.underwriting_arv_snapshot, o.underwriting_rehab_snapshot,
-        o.underwriting_mao_snapshot, o.underwriting_confidence,
-        o.underwriting_limitations, o.underwriting_timestamp,
+        ref.id AS ref_id,
+        ref.source_system AS ref_source_system, ref.source_underwriting_id AS ref_underwriting_id,
+        ref.arv AS ref_arv, ref.rehab AS ref_rehab,
+        ref.mao AS ref_mao, ref.confidence AS ref_confidence,
+        ref.limitations AS ref_limitations, ref.created_at AS ref_timestamp,
+        ref.analysis_status AS ref_status,
         o.last_contacted_at, o.next_scheduled_contact_at,
         o.created_by, o.created_at, o.updated_at,
         src.original_address, src.source_type, src.conversion_actor,
@@ -69,6 +71,7 @@ export class PiperContextService {
       LEFT JOIN seller_opportunity_sources src ON src.opportunity_id = o.id
       LEFT JOIN source_provenance prov        ON prov.opportunity_id = o.id
       LEFT JOIN record_classifications cls    ON cls.opportunity_id = o.id
+      LEFT JOIN opportunity_underwriting_refs ref ON ref.opportunity_id = o.id
       ORDER BY o.updated_at DESC, o.created_at DESC
       LIMIT ${MAX_OPPORTUNITIES}
     `).all();
@@ -117,10 +120,12 @@ export class PiperContextService {
       const missing = [];
       if (!r.original_address) missing.push("property address");
       if (r.asking_price === null || r.asking_price === undefined) missing.push("asking price");
-      if (!r.underwriting_source_type) missing.push("underwriting source (Victor / Deal Scout)");
-      if (r.underwriting_arv_snapshot === null) missing.push("ARV snapshot");
-      if (r.underwriting_rehab_snapshot === null) missing.push("rehab snapshot");
-      if (r.underwriting_mao_snapshot === null) missing.push("MAO snapshot");
+      if (!r.ref_id) missing.push("underwriting source (Victor / Deal Scout)");
+      if (r.ref_id && r.ref_status !== "insufficient_evidence") {
+        if (r.ref_arv === null) missing.push("ARV snapshot");
+        if (r.ref_rehab === null) missing.push("rehab snapshot");
+        if (r.ref_mao === null) missing.push("MAO snapshot");
+      }
       if (!r.resolution_status) missing.push("provenance record");
       if (!r.classification_value) missing.push("record classification");
 
@@ -134,16 +139,20 @@ export class PiperContextService {
       if (!r.resolution_status) {
         risks.push({ kind: "provenance_missing", detail: "No provenance row exists for this opportunity." });
       }
-      if (!r.underwriting_source_type && !closed) {
+      if (!r.ref_id && !closed) {
         risks.push({ kind: "underwriting_absent", detail: "No Victor or Deal Scout underwriting has been recorded, so there is no authorized ceiling." });
       }
-      if (r.max_authorized_offer !== null && r.asking_price !== null && r.max_authorized_offer < r.asking_price) {
+      if (r.ref_id && r.ref_status === "insufficient_evidence") {
+        risks.push({ kind: "insufficient_evidence", detail: `Victor analyzed this opportunity but found insufficient evidence: ${r.ref_limitations || "No comps found."}` });
+      }
+      const activeMao = r.ref_mao !== null ? r.ref_mao : null;
+      if (activeMao !== null && r.asking_price !== null && activeMao < r.asking_price) {
         risks.push({
           kind: "ceiling_below_ask",
-          detail: `Authorized ceiling ${money(r.max_authorized_offer)} is below the asking price ${money(r.asking_price)}.`,
+          detail: `Authorized ceiling ${money(activeMao)} is below the asking price ${money(r.asking_price)}.`,
         });
       }
-      if (r.underwriting_confidence && String(r.underwriting_confidence).toLowerCase() === "low") {
+      if (r.ref_confidence !== null && (r.ref_confidence < 0.3 || String(r.ref_confidence).toLowerCase() === "low")) {
         risks.push({ kind: "low_confidence", detail: "Victor recorded low confidence in this underwriting." });
       }
 
@@ -161,18 +170,19 @@ export class PiperContextService {
         assignedOperator: r.assigned_acquisition_manager_id || r.created_by || null,
         originatedBy: r.conversion_actor || r.created_by || null,
         askingPrice: r.asking_price,
-        targetPurchasePrice: r.target_purchase_price,
-        maxAuthorizedOffer: r.max_authorized_offer,
+        targetPurchasePrice: activeMao,
+        maxAuthorizedOffer: activeMao,
         underwriting: {
-          sourceType: r.underwriting_source_type,
-          sourceId: r.underwriting_source_id,
-          arv: r.underwriting_arv_snapshot,
-          rehab: r.underwriting_rehab_snapshot,
-          mao: r.underwriting_mao_snapshot,
-          confidence: r.underwriting_confidence,
-          limitations: r.underwriting_limitations,
-          recordedAt: r.underwriting_timestamp,
-          attributedTo: victorAttribution(r.underwriting_source_type),
+          sourceType: r.ref_id ? (r.ref_source_system || "deal-scout") : null,
+          sourceId: r.ref_id ? (r.ref_underwriting_id || r.ref_id) : null,
+          arv: r.ref_arv,
+          rehab: r.ref_rehab,
+          mao: r.ref_mao,
+          confidence: r.ref_confidence,
+          limitations: r.ref_limitations,
+          recordedAt: r.ref_timestamp,
+          attributedTo: r.ref_id ? "Victor" : null,
+          status: r.ref_status || null,
         },
         provenanceState: r.resolution_status || null,
         recordClassification: r.classification_value || null,
@@ -256,12 +266,12 @@ export class PiperContextService {
     `, ...args);
 
     const victorUpdates = bound(`
-      SELECT id AS opportunity_id, underwriting_source_type, underwriting_mao_snapshot,
-             underwriting_arv_snapshot, underwriting_confidence, underwriting_timestamp AS at
-      FROM seller_opportunities
-      WHERE underwriting_timestamp IS NOT NULL ${cutoff ? "AND underwriting_timestamp > ?" : ""}
-      ORDER BY underwriting_timestamp DESC
-    `, ...args).map((r) => ({ ...r, attributedTo: victorAttribution(r.underwriting_source_type) }));
+      SELECT opportunity_id, source_system AS underwriting_source_type, mao AS underwriting_mao_snapshot,
+             arv AS underwriting_arv_snapshot, confidence AS underwriting_confidence, created_at AS at
+      FROM opportunity_underwriting_refs
+      WHERE created_at IS NOT NULL ${cutoff ? "AND created_at > ?" : ""}
+      ORDER BY created_at DESC
+    `, ...args).map((r) => ({ ...r, attributedTo: "Victor" }));
 
     void where;
     return { intakes, stageEvents, classificationChanges, victorUpdates };

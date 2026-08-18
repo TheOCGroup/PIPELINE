@@ -187,3 +187,62 @@ test("API: GET /api/v1/opportunities S2S Bearer token authentication", async (t)
   assert.equal(bodyValid.data.length, 6);
 });
 
+test("API: GET /api/v1/opportunities contains underwriting references", async (t) => {
+  const db = makeTempDb();
+  const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath, { dataSource: "empty" }));
+  t.after(() => { app.close(); db.cleanup(); });
+
+  // Add underwriting references
+  const sqlite = await import("node:sqlite");
+  const conn = new sqlite.DatabaseSync(db.dbPath);
+
+  // Insert two opportunities in seller_opportunities
+  conn.prepare(`
+    INSERT INTO seller_opportunities (id, opportunity_code, pipeline_stage, opportunity_status, created_by, ocg_one_property_id)
+    VALUES ('FX-OPP-0001', 'DEMO-OPP-0001', 'negotiating', 'active', 'system-seed', 'prop-FX-OPP-0001')
+  `).run();
+  conn.prepare(`
+    INSERT INTO seller_opportunities (id, opportunity_code, pipeline_stage, opportunity_status, created_by, ocg_one_property_id)
+    VALUES ('FX-OPP-0002', 'DEMO-OPP-0002', 'contacted', 'active', 'system-seed', 'prop-FX-OPP-0002')
+  `).run();
+
+  conn.prepare(`
+    INSERT INTO opportunity_underwriting_refs (
+      id, opportunity_id, source_system, source_agent, source_project_id, 
+      source_underwriting_id, source_version_id, analysis_status, arv, rehab, mao, 
+      confidence, limitations, evidence_summary_json, analyzed_at
+    ) VALUES ('ref1', 'FX-OPP-0001', 'deal-scout', 'Victor', 'proj1', 'und1', '1', 'completed', 250000, 50000, 137500, 0.85, 'Solid comps', '{}', '2026-08-18T00:00:00Z')
+  `).run();
+
+  conn.prepare(`
+    INSERT INTO opportunity_underwriting_refs (
+      id, opportunity_id, source_system, source_agent, analysis_status, 
+      arv, rehab, mao, confidence, limitations, evidence_summary_json, analyzed_at
+    ) VALUES ('ref2', 'FX-OPP-0002', 'deal-scout', 'Victor', 'insufficient_evidence', null, null, null, 0.0, 'INSUFFICIENT COMPARABLE EVIDENCE', '{}', '2026-08-18T00:00:00Z')
+  `).run();
+  conn.close();
+
+  // Test FX-OPP-0001 (Completed)
+  const res1 = await fetch(`${baseUrl}/api/v1/opportunities/FX-OPP-0001`);
+  const body1 = await res1.json();
+  assert.equal(body1.ok, true);
+  assert.ok(body1.data.underwriting);
+  assert.equal(body1.data.underwriting.status, "completed");
+  assert.equal(body1.data.underwriting.arv, 250000);
+  assert.equal(body1.data.underwriting.rehab, 50000);
+  assert.equal(body1.data.underwriting.mao, 137500);
+  assert.equal(body1.data.underwriting.confidence, 0.85);
+
+  // Test FX-OPP-0002 (Insufficient evidence)
+  const res2 = await fetch(`${baseUrl}/api/v1/opportunities/FX-OPP-0002`);
+  const body2 = await res2.json();
+  assert.equal(body2.ok, true);
+  assert.ok(body2.data.underwriting);
+  assert.equal(body2.data.underwriting.status, "insufficient_evidence");
+  assert.equal(body2.data.underwriting.arv, null);
+  assert.equal(body2.data.underwriting.rehab, null);
+  assert.equal(body2.data.underwriting.mao, null);
+  assert.equal(body2.data.underwriting.limitations, "INSUFFICIENT COMPARABLE EVIDENCE");
+});
+
+

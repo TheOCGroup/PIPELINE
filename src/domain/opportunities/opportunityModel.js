@@ -31,6 +31,7 @@ export function toListItem(opp) {
     assignedOperator: opp.assignedOperator ?? null,
     status: statusForStage(opp.stage),
     isFixture: opp.isFixture ?? false,
-    provenanceMetadata: opp.source?.provenanceMetadata ?? null
+    provenanceMetadata: opp.source?.provenanceMetadata ?? null,
+    underwriting: opp.underwriting ?? null
   };
 }

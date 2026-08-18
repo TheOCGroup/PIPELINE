@@ -40,10 +40,24 @@ export class SqliteOpportunityRepository {
         src.source_timestamp,
         src.provenance_metadata_json,
         src.conversion_actor,
-        o.asking_price
+        o.asking_price,
+        ref.id AS ref_id,
+        ref.source_system AS ref_source_system,
+        ref.source_agent AS ref_source_agent,
+        ref.source_project_id AS ref_project_id,
+        ref.source_version_id AS ref_version_id,
+        ref.analysis_status AS ref_status,
+        ref.arv AS ref_arv,
+        ref.rehab AS ref_rehab,
+        ref.mao AS ref_mao,
+        ref.confidence AS ref_confidence,
+        ref.limitations AS ref_limitations,
+        ref.evidence_summary_json AS ref_evidence_summary_json,
+        ref.analyzed_at AS ref_analyzed_at
       FROM seller_opportunities o
       LEFT JOIN seller_opportunity_sources src ON src.opportunity_id = o.id
       LEFT JOIN record_classifications c ON c.opportunity_id = o.id
+      LEFT JOIN opportunity_underwriting_refs ref ON ref.opportunity_id = o.id
     `).all();
 
     return rows.map(r => {
@@ -59,6 +73,24 @@ export class SqliteOpportunityRepository {
         const payload = parseJson(audit.payload_json);
         if (payload.sellerName) sellerName = payload.sellerName;
       }
+
+      const underwriting = r.ref_id ? {
+        source: r.ref_source_system || "deal-scout",
+        agent: r.ref_source_agent || "Victor",
+        projectId: r.ref_project_id || null,
+        versionId: r.ref_version_id || null,
+        status: r.ref_status || "completed",
+        arv: r.ref_arv,
+        rehab: r.ref_rehab,
+        mao: r.ref_mao,
+        confidence: r.ref_confidence,
+        limitations: r.ref_limitations,
+        analyzedAt: r.ref_analyzed_at,
+        evidence: r.ref_evidence_summary_json ? parseJson(r.ref_evidence_summary_json) : null,
+        fee: 5000,
+        holding: 8000,
+        askingPrice: r.asking_price || 120000
+      } : null;
 
       return {
         id: r.id,
@@ -81,6 +113,7 @@ export class SqliteOpportunityRepository {
           recoveryConfidence: null,
           provenanceMetadata: r.provenance_metadata_json ? parseJson(r.provenance_metadata_json) : null
         },
+        underwriting,
         participants: [],
         sources: [],
         stageTimeline: [],
@@ -106,10 +139,24 @@ export class SqliteOpportunityRepository {
         src.original_address,
         src.source_timestamp,
         src.provenance_metadata_json,
-        o.asking_price
+        o.asking_price,
+        ref.id AS ref_id,
+        ref.source_system AS ref_source_system,
+        ref.source_agent AS ref_source_agent,
+        ref.source_project_id AS ref_project_id,
+        ref.source_version_id AS ref_version_id,
+        ref.analysis_status AS ref_status,
+        ref.arv AS ref_arv,
+        ref.rehab AS ref_rehab,
+        ref.mao AS ref_mao,
+        ref.confidence AS ref_confidence,
+        ref.limitations AS ref_limitations,
+        ref.evidence_summary_json AS ref_evidence_summary_json,
+        ref.analyzed_at AS ref_analyzed_at
       FROM seller_opportunities o
       LEFT JOIN seller_opportunity_sources src ON src.opportunity_id = o.id
       LEFT JOIN record_classifications c ON c.opportunity_id = o.id
+      LEFT JOIN opportunity_underwriting_refs ref ON ref.opportunity_id = o.id
       WHERE o.id = ?
     `).get(id);
 
@@ -122,14 +169,28 @@ export class SqliteOpportunityRepository {
     `).get(id);
 
     let sellerName = "Seller";
-    let arv = 250000;
-    let rehab = 50000;
     if (audit) {
       const payload = parseJson(audit.payload_json);
       if (payload.sellerName) sellerName = payload.sellerName;
-      if (payload.arv) arv = payload.arv;
-      if (payload.rehab) rehab = payload.rehab;
     }
+
+    const underwriting = opp.ref_id ? {
+      source: opp.ref_source_system || "deal-scout",
+      agent: opp.ref_source_agent || "Victor",
+      projectId: opp.ref_project_id || null,
+      versionId: opp.ref_version_id || null,
+      status: opp.ref_status || "completed",
+      arv: opp.ref_arv,
+      rehab: opp.ref_rehab,
+      mao: opp.ref_mao,
+      confidence: opp.ref_confidence,
+      limitations: opp.ref_limitations,
+      analyzedAt: opp.ref_analyzed_at,
+      evidence: opp.ref_evidence_summary_json ? parseJson(opp.ref_evidence_summary_json) : null,
+      fee: 5000,
+      holding: 8000,
+      askingPrice: opp.asking_price || 120000
+    } : null;
 
     return {
       id: opp.id,
@@ -152,13 +213,7 @@ export class SqliteOpportunityRepository {
         recoveryConfidence: null,
         provenanceMetadata: opp.provenance_metadata_json ? parseJson(opp.provenance_metadata_json) : null
       },
-      underwriting: {
-        arv,
-        rehab,
-        fee: 5000,
-        holding: 8000,
-        askingPrice: opp.asking_price || 120000
-      },
+      underwriting,
       participants: [],
       sources: [],
       stageTimeline: [],

@@ -88,6 +88,7 @@ export class OpportunityReadService {
         recoveryConfidence: opp.source?.recoveryConfidence ?? null,
         metadata: opp.source?.provenanceMetadata ?? null
       },
+      underwriting: opp.underwriting ?? null,
       participants: opp.participants ?? [],
       sources: opp.sources ?? [],
       stageTimeline: opp.stageTimeline ?? [],
