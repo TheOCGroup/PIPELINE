@@ -232,7 +232,7 @@ test("Seller Offers and Outreach Workflow: draft creation, state transitions, mo
   // 8. Boot app with outreachProvider: "mock" (Test-only adapter mode)
   const dbMock = makeTempDb();
   const appMock = await startApp(createApp, testConfig(dbMock.dbPath, { dataSource: "empty", outreachProvider: "mock" }));
-  t.after(() => { appMock.close(); dbMock.cleanup(); });
+  t.after(() => { appMock.app.close(); dbMock.cleanup(); });
 
   const connMock = new sqlite.DatabaseSync(dbMock.dbPath);
 

@@ -292,7 +292,7 @@ export class SqliteOpportunityRepository {
       const channel = contact.email ? "email" : (contact.phone ? "sms" : null);
       
       return {
-        status: participant.verification_status || "SOURCE_SUPPLIED",
+        status: String(participant.verification_status || "SOURCE_SUPPLIED").toUpperCase(),
         personId: contact.id,
         displayName: `${contact.first_name} ${contact.last_name}`,
         value: value || null,

@@ -93,6 +93,8 @@ export class OpportunityReadService {
       sources: opp.sources ?? [],
       stageTimeline: opp.stageTimeline ?? [],
       offers: opp.offers ?? [],
+      contact: opp.contact ?? null,
+      communications: opp.communications ?? [],
       outcome: opp.outcome ?? null,
       lastActivity: opp.lastActivity ?? null,
     };

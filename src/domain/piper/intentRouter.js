@@ -805,11 +805,11 @@ function outreachStatus(o, s) {
     nextAction = "Review seller reply and propose next steps.";
   }
 
-  const answer = `**DID WE CONTACT THE SELLER**: ${contacted}
-**WHAT WE SENT**: ${sentDetails}
-**OFFER VERSION RECEIVED**: ${offerVersionText}
-**DID THEY RESPOND**: ${responseText}
-**RECOMMENDED NEXT ACTION**: ${nextAction}`;
+  const answer = `DID WE CONTACT THE SELLER: ${contacted}
+WHAT WE SENT: ${sentDetails}
+OFFER VERSION RECEIVED: ${offerVersionText}
+DID THEY RESPOND: ${responseText}
+RECOMMENDED NEXT ACTION: ${nextAction}`;
 
   return {
     ok: true,

@@ -388,7 +388,7 @@ export class SqliteOperatorRepository {
     }
     
     return {
-      status: participant.verification_status || "SOURCE_SUPPLIED",
+      status: String(participant.verification_status || "SOURCE_SUPPLIED").toUpperCase(),
       personId: contact.id,
       displayName: `${contact.first_name} ${contact.last_name}`,
       value,
@@ -494,8 +494,8 @@ export class SqliteOperatorRepository {
 
           // Add a timeline stage event
           this.db.prepare(`
-            INSERT INTO seller_stage_events (id, opportunity_id, event_type, prior_stage, new_stage, created_by, created_at)
-            VALUES (?, ?, 'STAGE_CHANGE', 'offer_preparation', 'offer_presented', ?, ?)
+            INSERT INTO seller_stage_events (id, opportunity_id, prior_stage, new_stage, changed_by, reason, created_at)
+            VALUES (?, ?, 'offer_preparation', 'offer_presented', ?, 'Offer presented to seller via outreach', ?)
           `).run(randomUUID(), comm.opportunity_id, actor, now());
         }
 

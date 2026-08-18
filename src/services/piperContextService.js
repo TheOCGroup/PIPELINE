@@ -104,6 +104,56 @@ export class PiperContextService {
       (r) => r.opportunity_id
     );
 
+    let communicationsByOpp = new Map();
+    let commEventsByComm = new Map();
+    let primaryContactByOpp = new Map();
+
+    try {
+      communicationsByOpp = groupBy(
+        this.db.prepare(`
+          SELECT id, opportunity_id, offer_version_id, recipient_person_id, recipient_value_snapshot,
+                 recipient_channel, recipient_verification_status, direction, subject, content_text,
+                 in_reply_to_communication_id, created_by, created_at
+          FROM seller_communications
+          ORDER BY created_at DESC
+        `).all(),
+        (r) => r.opportunity_id
+      );
+
+      commEventsByComm = groupBy(
+        this.db.prepare(`
+          SELECT id, communication_id, event_type, actor_id, provider_ref, outcome, occurred_at
+          FROM seller_communication_events
+          ORDER BY rowid ASC
+        `).all(),
+        (r) => r.communication_id
+      );
+    } catch {}
+
+    try {
+      const participants = this.db.prepare(`
+        SELECT p.opportunity_id, p.verification_status, p.source_id, c.id AS person_id, c.first_name, c.last_name, c.email, c.phone
+        FROM seller_opportunity_participants p
+        LEFT JOIN pipeline_contacts c ON c.id = p.ocg_one_person_id
+        WHERE p.is_primary = 1
+      `).all();
+
+      primaryContactByOpp = mapBy(participants.map(p => {
+        const val = p.email || p.phone || null;
+        const chan = p.email ? "email" : (p.phone ? "sms" : null);
+        return {
+          opportunity_id: p.opportunity_id,
+          personId: p.person_id,
+          displayName: p.first_name ? `${p.first_name} ${p.last_name}` : null,
+          value: val,
+          channel: chan,
+          status: val ? (p.verification_status || "SOURCE_SUPPLIED") : "MISSING",
+          sourceType: p.source_id ? "deal_scout_handoff" : "manual_entry",
+          sourceId: p.source_id || null
+        };
+      }), (r) => r.opportunity_id);
+    } catch {}
+
     const opportunities = rows.map((r) => {
       const closed = isClosedStage(r.pipeline_stage);
       const actions = actionsByOpp.get(r.id) || [];
@@ -215,6 +265,24 @@ export class PiperContextService {
         missing,
         risks,
         isFixture: r.created_by === 'system-seed',
+        contact: primaryContactByOpp.get(r.id) || { status: "MISSING", value: null, channel: null },
+        communications: (communicationsByOpp.get(r.id) || []).map(c => {
+          const events = commEventsByComm.get(c.id) || [];
+          const latestEvent = events[events.length - 1];
+          return {
+            id: c.id,
+            opportunityId: c.opportunity_id,
+            offerVersionId: c.offer_version_id,
+            recipientPersonId: c.recipient_person_id,
+            recipientValueSnapshot: c.recipient_value_snapshot,
+            recipientChannel: c.recipient_channel,
+            direction: c.direction,
+            subject: c.subject,
+            contentText: c.content_text,
+            status: latestEvent ? (latestEvent.event_type || latestEvent.eventType) : "drafted",
+            events: events.map(e => ({ id: e.id, eventType: e.event_type, actorId: e.actor_id, outcome: e.outcome, occurredAt: e.occurred_at }))
+          };
+        }),
       };
     });
 
