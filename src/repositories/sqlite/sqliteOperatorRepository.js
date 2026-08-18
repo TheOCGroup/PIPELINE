@@ -131,6 +131,171 @@ export class SqliteOperatorRepository {
     `).run(id, opportunityId, channel, direction, occurredAt || now(), outcome, summary, actor);
     return this.listInteractions(opportunityId).find((i) => i.id === id) || null;
   }
+
+  // --- offers -------------------------------------------------------------
+
+  listOffers(opportunityId) {
+    const offers = this.db.prepare("SELECT * FROM seller_offers WHERE opportunity_id = ? ORDER BY created_at DESC").all(opportunityId);
+    return offers.map(o => {
+      const versions = this.db.prepare("SELECT * FROM seller_offer_versions WHERE offer_id = ? ORDER BY version_number DESC").all(o.id);
+      return {
+        id: o.id,
+        opportunityId: o.opportunity_id,
+        currentVersion: o.current_version,
+        status: o.status,
+        activeVersionId: o.active_version_id,
+        createdBy: o.created_by,
+        createdAt: o.created_at,
+        updatedAt: o.updated_at,
+        versions: versions.map(v => ({
+          id: v.id,
+          offerId: v.offer_id,
+          versionNumber: v.version_number,
+          versionStatus: v.version_status,
+          strategyType: v.strategy_type,
+          purchasePrice: v.purchase_price,
+          earnestMoney: v.earnest_money,
+          inspectionDays: v.inspection_days,
+          closingDays: v.closing_days,
+          expirationAt: v.expiration_at,
+          contingenciesJson: v.contingencies_json,
+          sellerFacingTerms: v.seller_facing_terms,
+          internalNotes: v.internal_notes,
+          underwritingSourceType: v.underwriting_source_type,
+          underwritingSourceId: v.underwriting_source_id,
+          underwritingVersionId: v.underwriting_version_id,
+          underwritingArvSnapshot: v.underwriting_arv_snapshot,
+          underwritingRehabSnapshot: v.underwriting_rehab_snapshot,
+          underwritingMaoSnapshot: v.underwriting_mao_snapshot,
+          underwritingConfidence: v.underwriting_confidence,
+          underwritingLimitations: v.underwriting_limitations,
+          underwritingTimestamp: v.underwriting_timestamp,
+          ocgOneApprovalId: v.ocg_one_approval_id,
+          createdBy: v.created_by,
+          createdAt: v.created_at,
+          supersededBy: v.superseded_by
+        }))
+      };
+    });
+  }
+
+  prepareOffer({ opportunityId, proposedPrice, strategyType, earnestMoney, inspectionDays, closingDays, contingencies, internalNotes, actor }) {
+    const opp = this.db.prepare("SELECT * FROM seller_opportunities WHERE id = ?").get(opportunityId);
+    if (!opp) throw new Error("opportunity_not_found");
+
+    const uw = this.db.prepare("SELECT * FROM opportunity_underwriting_refs WHERE opportunity_id = ?").get(opportunityId);
+    if (!uw) throw new Error("underwriting_not_found");
+
+    const strategy = strategyType || "cash_purchase";
+    const price = proposedPrice !== undefined ? proposedPrice : Math.round(uw.mao || opp.asking_price * 0.75);
+    const em = earnestMoney !== undefined ? earnestMoney : 1000;
+    const insp = inspectionDays !== undefined ? inspectionDays : 10;
+    const cls = closingDays !== undefined ? closingDays : 30;
+    const cont = contingencies || JSON.stringify(["Subject to satisfactory inspection of major systems"]);
+    const notes = internalNotes || "Initial draft prepared by operator via Victor underwriting recommendation.";
+
+    let offer = this.db.prepare("SELECT * FROM seller_offers WHERE opportunity_id = ?").get(opportunityId);
+    let offerId;
+    let nextVersionNumber = 1;
+
+    if (offer) {
+      offerId = offer.id;
+      const maxVer = this.db.prepare("SELECT MAX(version_number) max_v FROM seller_offer_versions WHERE offer_id = ?").get(offerId);
+      nextVersionNumber = (maxVer ? maxVer.max_v : 0) + 1;
+    } else {
+      offerId = "off_" + opportunityId.substring(4);
+      this.db.prepare(`
+        INSERT INTO seller_offers (id, opportunity_id, current_version, status, active_version_id, created_by)
+        VALUES (?, ?, 1, 'draft', null, ?)
+      `).run(offerId, opportunityId, actor);
+    }
+
+    const versionId = "ver_" + offerId.substring(4) + "_" + nextVersionNumber;
+
+    this.db.prepare(`
+      INSERT INTO seller_offer_versions (
+        id, offer_id, version_number, version_status, strategy_type, purchase_price,
+        earnest_money, inspection_days, closing_days, contingencies_json, internal_notes,
+        underwriting_source_type, underwriting_source_id, underwriting_version_id,
+        underwriting_arv_snapshot, underwriting_rehab_snapshot, underwriting_mao_snapshot,
+        underwriting_confidence, underwriting_limitations, underwriting_timestamp, created_by
+      ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      versionId, offerId, nextVersionNumber, strategy, price, em, insp, cls,
+      typeof cont === "string" ? cont : JSON.stringify(cont), notes,
+      uw.source_system === "deal-scout" ? "victor_analysis" : "deal_scout_project",
+      uw.source_underwriting_id || "unknown", uw.source_version_id || "1",
+      uw.arv || 0, uw.rehab || 0, uw.mao || 0, uw.confidence || 0, uw.limitations || "",
+      uw.analyzed_at || now(), actor
+    );
+
+    this.db.prepare(`
+      UPDATE seller_offers
+      SET active_version_id = ?, current_version = ?
+      WHERE id = ?
+    `).run(versionId, nextVersionNumber, offerId);
+
+    return this.listOffers(opportunityId).find(o => o.id === offerId);
+  }
+
+  decideOffer({ offerId, action, proposedPrice, strategyType, earnestMoney, inspectionDays, closingDays, contingencies, internalNotes, actor }) {
+    const offer = this.db.prepare("SELECT * FROM seller_offers WHERE id = ?").get(offerId);
+    if (!offer) throw new Error("offer_not_found");
+
+    const currentVer = this.db.prepare("SELECT * FROM seller_offer_versions WHERE id = ?").get(offer.active_version_id);
+    if (!currentVer) throw new Error("active_version_not_found");
+
+    if (action === "approve") {
+      this.db.prepare("UPDATE seller_offers SET status = 'approved', updated_at = ? WHERE id = ?").run(now(), offerId);
+      this.db.prepare("UPDATE seller_offer_versions SET version_status = 'approved' WHERE id = ?").run(offer.active_version_id);
+    } else if (action === "decline") {
+      this.db.prepare("UPDATE seller_offers SET status = 'rejected', updated_at = ? WHERE id = ?").run(now(), offerId);
+      this.db.prepare("UPDATE seller_offer_versions SET version_status = 'rejected' WHERE id = ?").run(offer.active_version_id);
+    } else if (action === "hold") {
+      this.db.prepare("UPDATE seller_offers SET status = 'draft', updated_at = ? WHERE id = ?").run(now(), offerId);
+      this.db.prepare("UPDATE seller_offer_versions SET version_status = 'draft' WHERE id = ?").run(offer.active_version_id);
+    } else if (action === "modify") {
+      const nextVerNum = offer.current_version + 1;
+      const nextVerId = "ver_" + offerId.substring(4) + "_" + nextVerNum;
+
+      const uw = this.db.prepare("SELECT * FROM opportunity_underwriting_refs WHERE opportunity_id = ?").get(offer.opportunity_id);
+      if (!uw) throw new Error("underwriting_not_found");
+
+      const strategy = strategyType !== undefined ? strategyType : currentVer.strategy_type;
+      const price = proposedPrice !== undefined ? proposedPrice : currentVer.purchase_price;
+      const em = earnestMoney !== undefined ? earnestMoney : currentVer.earnest_money;
+      const insp = inspectionDays !== undefined ? inspectionDays : currentVer.inspection_days;
+      const cls = closingDays !== undefined ? closingDays : currentVer.closing_days;
+      const cont = contingencies !== undefined ? (typeof contingencies === "string" ? contingencies : JSON.stringify(contingencies)) : currentVer.contingencies_json;
+      const notes = internalNotes !== undefined ? internalNotes : currentVer.internal_notes;
+
+      this.db.prepare(`
+        INSERT INTO seller_offer_versions (
+          id, offer_id, version_number, version_status, strategy_type, purchase_price,
+          earnest_money, inspection_days, closing_days, contingencies_json, internal_notes,
+          underwriting_source_type, underwriting_source_id, underwriting_version_id,
+          underwriting_arv_snapshot, underwriting_rehab_snapshot, underwriting_mao_snapshot,
+          underwriting_confidence, underwriting_limitations, underwriting_timestamp, created_by
+        ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        nextVerId, offerId, nextVerNum, strategy, price, em, insp, cls, cont, notes,
+        uw.source_system === "deal-scout" ? "victor_analysis" : "deal_scout_project",
+        uw.source_underwriting_id || "unknown", uw.source_version_id || "1",
+        uw.arv || 0, uw.rehab || 0, uw.mao || 0, uw.confidence || 0, uw.limitations || "",
+        uw.analyzed_at || now(), actor
+      );
+
+      this.db.prepare("UPDATE seller_offer_versions SET superseded_by = ? WHERE id = ?").run(nextVerId, currentVer.id);
+
+      this.db.prepare(`
+        UPDATE seller_offers
+        SET active_version_id = ?, current_version = ?, status = 'draft'
+        WHERE id = ?
+      `).run(nextVerId, nextVerNum, offerId);
+    }
+
+    return this.listOffers(offer.opportunity_id).find(o => o.id === offerId);
+  }
 }
 
 function toNextAction(r) {

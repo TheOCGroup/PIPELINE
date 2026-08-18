@@ -104,9 +104,40 @@ export const TOOL_SCHEMAS = Object.freeze([
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "prepare_offer",
+      description: "Prepare a draft seller offer for an opportunity. Requires operator approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          opportunityId: { type: "string" },
+          proposedPrice: { type: "number", description: "Optional custom proposed purchase price." }
+        },
+        required: ["opportunityId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "modify_offer",
+      description: "Modify terms of an existing seller offer. Requires operator approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          offerId: { type: "string" },
+          proposedPrice: { type: "number" },
+          strategyType: { type: "string" }
+        },
+        required: ["offerId"]
+      }
+    }
+  }
 ]);
 
-const WRITE_TOOLS = new Set(["create_next_action", "add_note", "log_interaction"]);
+const WRITE_TOOLS = new Set(["create_next_action", "add_note", "log_interaction", "prepare_offer", "modify_offer"]);
 
 export const isWriteTool = (name) => WRITE_TOOLS.has(name);
 export const isKnownTool = (name) => TOOL_SCHEMAS.some((t) => t.function.name === name);
@@ -189,6 +220,26 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
       return { ok: true, data: { interaction } };
     }
 
+    case "prepare_offer": {
+      const offer = operator.prepareOffer({
+        opportunityId: str(args.opportunityId, 200),
+        proposedPrice: args.proposedPrice,
+        actor,
+      });
+      return { ok: true, data: { offer } };
+    }
+
+    case "modify_offer": {
+      const offer = operator.decideOffer({
+        offerId: str(args.offerId, 200),
+        action: "modify",
+        proposedPrice: args.proposedPrice,
+        strategyType: args.strategyType,
+        actor,
+      });
+      return { ok: true, data: { offer } };
+    }
+
     default:
       return { ok: false, error: "unknown_tool", detail: `Piper has no tool named ${name}.` };
   }
@@ -203,6 +254,10 @@ export function describeToolCall(name, args = {}) {
       return `Add a note to ${args.opportunityId}: "${String(args.body || "").slice(0, 120)}"`;
     case "log_interaction":
       return `Log a ${args.direction} ${args.channel} on ${args.opportunityId}: "${String(args.summary || "").slice(0, 120)}"`;
+    case "prepare_offer":
+      return `Prepare a draft seller offer for ${args.opportunityId}${args.proposedPrice ? ` at ${args.proposedPrice}` : ""}`;
+    case "modify_offer":
+      return `Modify offer ${args.offerId}: set price to ${args.proposedPrice}`;
     default:
       return `${name}(${Object.keys(args).join(", ")})`;
   }

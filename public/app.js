@@ -867,6 +867,153 @@
       }
     }
 
+    let offersHtml = "";
+    if (o.underwriting) {
+      const hasOffer = o.offers && o.offers.length > 0;
+      if (!hasOffer) {
+        let recText = "";
+        let recActionHtml = "";
+        
+        if (o.underwriting.status === "insufficient_evidence") {
+          recText = "Hold. Insufficient comparable sales evidence is available for this property. Do not prepare an offer at this time.";
+          recActionHtml = `<div style="color: #ff4444; font-weight: 600; font-size: 13px; margin-top: 8px;">HOLD / INSUFFICIENT EVIDENCE</div>`;
+        } else {
+          recText = `Prepare Offer. High-confidence underwriting exists based on ${o.underwriting.evidence?.comps?.length || 3} local comps. Recommend starting at Victor MAO of ${money(o.underwriting.mao)} using a Cash Purchase strategy.`;
+          recActionHtml = `
+            <div style="margin-top: 12px; display: flex; gap: 8px;">
+              <button class="primary" style="background: var(--ok); border-color: var(--ok); color: #000; font-size: 12px; padding: 6px 12px;" onclick="window.prepareOffer('${esc(o.id)}')">Prepare Offer</button>
+            </div>
+          `;
+        }
+
+        offersHtml = `
+          <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h2 style="margin:0; font-size: 16px;">Piper Recommendation</h2>
+              <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Piper</span>
+            </div>
+            <div style="font-size: 13px; margin-bottom: 12px; line-height: 1.4;">
+              <strong>Recommendation:</strong> ${esc(recText)}
+            </div>
+            ${recActionHtml}
+          </div>
+        `;
+      } else {
+        const offer = o.offers[0];
+        const activeVer = offer.versions.find(v => v.id === offer.activeVersionId) || offer.versions[0];
+        
+        let gateHtml = "";
+        if (activeVer.versionStatus === "draft") {
+          gateHtml = `
+            <div style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8;">Operator Approval Gate</h4>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="primary" style="background: var(--ok); border-color: var(--ok); color: #000; font-size: 12px; padding: 6px 12px;" onclick="window.decideOffer('${esc(o.id)}', '${esc(offer.id)}', 'approve')">Approve</button>
+                <button class="primary" style="background: var(--accent); border-color: var(--accent); color: #000; font-size: 12px; padding: 6px 12px;" onclick="window.toggleModifyOfferForm()">Modify</button>
+                <button class="primary" style="background: rgba(255, 68, 68, 0.2); border-color: #ff4444; color: #ff4444; font-size: 12px; padding: 6px 12px;" onclick="window.decideOffer('${esc(o.id)}', '${esc(offer.id)}', 'decline')">Decline</button>
+                <button class="primary" style="background: rgba(255, 255, 255, 0.1); border-color: rgba(255,255,255,0.2); color: #fff; font-size: 12px; padding: 6px 12px;" onclick="window.decideOffer('${esc(o.id)}', '${esc(offer.id)}', 'hold')">Hold</button>
+              </div>
+            </div>
+          `;
+        } else {
+          let statusColor = "var(--ok)";
+          if (activeVer.versionStatus === "rejected") statusColor = "#ff4444";
+          gateHtml = `
+            <div style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px; font-weight: 600; color: ${statusColor}; font-size: 13px;">
+              Offer Status: ${activeVer.versionStatus.toUpperCase()}
+            </div>
+          `;
+        }
+
+        const modifyFormHtml = `
+          <div id="modify-offer-form" style="display: none; margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+            <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase;">Modify Offer Terms</h4>
+            <div class="form-grid-compact">
+              <div class="form-group-compact">
+                <label>Proposed Price</label>
+                <input type="number" id="mod-price" value="${activeVer.purchasePrice}" />
+              </div>
+              <div class="form-group-compact">
+                <label>Strategy Type</label>
+                <select id="mod-strategy" style="background:#111; color:#fff; border:1px solid #333; padding: 4px; border-radius: 4px;">
+                  <option value="cash_purchase" ${activeVer.strategyType === 'cash_purchase' ? 'selected' : ''}>Cash Purchase</option>
+                  <option value="assignment" ${activeVer.strategyType === 'assignment' ? 'selected' : ''}>Assignment</option>
+                  <option value="novation" ${activeVer.strategyType === 'novation' ? 'selected' : ''}>Novation</option>
+                  <option value="seller_finance" ${activeVer.strategyType === 'seller_finance' ? 'selected' : ''}>Seller Finance</option>
+                  <option value="subject_to" ${activeVer.strategyType === 'subject_to' ? 'selected' : ''}>Subject To</option>
+                  <option value="lease_option" ${activeVer.strategyType === 'lease_option' ? 'selected' : ''}>Lease Option</option>
+                  <option value="listing_referral" ${activeVer.strategyType === 'listing_referral' ? 'selected' : ''}>Listing Referral</option>
+                  <option value="no_offer" ${activeVer.strategyType === 'no_offer' ? 'selected' : ''}>No Offer</option>
+                </select>
+              </div>
+              <div class="form-group-compact">
+                <label>Earnest Money</label>
+                <input type="number" id="mod-earnest" value="${activeVer.earnestMoney}" />
+              </div>
+              <div class="form-group-compact">
+                <label>Inspection Days</label>
+                <input type="number" id="mod-inspection" value="${activeVer.inspectionDays}" />
+              </div>
+              <div class="form-group-compact">
+                <label>Closing Days</label>
+                <input type="number" id="mod-closing" value="${activeVer.closingDays}" />
+              </div>
+            </div>
+            <div style="margin-top: 8px; text-align: right;">
+              <button class="primary" style="font-size: 11px; padding: 4px 8px; background: var(--ok); color: #000;" onclick="window.submitModifyOffer('${esc(o.id)}', '${esc(offer.id)}')">Save New Version</button>
+              <button style="font-size: 11px; padding: 4px 8px;" onclick="window.toggleModifyOfferForm()">Cancel</button>
+            </div>
+          </div>
+        `;
+
+        const historyHtml = `
+          <div style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+            <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8;">Offer Version History</h4>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              ${offer.versions.map(v => `
+                <div style="background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.03); padding: 6px; border-radius: 4px; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <strong>v${v.versionNumber}</strong>: ${esc(v.strategyType.replace('_', ' '))} at <strong>${money(v.purchasePrice)}</strong>
+                    <div style="font-size: 10px; opacity: 0.6;">By ${esc(v.createdBy)} on ${esc(new Date(v.createdAt).toLocaleDateString())}</div>
+                  </div>
+                  <span class="badge" style="font-size: 10px; padding: 2px 6px;">${esc(v.versionStatus.toUpperCase())}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+
+        offersHtml = `
+          <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h2 style="margin:0; font-size: 16px;">Seller Offer: ${esc(offer.id)}</h2>
+              <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Active v${activeVer.versionNumber}</span>
+            </div>
+            <dl class="kv" style="font-size: 13px; margin-bottom: 12px;">
+              <dt>Strategy</dt><dd>${esc(activeVer.strategyType.replace('_', ' '))}</dd>
+              <dt>Purchase Price</dt><dd style="font-weight: 700; color: var(--ok); font-family: var(--mono);">${money(activeVer.purchasePrice)}</dd>
+              <dt>Earnest Money</dt><dd>${money(activeVer.earnestMoney)}</dd>
+              <dt>Inspection / Closing</dt><dd>${activeVer.inspectionDays} days / ${activeVer.closingDays} days</dd>
+              <dt>Contingencies</dt><dd style="font-size: 11px;">${esc(JSON.parse(activeVer.contingenciesJson).join(', '))}</dd>
+              <dt>Internal Notes</dt><dd style="font-style: italic; opacity: 0.8;">${esc(activeVer.internalNotes || "—")}</dd>
+            </dl>
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; font-size: 12px; margin-top: 12px;">
+              <div style="font-weight: 600; margin-bottom: 4px; opacity: 0.8;">Victor Underwriting Snapshot</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
+                <span>ARV: ${money(activeVer.underwritingArvSnapshot)}</span>
+                <span>Rehab: ${money(activeVer.underwritingRehabSnapshot)}</span>
+                <span>MAO: ${money(activeVer.underwritingMaoSnapshot)}</span>
+                <span>Confidence: ${Math.round(activeVer.underwritingConfidence * 100)}%</span>
+              </div>
+            </div>
+            ${gateHtml}
+            ${modifyFormHtml}
+            ${historyHtml}
+          </div>
+        `;
+      }
+    }
+
     let heroImgUrl = "";
     let heroImgBadge = "";
     
@@ -985,6 +1132,7 @@
         <div class="deal-room-side">
           <!-- Victor Underwriting -->
           ${victorHtml}
+          ${offersHtml}
 
           <!-- Operator Scratchpad -->
           <div class="bridge-panel scratchpad-panel">
@@ -1243,6 +1391,74 @@
     setOverride(oppId, "askingPrice", asking);
 
     window.showCustomAlert("Saved to this browser only. PIPELINE does not persist underwriting assumptions \u2014 the API is read-only.", "Local Underwriting Saved");
+  };
+
+  window.prepareOffer = async (oppId) => {
+    try {
+      const res = await fetch("/api/v1/operator/offers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: oppId })
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error);
+      window.showCustomAlert("Offer draft created successfully.", "Offer Prepared");
+      await loadOpportunity(oppId);
+    } catch (err) {
+      window.showCustomAlert(`Could not prepare offer (${err.message}).`, "Preparation Failed");
+    }
+  };
+
+  window.toggleModifyOfferForm = () => {
+    const el = document.getElementById("modify-offer-form");
+    if (el) {
+      el.style.display = el.style.display === "none" ? "block" : "none";
+    }
+  };
+
+  window.submitModifyOffer = async (oppId, offerId) => {
+    const price = Number(document.getElementById("mod-price").value || 0);
+    const strategyType = document.getElementById("mod-strategy").value;
+    const earnestMoney = Number(document.getElementById("mod-earnest").value || 0);
+    const inspectionDays = Number(document.getElementById("mod-inspection").value || 0);
+    const closingDays = Number(document.getElementById("mod-closing").value || 0);
+    
+    try {
+      const res = await fetch(`/api/v1/operator/offers/${encodeURIComponent(offerId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "modify",
+          proposedPrice: price,
+          strategyType,
+          earnestMoney,
+          inspectionDays,
+          closingDays
+        })
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error);
+      window.showCustomAlert("Offer draft modified, new version created.", "Offer Modified");
+      await loadOpportunity(oppId);
+    } catch (err) {
+      window.showCustomAlert(`Could not modify offer (${err.message}).`, "Modification Failed");
+    }
+  };
+
+  window.decideOffer = async (oppId, offerId, action) => {
+    try {
+      const res = await fetch(`/api/v1/operator/offers/${encodeURIComponent(offerId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error);
+      window.showCustomAlert(`Offer status updated to ${action.toUpperCase()}.`, "Offer Decision Saved");
+      await loadOpportunity(oppId);
+    } catch (err) {
+      window.showCustomAlert(`Could not save offer decision (${err.message}).`, "Decision Failed");
+    }
   };
 
   window.saveStageChange = (oppId) => {
@@ -1552,9 +1768,16 @@
       ? `<div class="piper-reason">Try: ${data.capabilities.slice(0, 5).map(esc).join(" · ")}</div>`
       : "";
 
-    const proposal = data.proposal && data.proposal.kind === "create_next_action"
-      ? `<div class="piper-item"><button type="button" onclick="piperConfirmAction('${esc(data.proposal.opportunityId)}', '${esc(data.proposal.title).replace(/'/g, "\\'")}')">Create this next action</button></div>`
-      : "";
+    let proposal = "";
+    if (data.proposal) {
+      if (data.proposal.kind === "create_next_action") {
+        proposal = `<div class="piper-item"><button type="button" onclick="piperConfirmAction('${esc(data.proposal.opportunityId)}', '${esc(data.proposal.title).replace(/'/g, "\\'")}')">Create this next action</button></div>`;
+      } else if (data.proposal.kind === "prepare_offer") {
+        proposal = `<div class="piper-item"><button type="button" onclick="window.prepareOffer('${esc(data.proposal.opportunityId)}')">Prepare Offer Draft</button></div>`;
+      } else if (data.proposal.kind === "modify_offer_price") {
+        proposal = `<div class="piper-item"><button type="button" onclick="window.submitModifyOfferPrice('${esc(data.proposal.opportunityId)}', ${data.proposal.proposedPrice})">Modify Price to ${money(data.proposal.proposedPrice)}</button></div>`;
+      }
+    }
 
     // Model-proposed writes. Explicitly labelled as unwritten until approved,
     // so a recommendation can never read as an executed action.
@@ -1592,7 +1815,33 @@
     }
   };
 
-  /** Reports the provider actually configured, including when there is none. */
+  window.submitModifyOfferPrice = async (oppId, price) => {
+    try {
+      const resOffers = await fetch(`/api/v1/operator/offers?opportunityId=${encodeURIComponent(oppId)}`);
+      const bodyOffers = await resOffers.json();
+      if (!bodyOffers.ok || !bodyOffers.data.offers || !bodyOffers.data.offers.length) {
+        throw new Error("No active offer found to modify.");
+      }
+      const offerId = bodyOffers.data.offers[0].id;
+      const res = await fetch(`/api/v1/operator/offers/${encodeURIComponent(offerId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "modify", proposedPrice: price })
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error);
+      window.showCustomAlert(`Offer price modified to ${money(price)}.`, "Offer Modified");
+      
+      state.piperMessages.push({
+        sender: "bot",
+        text: `Modified offer price to ${money(price)} on ${linkOpp(oppId)}. A new draft version has been created.`
+      });
+      renderPiperHistory();
+      await loadOpportunity(oppId);
+    } catch (err) {
+      window.showCustomAlert(`Could not modify offer price (${err.message}).`, "Modification Failed");
+    }
+  };
   async function refreshPiperStatus() {
     try {
       const res = await fetch("/api/v1/piper/status");

@@ -23,6 +23,51 @@ export class SqliteOpportunityRepository {
     this.db = db;
   }
 
+  _fetchOffers(oppId) {
+    const offers = this.db.prepare("SELECT * FROM seller_offers WHERE opportunity_id = ? ORDER BY created_at DESC").all(oppId);
+    return offers.map(o => {
+      const versions = this.db.prepare("SELECT * FROM seller_offer_versions WHERE offer_id = ? ORDER BY version_number DESC").all(o.id);
+      return {
+        id: o.id,
+        opportunityId: o.opportunity_id,
+        currentVersion: o.current_version,
+        status: o.status,
+        activeVersionId: o.active_version_id,
+        createdBy: o.created_by,
+        createdAt: o.created_at,
+        updatedAt: o.updated_at,
+        versions: versions.map(v => ({
+          id: v.id,
+          offerId: v.offer_id,
+          versionNumber: v.version_number,
+          versionStatus: v.version_status,
+          strategyType: v.strategy_type,
+          purchasePrice: v.purchase_price,
+          earnestMoney: v.earnest_money,
+          inspectionDays: v.inspection_days,
+          closingDays: v.closing_days,
+          expirationAt: v.expiration_at,
+          contingenciesJson: v.contingencies_json,
+          sellerFacingTerms: v.seller_facing_terms,
+          internalNotes: v.internal_notes,
+          underwritingSourceType: v.underwriting_source_type,
+          underwritingSourceId: v.underwriting_source_id,
+          underwritingVersionId: v.underwriting_version_id,
+          underwritingArvSnapshot: v.underwriting_arv_snapshot,
+          underwritingRehabSnapshot: v.underwriting_rehab_snapshot,
+          underwritingMaoSnapshot: v.underwriting_mao_snapshot,
+          underwritingConfidence: v.underwriting_confidence,
+          underwritingLimitations: v.underwriting_limitations,
+          underwritingTimestamp: v.underwriting_timestamp,
+          ocgOneApprovalId: v.ocg_one_approval_id,
+          createdBy: v.created_by,
+          createdAt: v.created_at,
+          supersededBy: v.superseded_by
+        }))
+      };
+    });
+  }
+
   async listAll() {
     const rows = this.db.prepare(`
       SELECT 
@@ -117,7 +162,7 @@ export class SqliteOpportunityRepository {
         participants: [],
         sources: [],
         stageTimeline: [],
-        offers: [],
+        offers: this._fetchOffers(r.id),
         outcome: null
       };
     });
@@ -217,7 +262,7 @@ export class SqliteOpportunityRepository {
       participants: [],
       sources: [],
       stageTimeline: [],
-      offers: [],
+      offers: this._fetchOffers(opp.id),
       outcome: null
     };
   }

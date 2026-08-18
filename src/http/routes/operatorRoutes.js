@@ -44,7 +44,7 @@ class BadRequest extends Error {
  */
 export async function handleOperatorRoutes(req, res, ctx, url, segments) {
   const [, resource, id] = segments; // ["operator", <resource>, <id?>]
-  const known = ["next-actions", "notes", "checklist", "interactions"];
+  const known = ["next-actions", "notes", "checklist", "interactions", "offers"];
   if (!known.includes(resource)) {
     sendJson(res, 404, { ok: false, error: "not_found" });
     return true;
@@ -84,6 +84,9 @@ export async function handleOperatorRoutes(req, res, ctx, url, segments) {
         case "interactions":
           if (!opportunityId) throw new BadRequest("missing_opportunityId");
           return ok(res, { interactions: repo.listInteractions(opportunityId) });
+        case "offers":
+          if (!opportunityId) throw new BadRequest("missing_opportunityId");
+          return ok(res, { offers: repo.listOffers(opportunityId) });
       }
     }
 
@@ -134,6 +137,37 @@ export async function handleOperatorRoutes(req, res, ctx, url, segments) {
           actor,
         });
         return ok(res, { interaction }, 201);
+      }
+      case "offers": {
+        if (id) {
+          const action = text(body.action, "action", { max: 50 });
+          const updated = repo.decideOffer({
+            offerId: id,
+            action,
+            proposedPrice: body.proposedPrice,
+            strategyType: body.strategyType,
+            earnestMoney: body.earnestMoney,
+            inspectionDays: body.inspectionDays,
+            closingDays: body.closingDays,
+            contingencies: body.contingencies,
+            internalNotes: body.internalNotes,
+            actor
+          });
+          return ok(res, { offer: updated }, 200);
+        }
+        const oppId = text(body.opportunityId, "opportunityId", { max: 200 });
+        const created = repo.prepareOffer({
+          opportunityId: oppId,
+          proposedPrice: body.proposedPrice,
+          strategyType: body.strategyType,
+          earnestMoney: body.earnestMoney,
+          inspectionDays: body.inspectionDays,
+          closingDays: body.closingDays,
+          contingencies: body.contingencies,
+          internalNotes: body.internalNotes,
+          actor
+        });
+        return ok(res, { offer: created }, 201);
       }
     }
 
