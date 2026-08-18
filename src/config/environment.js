@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 /**
  * PIPELINE environment / configuration contract.
  *
@@ -13,6 +14,14 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url)); // <app>/src/config
 /** Application root: <app>/src/config -> <app>. */
 export const APP_ROOT = resolve(__dirname, "../..");
+
+// Auto-load .env from APP_ROOT if present
+const rootEnv = resolve(APP_ROOT, ".env");
+if (existsSync(rootEnv) && typeof process.loadEnvFile === "function") {
+  try {
+    process.loadEnvFile(rootEnv);
+  } catch (_) {}
+}
 
 const DEFAULTS = {
   host: "127.0.0.1",

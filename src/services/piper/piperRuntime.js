@@ -164,6 +164,8 @@ export class PiperRuntime {
           items: deterministic.items,
           proposal: deterministic.proposal,
           capabilities: deterministic.capabilities,
+          directive: deterministic.directive || null,
+          followUps: deterministic.followUps || [],
           deterministic: true,
         });
       }
@@ -226,7 +228,14 @@ export class PiperRuntime {
       state = this.#setState(runId, state, RUN_STATES.COMPLETE);
       const finalText = answer || "I don't have an answer for that from stored PIPELINE state.";
       this.#appendMessage(thread.id, runId, "assistant", finalText);
-      return this.#result(runId, thread.id, { answer: finalText, items: itemsFrom(readResults), deterministic: false });
+      const inferred = inferDirectives(question, snapshot, readResults, activeOpportunityId);
+      return this.#result(runId, thread.id, {
+        answer: finalText,
+        items: itemsFrom(readResults),
+        directive: inferred.directive,
+        followUps: inferred.followUps,
+        deterministic: false
+      });
     } catch (err) {
       const run = this.db.prepare("SELECT state FROM piper_runs WHERE id = ?").get(runId);
       // A cancel() call already settled the run; don't overwrite it.
@@ -393,4 +402,42 @@ function itemsFrom(readResults) {
     }
   }
   return items;
+}
+
+
+function inferDirectives(question, snapshot, readResults, activeOppId) {
+  const q = String(question || "").toLowerCase();
+  const unres = snapshot.opportunities.find((o) => o.provenanceState === "unresolved");
+  const targetId = activeOppId || (readResults.find(r => r.result?.data?.id)?.result.data.id) || (unres ? unres.id : null);
+
+  if (/what needs.*attention|anything urgent|needs me/i.test(q)) {
+    const priority = unres || snapshot.opportunities.find((o) => o.underwriting?.status === "insufficient_evidence") || snapshot.opportunities[0];
+    return {
+      directive: priority ? { type: "highlight", opportunityId: priority.id, view: "opportunities" } : null,
+      followUps: ["Show me why", "Go to underwriting", "Show me the unresolved classifications"]
+    };
+  }
+
+  if (/^(?:show me )?why|why does (?:this|it) need|explain why/i.test(q)) {
+    return {
+      directive: targetId ? { type: "open_evidence", opportunityId: targetId } : null,
+      followUps: ["Go to underwriting", "Show me the unresolved classifications", "Prepare draft offer"]
+    };
+  }
+
+  if (/go to underwrit|open underwrit|show underwrit/i.test(q)) {
+    return {
+      directive: targetId ? { type: "navigate_underwriting", opportunityId: targetId } : null,
+      followUps: ["Show me the unresolved classifications", "What am I missing?", "Provenance state"]
+    };
+  }
+
+  if (/unresolved classif|unresolved record|show.*unresolved/i.test(q)) {
+    return {
+      directive: { type: "navigate_classifications", filter: "unresolved" },
+      followUps: ["Show me the unresolved one", "Show underwriting for this deal", "Provenance state"]
+    };
+  }
+
+  return { directive: null, followUps: ["What needs my attention?", "Show me the unresolved classifications", "System health"] };
 }

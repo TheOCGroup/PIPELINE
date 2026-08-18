@@ -113,7 +113,7 @@ if (Test-Path $stderrLog) { Remove-Item $stderrLog -Force -ErrorAction SilentlyC
 
 # 4. Start PIPELINE server using node server.js with correct WorkingDirectory and logs
 Write-Host "Starting PIPELINE server on port $port ..." -ForegroundColor Cyan
-$process = Start-Process -FilePath "node" -ArgumentList "server.js" `
+$process = Start-Process -FilePath "node" -ArgumentList @("--env-file=.env", "server.js") `
     -WorkingDirectory $PSScriptRoot `
     -RedirectStandardOutput $stdoutLog `
     -RedirectStandardError $stderrLog `

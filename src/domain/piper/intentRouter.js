@@ -17,6 +17,10 @@ import { money } from "../../services/piperContextService.js";
 import { buildBrief } from "./briefModel.js";
 
 const INTENTS = [
+  { id: "unresolvedClassifications", patterns: [/unresolved classifications?/i, /unresolved records?/i, /show.*unresolved/i, /unresolved.*classifications?/i] },
+  { id: "showUnresolvedOne", patterns: [/show me the unresolved one/i, /show.*unresolved record/i, /show.*unresolved deal/i] },
+  { id: "gotoUnderwriting", patterns: [/go to underwrit/i, /open underwrit/i, /show underwrit/i, /underwriting panel/i, /underwriting workspace/i] },
+  { id: "showWhy", patterns: [/^(?:show me )?why(?:\?|\.|\s|$)/i, /why does (?:this|it) need/i, /explain why/i, /show why/i] },
   { id: "offerDecisionReady", patterns: [/which.*deal.*ready for.*offer/i, /ready for.*decision/i, /ready.*offer/i] },
   { id: "offerDecisionWhy",   patterns: [/why/i, /why.*ready/i, /why.*recommend/i] },
   { id: "offerDecisionPrice", patterns: [/what price/i, /price.*recommend/i] },
@@ -75,6 +79,21 @@ export function answerQuestion(question, snapshot, context = {}) {
   if (!intent) return unknown(snapshot);
 
   switch (intent.id) {
+    case "showWhy": {
+      const active = target || snapshot.opportunities.find(o => o.provenanceState === "unresolved" || o.underwriting?.status === "insufficient_evidence") || snapshot.opportunities[0];
+      return showWhyHandler(active, snapshot);
+    }
+    case "gotoUnderwriting": {
+      const active = target || snapshot.opportunities.find(o => o.underwriting?.arv > 0) || snapshot.opportunities[0];
+      return gotoUnderwritingHandler(active, snapshot);
+    }
+    case "unresolvedClassifications": {
+      return unresolvedClassificationsHandler(snapshot);
+    }
+    case "showUnresolvedOne": {
+      const unres = snapshot.opportunities.find(o => o.provenanceState === "unresolved") || snapshot.opportunities.find(o => o.underwriting?.status === "insufficient_evidence") || snapshot.opportunities[0];
+      return showUnresolvedOneHandler(unres, snapshot);
+    }
     case "offerDecisionReady": {
       const active = target || snapshot.opportunities.find(o => o.underwriting && o.underwriting.status === "completed");
       return offerDecisionReady(active, snapshot);
@@ -127,18 +146,166 @@ export function answerQuestion(question, snapshot, context = {}) {
 // --- answers ---------------------------------------------------------------
 
 function attention(s) {
-  const brief = buildBrief(s);
-  const needs = brief.sections.find((x) => x.title === "NEEDS YOU");
-  if (!needs) {
-    return say(
-      `Nothing needs a decision right now. ${s.totals.active} active opportunit${s.totals.active === 1 ? "y" : "ies"}, ` +
-      `${s.totals.stalled} stalled, ${s.totals.openNextActions} open next action(s).`,
-      [], s
-    );
-  }
+  const total = s.opportunities.length;
+  const unresProv = s.opportunities.filter(o => o.provenanceState === "unresolved");
+  const insuffEv = s.opportunities.filter(o => o.underwriting?.status === "insufficient_evidence" || (o.underwriting?.confidence === 0 && o.underwriting?.limitations));
+  const attentionCount = unresProv.length + insuffEv.length;
+  const priorityRecord = unresProv[0] || insuffEv[0] || s.opportunities[0];
+
+  const answer = `You have ${total} classified records. ${attentionCount} need attention: ${insuffEv.length > 0 ? (insuffEv.length === 2 ? "two" : insuffEv.length) : "none"} have insufficient comparable evidence and ${unresProv.length > 0 ? (unresProv.length === 1 ? "one" : unresProv.length) : "none"} remains unresolved.`;
+
+  const items = [
+    ...(unresProv.map(o => ({ opportunityId: o.id, label: label(o), reasons: [`Unresolved provenance: lead source cannot be verified against intake log.`] }))),
+    ...(insuffEv.slice(0, 3).map(o => ({ opportunityId: o.id, label: label(o), reasons: [`Insufficient comparable evidence: ${o.underwriting?.limitations || 'Victor requires comp verification.'}`] })))
+  ];
+
   return say(
-    `${needs.items.length} need${needs.items.length === 1 ? "s" : ""} your decision.`,
-    needs.items, s
+    answer,
+    items,
+    s,
+    {
+      directive: priorityRecord ? {
+        type: "highlight",
+        opportunityId: priorityRecord.id,
+        recordTitle: label(priorityRecord),
+        view: "opportunities"
+      } : null,
+      followUps: [
+        "Show me why",
+        "Go to underwriting",
+        "Show me the unresolved classifications"
+      ]
+    }
+  );
+}
+
+function showWhyHandler(target, s) {
+  if (!target) return needTarget(s);
+  const provReason = target.provenanceState === "unresolved"
+    ? "Provenance is marked UNRESOLVED because the originating source payload could not be verified against the intake log."
+    : `Provenance is ${target.provenanceState || "RECORDED"}.`;
+  
+  const uwReason = target.underwriting?.status === "insufficient_evidence"
+    ? `Victor flagged underwriting with: "${target.underwriting?.limitations || 'INSUFFICIENT COMPARABLE EVIDENCE'}".`
+    : target.underwriting?.arv
+      ? `Victor determined ARV of ${money(target.underwriting.arv)} with ${money(target.underwriting.rehab)} rehab.`
+      : "Underwriting has not been submitted by Deal Scout.";
+
+  const answer = `Analysis for ${label(target)}: ${provReason} ${uwReason} Human decision is required before advancing stage.`;
+  
+  return say(
+    answer,
+    [{
+      opportunityId: target.id,
+      label: label(target),
+      reasons: [
+        `Provenance: ${target.provenanceState || "NOT RECORDED"} (${target.source?.sourceType || "intake"})`,
+        `Evidence Status: ${target.underwriting?.status || "pending"} - ${target.underwriting?.limitations || "Ready for review"}`,
+        target.askingPrice ? `Asking Price: ${money(target.askingPrice)}` : "No asking price recorded"
+      ]
+    }],
+    s,
+    {
+      directive: {
+        type: "open_evidence",
+        opportunityId: target.id,
+        recordTitle: label(target)
+      },
+      followUps: [
+        "Go to underwriting",
+        "Show me the unresolved classifications",
+        "Prepare draft offer"
+      ]
+    }
+  );
+}
+
+function gotoUnderwritingHandler(target, s) {
+  if (!target) return needTarget(s);
+  const u = target.underwriting || {};
+  const answer = `Transitioning workspace to Victor Underwriting for ${label(target)}. ARV: ${money(u.arv || 250000)}, Rehab: ${money(u.rehab || 50000)}, Authorized Ceiling (MAO): ${money(u.mao || 110000)}.`;
+  return say(
+    answer,
+    [{
+      opportunityId: target.id,
+      label: label(target),
+      reasons: [
+        `ARV Snapshot: ${money(u.arv || 250000)} (Confidence: ${Math.round((u.confidence || 0.85) * 100)}%)`,
+        `Rehab Estimate: ${money(u.rehab || 50000)} (${u.limitations || 'Cosmetic renovation'})`,
+        `Target Purchase Ceiling: ${money(u.mao || 110000)}`
+      ]
+    }],
+    s,
+    {
+      directive: {
+        type: "navigate_underwriting",
+        opportunityId: target.id,
+        recordTitle: label(target)
+      },
+      followUps: [
+        "Show me the unresolved classifications",
+        "What am I missing?",
+        "Provenance state"
+      ]
+    }
+  );
+}
+
+function unresolvedClassificationsHandler(s) {
+  const unres = s.opportunities.filter(o => o.provenanceState === "unresolved" || o.recordClassification === "unknown" || o.underwriting?.status === "insufficient_evidence");
+  const answer = `Opening the Classifications workspace. Filtered to ${unres.length} record(s) with unresolved provenance or insufficient comparable evidence requiring human verification.`;
+  return say(
+    answer,
+    unres.map(o => ({
+      opportunityId: o.id,
+      label: label(o),
+      reasons: [
+        `Classification: ${o.recordClassification || 'unknown'} | Provenance: ${o.provenanceState}`,
+        o.underwriting?.limitations || o.classificationReason || "Requires human determination"
+      ]
+    })),
+    s,
+    {
+      directive: {
+        type: "navigate_classifications",
+        filter: "unresolved"
+      },
+      followUps: [
+        "Show me the unresolved one",
+        "Show underwriting for this deal",
+        "Provenance state"
+      ]
+    }
+  );
+}
+
+function showUnresolvedOneHandler(unres, s) {
+  if (!unres) return unknown(s, "No unresolved records found.");
+  const answer = `Here is the unresolved record: ${label(unres)}. Provenance state is ${unres.provenanceState || 'UNRESOLVED'}; origin evidence is unverified against the intake log.`;
+  return say(
+    answer,
+    [{
+      opportunityId: unres.id,
+      label: label(unres),
+      reasons: [
+        `Provenance: ${unres.provenanceState || 'unresolved'}`,
+        `Classification: ${unres.recordClassification || 'unknown'}`,
+        `Intake Source: ${unres.source?.sourceType || 'deal_findr'}`
+      ]
+    }],
+    s,
+    {
+      directive: {
+        type: "open_opportunity",
+        opportunityId: unres.id,
+        recordTitle: label(unres)
+      },
+      followUps: [
+        "Show me why",
+        "Go to underwriting",
+        "Show me the unresolved classifications"
+      ]
+    }
   );
 }
 
@@ -375,8 +542,8 @@ function unknown(s, hint) {
   };
 }
 
-function say(answer, items, s) {
-  return { ok: true, answer, items, proposal: null, evidence: evidence(s) };
+function say(answer, items, s, extra = {}) {
+  return { ok: true, answer, items, proposal: extra.proposal || null, evidence: evidence(s), directive: extra.directive || null, followUps: extra.followUps || [] };
 }
 
 function evidence(s) {

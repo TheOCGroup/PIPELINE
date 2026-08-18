@@ -1,3 +1,72 @@
+
+  function executeWorkspaceDirective(d) {
+    if (!d || !d.type) return;
+    
+    if (d.type === "highlight") {
+      if (d.view === "opportunities" && location.pathname !== "/opportunities" && !location.pathname.startsWith("/opportunities/")) {
+        navigate("/opportunities");
+      }
+      setTimeout(() => {
+        highlightRecord(d.opportunityId);
+      }, 150);
+    } else if (d.type === "open_evidence" || d.type === "open_opportunity") {
+      if (d.opportunityId) {
+        if (location.pathname !== "/opportunities/" + encodeURIComponent(d.opportunityId)) {
+          navigate("/opportunities/" + encodeURIComponent(d.opportunityId));
+        }
+        setTimeout(() => {
+          const target = document.getElementById("detail-provenance-section") || document.getElementById("detail-hero");
+          if (target) {
+            target.classList.add("highlight-target");
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 150);
+      }
+    } else if (d.type === "navigate_underwriting") {
+      if (d.opportunityId) {
+        if (location.pathname !== "/opportunities/" + encodeURIComponent(d.opportunityId)) {
+          navigate("/opportunities/" + encodeURIComponent(d.opportunityId));
+        }
+        setTimeout(() => {
+          const target = document.getElementById("detail-underwriting-section");
+          if (target) {
+            target.classList.add("highlight-target");
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 150);
+      }
+    } else if (d.type === "navigate_classifications") {
+      if (location.pathname !== "/classifications") {
+        navigate("/classifications");
+      }
+      setTimeout(() => {
+        if (d.filter && window.filterClassifications) {
+          window.filterClassifications(d.filter);
+        }
+      }, 150);
+    }
+  }
+
+  function highlightRecord(id) {
+    if (!id) return;
+    document.querySelectorAll(".highlight-target").forEach((el) => el.classList.remove("highlight-target"));
+    const selector = `tr[data-opp-id="${id}"], .kanban-card[data-opp-id="${id}"], [data-opportunity-id="${id}"], tr:has(a[href*="${id}"]), .opp-card:has(a[href*="${id}"])`;
+    const el = document.querySelector(selector);
+    if (el) {
+      el.classList.add("highlight-target");
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
+  window.sendPiperPrompt = (text) => {
+    const input = document.getElementById("piper-chat-input");
+    const form = document.getElementById("piper-chat-form");
+    if (input && form) {
+      input.value = text;
+      form.dispatchEvent(new Event("submit"));
+    }
+  };
+
 // ========================================================
 // PIPELINE CLIENT APPLICATION ENGINE - FULLY INTERACTIVE
 // ========================================================
