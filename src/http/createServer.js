@@ -35,6 +35,7 @@ const STATIC = {
   "/app.js": "application/javascript; charset=utf-8",
   "/styles.css": "text/css; charset=utf-8",
   "/reactor-runtime-fixes.css": "text/css; charset=utf-8",
+  "/reactor-tone-lock.css": "text/css; charset=utf-8",
 };
 
 function readPublic(publicDir, file) {
@@ -87,7 +88,6 @@ export function createServer(ctx) {
         }
 
         if (path === "/api/v1" || path.startsWith("/api/v1/")) {
-          // Intercept auth session/logout endpoints under /api/v1/auth/
           if (path === "/api/v1/auth/session") {
             if (req.method !== "GET" && req.method !== "HEAD") {
               return sendJson(res, 405, { ok: false, error: "method_not_allowed" }, { "Allow": "GET, HEAD" });
@@ -105,8 +105,6 @@ export function createServer(ctx) {
             return handleConvertLead(req, res, ctx);
           }
 
-          // Enforce session check for other /api/v1/* routes
-          // EXCEPT public /api/v1/system/status and S2S endpoint opportunities/convert
           if (path !== "/api/v1/system/status" && path !== "/api/v1/opportunities/convert") {
             if (ctx.config.env === "production" && ctx.config.integrationEnabled) {
               let isS2S = false;
@@ -143,14 +141,11 @@ export function createServer(ctx) {
                 if (!session.permissions || !session.permissions.includes("pipeline.read")) {
                   return sendJson(res, 403, { ok: false, error: "forbidden_insufficient_permissions" });
                 }
-                // Carried so operator writes below can attribute the actor.
                 req.pipelineSession = session;
               }
             }
           }
 
-          // Operator state and Piper sit after session enforcement, so in
-          // production they inherit the same authentication as every read.
           const seg = path.replace(/^\/api\/v1\/?/, "").split("/").filter(Boolean);
           if (seg[0] === "operator") {
             if (await handleOperatorRoutes(req, res, ctx, url, seg)) return;
@@ -161,11 +156,9 @@ export function createServer(ctx) {
 
           return handleApi(req, res, ctx, url);
         }
-        // Unknown api endpoints return 404 regardless of method
         return sendJson(res, 404, { ok: false, error: "not_found" });
       }
 
-      // 4. Authentication Handoff (POST only)
       if (path === "/auth/handoff") {
         if (req.method !== "POST") {
           return sendJson(res, 405, { ok: false, error: "method_not_allowed" }, { "Allow": "POST" });
@@ -173,22 +166,18 @@ export function createServer(ctx) {
         return handleAuthHandoff(req, res, ctx);
       }
 
-      // 5. Other auth endpoints return 404
       if (path.startsWith("/auth/")) {
         return sendJson(res, 404, { ok: false, error: "not_found" });
       }
 
-      // 6. Frontend / asset routes (GET/HEAD only)
       if (req.method !== "GET" && req.method !== "HEAD") {
         return sendJson(res, 405, { ok: false, error: "method_not_allowed" }, { "Allow": "GET, HEAD" });
       }
 
-      // Static assets
       if (STATIC[path]) {
         return sendAsset(res, 200, readPublic(publicDir, path.slice(1)), STATIC[path]);
       }
 
-      // SPA fallback
       return sendHtml(res, 200, readPublic(publicDir, "index.html").toString("utf8"));
     } catch (err) {
       return sendJson(res, 500, { ok: false, error: "internal_error" });
