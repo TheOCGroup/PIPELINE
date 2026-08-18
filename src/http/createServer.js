@@ -34,6 +34,7 @@ import { handlePiperRoutes } from "./routes/piperRoutes.js";
 const STATIC = {
   "/app.js": "application/javascript; charset=utf-8",
   "/styles.css": "text/css; charset=utf-8",
+  "/reactor-runtime-fixes.css": "text/css; charset=utf-8",
 };
 
 function readPublic(publicDir, file) {
