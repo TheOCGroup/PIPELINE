@@ -303,15 +303,15 @@
     loading();
     state.activeOppId = null;
     updatePiperContext();
+    const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
     const [dq, sys, opps, briefRes] = await Promise.all([
       api("/api/v1/data-quality"),
       api("/api/v1/system/status"),
       api("/api/v1/opportunities?pageSize=100"),
-      api("/api/v1/piper/brief").catch(() => ({ ok: true, data: { headline: "Pipeline active", sections: [] } }))
+      api(`/api/v1/piper/brief?excludeFixtures=${!showFixtures}`).catch(() => ({ ok: true, data: { headline: "Pipeline active", sections: [] } }))
     ]);
     const d = dq.data, s = sys.data, b = briefRes.data;
     
-    const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
     const fixtureIds = new Set(opps.data.filter(o => o.isFixture).map(o => o.id));
     state.opportunities = showFixtures ? opps.data : opps.data.filter(o => !o.isFixture);
 
@@ -1548,7 +1548,8 @@
   async function loadPiperBrief() {
     try {
       refreshPiperStatus();
-      const res = await fetch("/api/v1/piper/brief");
+      const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
+      const res = await fetch(`/api/v1/piper/brief?excludeFixtures=${!showFixtures}`);
       const body = await res.json();
       if (!body.ok) return;
       const b = body.data;

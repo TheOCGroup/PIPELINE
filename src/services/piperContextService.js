@@ -192,6 +192,7 @@ export class PiperContextService {
         stalled,
         missing,
         risks,
+        isFixture: r.created_by === 'system-seed',
       };
     });
 

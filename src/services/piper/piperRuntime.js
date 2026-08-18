@@ -337,8 +337,11 @@ export class PiperRuntime {
   }
 
   /** The startup brief — unchanged semantics, now runtime-aware. */
-  brief() {
+  brief({ excludeFixtures = false } = {}) {
     const snapshot = this.context.snapshot();
+    if (excludeFixtures) {
+      snapshot.opportunities = snapshot.opportunities.filter((o) => !o.isFixture);
+    }
     return { brief: buildBrief(snapshot), provider: this.provider.describe() };
   }
 }

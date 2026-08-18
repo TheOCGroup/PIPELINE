@@ -60,7 +60,8 @@ export async function handlePiperRoutes(req, res, ctx, url, segments) {
     switch (action) {
       case "brief": {
         if (!requireGet()) return true;
-        const { brief, provider } = piper.brief();
+        const excludeFixtures = url.searchParams.get("excludeFixtures") === "true";
+        const { brief, provider } = piper.brief({ excludeFixtures });
         if (url.searchParams.get("acknowledge") === "true" && ctx.config.readOnly !== true) {
           brief.acknowledgedAt = ctx.services.piperContext.markBriefDelivered();
         }
