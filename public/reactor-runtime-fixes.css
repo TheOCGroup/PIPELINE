@@ -1,0 +1,145 @@
+/* PIPELINE Reactor runtime/layout lock.
+   Narrow corrective layer only: preserve the existing visual system and
+   component contract while making the desktop shell consume the real viewport. */
+
+html,
+body {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  body {
+    width: 100vw;
+    min-width: 100vw;
+    max-width: 100vw;
+    grid-template-columns: 240px minmax(0, 1fr) clamp(360px, 24vw, 420px) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+    grid-template-areas: "side main piper" !important;
+    overflow: hidden !important;
+  }
+
+  body.has-collapsed-piper {
+    grid-template-columns: 240px minmax(0, 1fr) 60px !important;
+  }
+
+  body.has-expanded-piper {
+    grid-template-columns: 240px minmax(0, 45%) minmax(0, 55%) !important;
+  }
+
+  .nav {
+    min-width: 0;
+    width: 100%;
+  }
+
+  main {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  #view,
+  .skeleton-container {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .table-wrap {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  table {
+    min-width: max-content;
+  }
+
+  .piper-widget {
+    grid-area: piper;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    height: 100vh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .piper-widget.collapsed {
+    width: 100% !important;
+  }
+
+  .piper-drawer {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  .piper-header,
+  .piper-context-bar,
+  .piper-canvas,
+  .quick-actions-bar,
+  .piper-chat-form,
+  .piper-state-note,
+  .piper-disclosure {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .piper-chat-history {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  .piper-header {
+    overflow: hidden;
+  }
+
+  .piper-status,
+  .piper-provider,
+  .piper-state-chip {
+    min-width: 0;
+  }
+}
+
+/* Keep dense desktop workspaces useful on medium-width windows. */
+@media (min-width: 1024px) and (max-width: 1365px) {
+  body {
+    grid-template-columns: 216px minmax(0, 1fr) 360px !important;
+  }
+
+  body.has-collapsed-piper {
+    grid-template-columns: 216px minmax(0, 1fr) 60px !important;
+  }
+
+  main {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+  }
+}
+
+/* Motion remains expressive but must respect OS accessibility settings. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
