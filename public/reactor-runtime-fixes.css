@@ -1,74 +1,224 @@
-/* PIPELINE Reactor runtime/layout lock.
-   Narrow corrective layer only: preserve the existing visual system and
-   component contract while making the desktop shell consume the real viewport. */
+/* OCG PIPELINE — Reactor experience lock
+   Final corrective layer. Keep the existing semantic/component contract while
+   making the operating workspace fluid, balanced, and explicit at every size. */
 
 html,
 body {
   width: 100%;
-  max-width: none;
   min-width: 0;
+  max-width: none;
+  min-height: 100%;
 }
 
+html {
+  background: #020307;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+/* -------------------- desktop operating shell ------------------------- */
 @media (min-width: 1024px) {
   body {
-    width: 100vw;
-    min-width: 100vw;
-    max-width: 100vw;
-    grid-template-columns: 240px minmax(0, 1fr) clamp(360px, 24vw, 420px) !important;
-    grid-template-rows: minmax(0, 1fr) !important;
-    grid-template-areas: "side main piper" !important;
+    width: 100dvw !important;
+    height: 100dvh !important;
+    min-width: 100dvw !important;
+    max-width: 100dvw !important;
+    min-height: 100dvh !important;
+    display: grid !important;
+    /* Explicitly include FOOT. The previous one-row override left .footer's
+       grid-area undefined, which could create an implicit track to the right. */
+    grid-template-columns: 224px minmax(0, 1fr) clamp(420px, 28vw, 520px) !important;
+    grid-template-rows: minmax(0, 1fr) 36px !important;
+    grid-template-areas:
+      "side main piper"
+      "side foot piper" !important;
+    column-gap: 0 !important;
+    row-gap: 0 !important;
     overflow: hidden !important;
+    background:
+      radial-gradient(circle at 72% 12%, rgba(0, 240, 255, .045), transparent 30%),
+      radial-gradient(circle at 18% 88%, rgba(255, 179, 0, .025), transparent 34%),
+      #020307 !important;
   }
 
   body.has-collapsed-piper {
-    grid-template-columns: 240px minmax(0, 1fr) 60px !important;
+    grid-template-columns: 224px minmax(0, 1fr) 58px !important;
   }
 
   body.has-expanded-piper {
-    grid-template-columns: 240px minmax(0, 45%) minmax(0, 55%) !important;
+    grid-template-columns: 224px minmax(360px, 42%) minmax(620px, 58%) !important;
   }
 
   .nav {
-    min-width: 0;
-    width: 100%;
+    grid-area: side !important;
+    grid-row: 1 / -1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    padding: 22px 14px 18px !important;
+    background: linear-gradient(180deg, #03050a 0%, #020308 100%) !important;
+    border-right: 1px solid rgba(0, 240, 255, .075) !important;
+    box-shadow: 16px 0 50px rgba(0, 0, 0, .18);
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  .brand {
+    padding: 8px 10px 22px !important;
+    margin-bottom: 14px !important;
+  }
+
+  .brand-name {
+    letter-spacing: .13em !important;
+  }
+
+  .nav a {
+    min-height: 42px;
+    border: 1px solid transparent;
+  }
+
+  .nav a[aria-current="page"] {
+    background: linear-gradient(90deg, rgba(0,240,255,.10), rgba(0,240,255,.025)) !important;
+    border-color: rgba(0,240,255,.11) !important;
+    box-shadow: inset 2px 0 0 rgba(0,240,255,.75);
   }
 
   main {
+    grid-area: main !important;
     width: 100% !important;
     max-width: none !important;
     min-width: 0 !important;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: clamp(24px, 2vw, 38px) clamp(24px, 2.35vw, 46px) 42px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    scrollbar-gutter: stable;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.007), transparent 24%),
+      radial-gradient(circle at 50% 0%, rgba(0,240,255,.018), transparent 36%);
   }
 
   #view,
   .skeleton-container {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+  }
+
+  .footer {
+    grid-area: foot !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 36px !important;
+    margin: 0 !important;
+    padding: 0 clamp(24px, 2.35vw, 46px) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 16px !important;
+    overflow: hidden !important;
+    background: rgba(2, 3, 7, .94) !important;
+    border-top: 1px solid rgba(255,255,255,.045) !important;
+    color: rgba(226,232,240,.46) !important;
+    font-size: 10px !important;
+    letter-spacing: .04em;
+  }
+
+  .footer > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Main data surfaces should fill the workspace instead of looking like
+     centered website cards floating inside a desktop application. */
+  .panel,
+  .table-wrap,
+  .filters,
+  .cards,
+  .bridge-panel,
+  .narrative-panel,
+  .skeleton-panel,
+  .skeleton-narrative-panel {
     width: 100%;
     max-width: none;
     min-width: 0;
   }
 
-  .table-wrap {
-    width: 100%;
-    max-width: 100%;
+  .panel,
+  .table-wrap,
+  .filters,
+  .bridge-panel,
+  .narrative-panel {
+    border-color: rgba(0,240,255,.075) !important;
+    box-shadow: 0 12px 34px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.012) !important;
+  }
+
+  .cards {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)) !important;
+    gap: 14px !important;
+  }
+
+  .card {
     min-width: 0;
-    overflow-x: auto;
+    border-color: rgba(0,240,255,.07) !important;
+    background: linear-gradient(145deg, rgba(11,17,29,.83), rgba(7,11,20,.72)) !important;
+  }
+
+  .card:hover {
+    transform: translateY(-2px) !important;
+    border-color: rgba(0,240,255,.24) !important;
+    box-shadow: 0 16px 42px rgba(0,0,0,.36), 0 0 24px rgba(0,240,255,.035) !important;
+  }
+
+  .table-wrap {
+    overflow-x: auto !important;
     overscroll-behavior-inline: contain;
   }
 
   table {
+    width: 100% !important;
     min-width: max-content;
   }
 
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    backdrop-filter: blur(18px);
+  }
+
+  tbody tr {
+    transition: background-color .16s ease, box-shadow .16s ease;
+  }
+
+  tbody tr:hover {
+    background: rgba(0,240,255,.045) !important;
+    box-shadow: inset 2px 0 0 rgba(0,240,255,.28);
+  }
+
+  /* ---------------- Piper operating layer ---------------- */
   .piper-widget {
-    grid-area: piper;
+    grid-area: piper !important;
+    grid-row: 1 / -1 !important;
+    position: relative !important;
+    inset: auto !important;
     width: 100% !important;
     max-width: none !important;
     min-width: 0 !important;
-    height: 100vh !important;
+    height: 100dvh !important;
     min-height: 0 !important;
+    margin: 0 !important;
     overflow: hidden !important;
+    border-left: 1px solid rgba(0,240,255,.10);
+    background: #04060b;
+    box-shadow: -22px 0 70px rgba(0,0,0,.28);
   }
 
   .piper-widget.collapsed {
@@ -76,6 +226,8 @@ body {
   }
 
   .piper-drawer {
+    position: absolute !important;
+    inset: 0 !important;
     width: 100% !important;
     max-width: none !important;
     min-width: 0 !important;
@@ -84,55 +236,158 @@ body {
     display: flex !important;
     flex-direction: column !important;
     overflow: hidden !important;
+    background:
+      radial-gradient(circle at 68% 8%, rgba(0,240,255,.10), transparent 28%),
+      radial-gradient(circle at 24% 88%, rgba(255,179,0,.035), transparent 30%),
+      linear-gradient(180deg, rgba(8,13,23,.985), rgba(3,6,11,.99)) !important;
+    box-shadow: none !important;
   }
 
-  .piper-header,
-  .piper-context-bar,
-  .piper-canvas,
-  .quick-actions-bar,
-  .piper-chat-form,
-  .piper-state-note,
-  .piper-disclosure {
-    flex: 0 0 auto;
-    min-width: 0;
+  .piper-header {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    padding: 20px 20px 15px !important;
+    border-bottom: 1px solid rgba(255,255,255,.055);
+    overflow: hidden !important;
+  }
+
+  .piper-context-bar {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 11px 20px !important;
+    background: rgba(0,240,255,.024) !important;
+    border-bottom: 1px solid rgba(0,240,255,.06) !important;
+  }
+
+  .piper-canvas {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    margin: 14px 18px 6px !important;
+    max-height: 220px;
+    overflow-y: auto !important;
+    background: linear-gradient(135deg, rgba(0,240,255,.055), rgba(255,255,255,.012)) !important;
+    border-color: rgba(0,240,255,.13) !important;
   }
 
   .piper-chat-history {
     flex: 1 1 auto !important;
     min-height: 0 !important;
     min-width: 0 !important;
+    padding: 12px 18px 18px !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
+    scrollbar-gutter: stable;
   }
 
-  .piper-header {
-    overflow: hidden;
+  .quick-actions-bar {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 10px 18px 8px !important;
+    display: flex !important;
+    gap: 7px !important;
+    overflow-x: auto !important;
+    border-top: 1px solid rgba(255,255,255,.045);
+    background: rgba(2,5,10,.54);
   }
 
+  .quick-action-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .piper-input-container {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    padding: 10px 18px 14px !important;
+    background: linear-gradient(180deg, rgba(3,6,11,.55), rgba(3,6,11,.98));
+    border-top: 1px solid rgba(255,255,255,.05);
+  }
+
+  .piper-chat-form,
+  .piper-state-note,
+  .piper-disclosure,
   .piper-status,
   .piper-provider,
   .piper-state-chip {
-    min-width: 0;
+    min-width: 0 !important;
+  }
+
+  .input-wrapper {
+    border-radius: 14px !important;
+    background: rgba(255,255,255,.035) !important;
+    border: 1px solid rgba(0,240,255,.11) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.02), 0 8px 28px rgba(0,0,0,.18);
+  }
+
+  .input-wrapper:focus-within {
+    border-color: rgba(0,240,255,.34) !important;
+    box-shadow: 0 0 0 3px rgba(0,240,255,.055), 0 10px 32px rgba(0,0,0,.24) !important;
   }
 }
 
-/* Keep dense desktop workspaces useful on medium-width windows. */
+/* Slightly denser workstations. */
 @media (min-width: 1024px) and (max-width: 1365px) {
   body {
-    grid-template-columns: 216px minmax(0, 1fr) 360px !important;
+    grid-template-columns: 208px minmax(0, 1fr) 380px !important;
   }
 
   body.has-collapsed-piper {
-    grid-template-columns: 216px minmax(0, 1fr) 60px !important;
+    grid-template-columns: 208px minmax(0, 1fr) 58px !important;
   }
 
   main {
-    padding-left: 24px !important;
-    padding-right: 24px !important;
+    padding: 22px 22px 38px !important;
   }
 }
 
-/* Motion remains expressive but must respect OS accessibility settings. */
+/* Large and ultrawide monitors: give Piper room without starving the deal canvas. */
+@media (min-width: 1800px) {
+  body {
+    grid-template-columns: 232px minmax(0, 1fr) clamp(480px, 26vw, 580px) !important;
+  }
+
+  body.has-collapsed-piper {
+    grid-template-columns: 232px minmax(0, 1fr) 58px !important;
+  }
+
+  main {
+    padding-left: clamp(36px, 2.6vw, 58px) !important;
+    padding-right: clamp(36px, 2.6vw, 58px) !important;
+  }
+}
+
+/* Very large ultrawide: cap nav/Piper growth and let the workspace own the rest. */
+@media (min-width: 2400px) {
+  body {
+    grid-template-columns: 236px minmax(0, 1fr) 600px !important;
+  }
+}
+
+/* -------------------- tablet/mobile ------------------------- */
+@media (max-width: 1023px) {
+  body {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  main,
+  #view,
+  .table-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .table-wrap {
+    overflow-x: auto !important;
+  }
+}
+
+/* Motion is expressive, never mandatory. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
