@@ -2147,7 +2147,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   }
   50% { 
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.95), 0 0 36px rgba(99, 102, 241, 0.65); 
-    border-color: #6366f1 !important;
+    border-color: #00f0ff !important;
   }
 }
 
@@ -2175,7 +2175,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   left: 0;
   width: 4px;
   height: 100%;
-  background: linear-gradient(to bottom, #00f0ff, #6366f1);
+  background: linear-gradient(to bottom, #00f0ff, rgba(0, 240, 255, 0.2));
 }
 
 .summary-banner-header {
@@ -2355,7 +2355,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 }
 
 .intel-tag.tag-warn { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
-.intel-tag.tag-change { background: rgba(99, 102, 241, 0.12); color: #6366f1; }
+.intel-tag.tag-change { background: rgba(56, 189, 248, 0.12); color: #38bdf8; }
 .intel-tag.tag-rec { background: rgba(0, 240, 255, 0.08); color: #00f0ff; }
 
 .intel-desc {
@@ -2396,7 +2396,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #00f0ff, #6366f1);
+  background: linear-gradient(90deg, #00f0ff, #f59e0b);
 }
 
 .underwriting-numbers-grid {

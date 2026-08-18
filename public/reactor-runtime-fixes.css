@@ -10,9 +10,7 @@ body {
   min-height: 100%;
 }
 
-html {
-  background: #020307;
-}
+html { background: #070b10; }
 
 body {
   overflow-x: hidden;
@@ -396,5 +394,48 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+
+/* Tonal hierarchy refinement: Graphite lifted main, dark rail, distinct Piper */
+:root {
+  --bg-app: #070b10;
+  --bg-rail: #05080c;
+  --bg-main: #0b1017;
+  --bg-piper: #0e141f;
+  --bg-card: #121824;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-cyan: rgba(0, 240, 255, 0.2);
+  --border-gold: rgba(245, 158, 11, 0.25);
+  --text-main: #f1f5f9;
+  --text-sub: #94a3b8;
+}
+
+@media (min-width: 1024px) {
+  body {
+    background:
+      radial-gradient(circle at 75% 10%, rgba(0, 240, 255, .035), transparent 28%),
+      radial-gradient(circle at 20% 90%, rgba(245, 158, 11, .02), transparent 32%),
+      #070b10 !important;
+  }
+
+  .nav {
+    background: #05080c !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.07) !important;
+  }
+
+  .main {
+    background: #0b1017 !important;
+  }
+
+  .piper-widget, .piper-drawer {
+    background: #0e141f !important;
+    border-left: 1px solid rgba(0, 240, 255, 0.16) !important;
+  }
+
+  .footer {
+    background: #06090e !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
   }
 }
