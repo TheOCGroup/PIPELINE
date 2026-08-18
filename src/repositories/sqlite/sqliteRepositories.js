@@ -263,8 +263,93 @@ export class SqliteOpportunityRepository {
       sources: [],
       stageTimeline: [],
       offers: this._fetchOffers(opp.id),
+      contact: this._resolveContact(opp.id),
+      communications: this._fetchCommunications(opp.id),
       outcome: null
     };
+  }
+
+  _resolveContact(opportunityId) {
+    try {
+      const participant = this.db.prepare(`
+        SELECT * FROM seller_opportunity_participants 
+        WHERE opportunity_id = ? AND is_primary = 1
+      `).get(opportunityId);
+      
+      if (!participant) {
+        return { status: "MISSING", value: null, channel: null };
+      }
+      
+      const contact = this.db.prepare(`
+        SELECT * FROM pipeline_contacts WHERE id = ?
+      `).get(participant.ocg_one_person_id);
+      
+      if (!contact) {
+        return { status: "MISSING", value: null, channel: null };
+      }
+      
+      const value = contact.email || contact.phone;
+      const channel = contact.email ? "email" : (contact.phone ? "sms" : null);
+      
+      return {
+        status: participant.verification_status || "SOURCE_SUPPLIED",
+        personId: contact.id,
+        displayName: `${contact.first_name} ${contact.last_name}`,
+        value: value || null,
+        channel: channel || null,
+        sourceType: participant.source_id ? "deal_scout_handoff" : "manual_entry",
+        sourceId: participant.source_id || null
+      };
+    } catch {
+      return { status: "MISSING", value: null, channel: null };
+    }
+  }
+
+  _fetchCommunications(opportunityId) {
+    try {
+      const comms = this.db.prepare(`
+        SELECT * FROM seller_communications WHERE opportunity_id = ? ORDER BY created_at DESC
+      `).all(opportunityId);
+
+      return comms.map(c => {
+        const events = this.db.prepare(`
+          SELECT * FROM seller_communication_events WHERE communication_id = ? ORDER BY occurred_at ASC, rowid ASC
+        `).all(c.id);
+
+        const derivedStatus = events.length > 0 ? events[events.length - 1].event_type : "drafted";
+
+        return {
+          id: c.id,
+          opportunityId: c.opportunity_id,
+          offerVersionId: c.offer_version_id,
+          recipientPersonId: c.recipient_person_id,
+          recipientValueSnapshot: c.recipient_value_snapshot,
+          recipientChannel: c.recipient_channel,
+          recipientVerificationStatus: c.recipient_verification_status,
+          recipientSourceType: c.recipient_source_type,
+          recipientSourceId: c.recipient_source_id,
+          direction: c.direction,
+          subject: c.subject,
+          contentText: c.content_text,
+          templateVersion: c.template_version,
+          inReplyToCommunicationId: c.in_reply_to_communication_id,
+          createdBy: c.created_by,
+          createdAt: c.created_at,
+          status: derivedStatus,
+          events: events.map(e => ({
+            id: e.id,
+            eventType: e.event_type,
+            actorId: e.actor_id,
+            providerRef: e.provider_ref,
+            outcome: e.outcome,
+            metadata: e.metadata_json ? parseJson(e.metadata_json) : null,
+            occurredAt: e.occurred_at
+          }))
+        };
+      });
+    } catch {
+      return [];
+    }
   }
 }
 

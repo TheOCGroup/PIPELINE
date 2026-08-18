@@ -37,6 +37,7 @@ const INTENTS = [
   { id: "createAction",   patterns: [/create (the |a )?next action/i, /add (a )?(task|next action)/i, /remind me to/i] },
   { id: "moveStage",      patterns: [/move (this|it) to/i, /change (the )?stage/i, /set stage/i] },
   { id: "system",         patterns: [/system (health|status)/i, /is everything (ok|working)/i, /health/i] },
+  { id: "outreachStatus",  patterns: [/did we contact/i, /seller contact/i, /outreach/i, /what did we send/i, /which version.*received/i, /did they respond/i] },
 ];
 
 const CAPABILITIES = [
@@ -53,6 +54,7 @@ const CAPABILITIES = [
   "Tell me about <address or opportunity id>",
   "Create a next action for this opportunity",
   "System health",
+  "Did we contact the seller?",
 ];
 
 /**
@@ -114,6 +116,10 @@ export function answerQuestion(question, snapshot, context = {}) {
     case "createAction": return proposeAction(text, target, snapshot);
     case "moveStage":    return stageRefusal(target);
     case "system":       return system(snapshot);
+    case "outreachStatus": {
+      const active = target || (context.activeOpportunityId ? snapshot.opportunities.find(o => o.id === context.activeOpportunityId) : null) || snapshot.opportunities[0];
+      return outreachStatus(active, snapshot);
+    }
     default:             return unknown(snapshot);
   }
 }
@@ -572,6 +578,77 @@ function generateOfferDecisionChangePrice(text, o, s) {
     answer: `Modify proposed offer purchase price to ${money(price)}?`,
     items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
     proposal: { kind: "modify_offer_price", opportunityId: o.id, proposedPrice: price },
+    evidence: evidence(s)
+  };
+}
+
+function outreachStatus(o, s) {
+  if (!o) return needTarget(s);
+
+  const comms = o.communications || [];
+  const outbound = comms.filter(c => c.direction === "outbound");
+  const inbound = comms.filter(c => c.direction === "inbound");
+
+  const latestOutbound = outbound[0]; // ordered DESC in repo
+  const latestInbound = inbound[0];
+
+  let contacted = "NO";
+  let sentDetails = "No outreach message has been sent or drafted yet.";
+  let offerVersionText = "The seller has not received any offer versions yet.";
+  let responseText = "No response has been received from the seller.";
+  let nextAction = "";
+
+  // Contact resolution status
+  const contact = o.contact || { status: "MISSING", value: null };
+  if (contact.status === "MISSING" || !contact.value) {
+    nextAction = "Resolve seller contact details first (currently MISSING).";
+  } else {
+    nextAction = "Prepare an offer or create an outreach draft.";
+  }
+
+  if (latestOutbound) {
+    const status = latestOutbound.status;
+    if (status === "sent" || status === "delivered") {
+      contacted = "YES";
+      sentDetails = `Sent via ${latestOutbound.recipientChannel}: "${latestOutbound.contentText}"`;
+      if (latestOutbound.offerVersionId) {
+        offerVersionText = `Offer version ${latestOutbound.offerVersionId} was received by the seller.`;
+      }
+      nextAction = "Await seller response or follow up.";
+    } else if (status === "drafted") {
+      sentDetails = `A draft is prepared: "${latestOutbound.contentText}"`;
+      nextAction = "Authorize the outreach draft.";
+    } else if (status === "authorized") {
+      sentDetails = `Outreach message is authorized for delivery.`;
+      nextAction = "Send the authorized outreach message.";
+    } else if (status === "failed") {
+      const outcome = latestOutbound.events.find(e => e.eventType === "failed")?.outcome || "Unknown error";
+      if (outcome === "CHANNEL_NOT_CONFIGURED") {
+        sentDetails = "An authorized send was attempted, but no seller contact occurred because the channel was not configured.";
+        nextAction = "Configure the email/SMS communication provider to perform outbound outreach.";
+      } else {
+        sentDetails = `Send attempt failed with outcome: ${outcome}`;
+        nextAction = "Check provider settings and retry send.";
+      }
+    }
+  }
+
+  if (latestInbound) {
+    responseText = `The seller replied via ${latestInbound.recipientChannel}: "${latestInbound.contentText}"`;
+    nextAction = "Review seller reply and propose next steps.";
+  }
+
+  const answer = `**DID WE CONTACT THE SELLER**: ${contacted}
+**WHAT WE SENT**: ${sentDetails}
+**OFFER VERSION RECEIVED**: ${offerVersionText}
+**DID THEY RESPOND**: ${responseText}
+**RECOMMENDED NEXT ACTION**: ${nextAction}`;
+
+  return {
+    ok: true,
+    answer,
+    items: [{ opportunityId: o.id, label: `${o.address || o.id} (${o.stage})`, reasons: [] }],
+    proposal: null,
     evidence: evidence(s)
   };
 }

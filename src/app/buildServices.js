@@ -33,7 +33,7 @@ export function buildServices(config, db) {
     // Operator state and Piper always read the database directly, even when the
     // read API is serving fixtures: operator input and the brief must reflect
     // what is actually stored, never a demonstration set.
-    operator: db ? new SqliteOperatorRepository(db) : null,
+    operator: db ? new SqliteOperatorRepository(db, config) : null,
     piperContext: db ? new PiperContextService(db, config) : null,
     piper: db ? buildPiperRuntime(config, db) : null,
   };
@@ -41,7 +41,7 @@ export function buildServices(config, db) {
 
 function buildPiperRuntime(config, db) {
   const contextService = new PiperContextService(db, config);
-  const operator = new SqliteOperatorRepository(db);
+  const operator = new SqliteOperatorRepository(db, config);
   // A misconfigured provider must not take the whole application down; Piper
   // degrades to deterministic answers and the System view reports why.
   let provider;

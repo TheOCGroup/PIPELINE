@@ -1065,6 +1065,8 @@
       }
     }
 
+    const outreachHtml = buildOutreachHtml(o);
+
     let heroImgUrl = "";
     let heroImgBadge = "";
     
@@ -1184,6 +1186,7 @@
           <!-- Victor Underwriting -->
           ${victorHtml}
           ${offersHtml}
+          ${outreachHtml}
 
           <!-- Operator Scratchpad -->
           <div class="bridge-panel scratchpad-panel">
@@ -1543,6 +1546,73 @@
       await loadOpportunity(oppId);
     } catch (err) {
       window.showCustomAlert(`Could not save offer decision (${err.message}).`, "Decision Failed");
+    }
+  };
+
+  window.createOutreachDraft = async (opportunityId, offerVersionId, recipientPersonId, recipientValueSnapshot, recipientChannel) => {
+    try {
+      const subject = document.getElementById("outreach-subject")?.value || null;
+      const contentText = document.getElementById("outreach-content")?.value;
+      if (!contentText || !contentText.trim()) {
+        throw new Error("Message content cannot be empty.");
+      }
+
+      const res = await fetch(`/api/v1/operator/outreach/draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          opportunityId,
+          offerVersionId,
+          recipientPersonId,
+          recipientValueSnapshot,
+          recipientChannel,
+          subject,
+          contentText,
+          templateVersion: "1.0.0"
+        })
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error);
+      window.showCustomAlert("Outreach draft created successfully.", "Draft Created");
+      await loadOpportunity(opportunityId);
+    } catch (err) {
+      window.showCustomAlert(`Could not create outreach draft (${err.message}).`, "Drafting Failed");
+    }
+  };
+
+  window.authorizeOutreach = async (commId, opportunityId) => {
+    try {
+      const res = await fetch(`/api/v1/operator/outreach/${encodeURIComponent(commId)}/authorize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error);
+      window.showCustomAlert("Outreach message authorized.", "Outreach Authorized");
+      await loadOpportunity(opportunityId);
+    } catch (err) {
+      window.showCustomAlert(`Could not authorize outreach (${err.message}).`, "Authorization Failed");
+    }
+  };
+
+  window.sendOutreach = async (commId, opportunityId) => {
+    try {
+      const res = await fetch(`/api/v1/operator/outreach/${encodeURIComponent(commId)}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error);
+      
+      const comm = body.data.communication;
+      if (comm.status === "failed") {
+        window.showCustomAlert(`Outreach send attempt completed: ${comm.events.find(e => e.eventType === "failed")?.outcome || "Failed"}`, "Send Attempt Finished");
+      } else {
+        window.showCustomAlert(`Outreach successfully sent!`, "Send Succeeded");
+      }
+      await loadOpportunity(opportunityId);
+    } catch (err) {
+      window.showCustomAlert(`Could not execute outreach send (${err.message}).`, "Send Failed");
     }
   };
 
@@ -2103,4 +2173,140 @@
     initPiperWidget();
     render();
   })();
+  function buildOutreachHtml(o) {
+    const contact = o.contact || { status: "MISSING", value: null, channel: null };
+    const hasContact = contact.status !== "MISSING" && contact.value;
+    
+    // Get active approved offer version
+    const hasApprovedOffer = o.offers && o.offers.length > 0 && o.offers[0].status === "approved";
+    const activeOffer = o.offers && o.offers.length > 0 ? o.offers[0] : null;
+    const activeVer = activeOffer ? activeOffer.versions.find(v => v.id === activeOffer.activeVersionId) : null;
+    const isApproved = activeVer && activeVer.versionStatus === "approved";
+
+    let contactStatusColor = "#ff4444";
+    if (contact.status === "VERIFIED") contactStatusColor = "var(--ok)";
+    else if (contact.status === "SOURCE_SUPPLIED") contactStatusColor = "var(--accent)";
+
+    let contactCard = `
+      <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; font-size: 12px; margin-bottom: 12px;">
+        <div style="font-weight:600; margin-bottom: 4px; display: flex; justify-content: space-between;">
+          <span>Recipient Contact Card</span>
+          <span style="color: ${contactStatusColor}; font-weight: 700;">${esc(contact.status)}</span>
+        </div>
+        ${hasContact ? `
+          <div style="display: grid; grid-template-columns: 80px 1fr; gap: 4px; font-size: 11px;">
+            <span class="muted">Name:</span><span>${esc(contact.displayName || "N/A")}</span>
+            <span class="muted">Channel:</span><span>${esc(contact.channel || "N/A")}</span>
+            <span class="muted">Value:</span><span>${esc(contact.value || "N/A")}</span>
+            <span class="muted">Person ID:</span><span>${esc(contact.personId || "N/A")}</span>
+          </div>
+        ` : `
+          <div style="color: #ff4444; font-size: 11px;">⚠️ No verified or source-supplied contact details available for this seller.</div>
+        `}
+      </div>
+    `;
+
+    let actionHtml = "";
+    if (!isApproved) {
+      actionHtml = `<div class="muted" style="font-size: 11px;">Prepare and approve an offer version before drafting outreach.</div>`;
+    } else if (!hasContact) {
+      actionHtml = `<div class="muted" style="font-size: 11px; color: #ff4444;">Drafting and sending outreach is blocked because seller contact information is missing.</div>`;
+    } else {
+      // We have contact + approved offer.
+      // Check if there is an active draft.
+      const activeDraft = o.communications ? o.communications.find(c => ["drafted", "authorized", "send_attempted"].includes(c.status)) : null;
+
+      if (activeDraft) {
+        let statusColor = "var(--accent)";
+        if (activeDraft.status === "authorized") statusColor = "var(--ok)";
+        
+        let buttonsHtml = "";
+        if (activeDraft.status === "drafted") {
+          buttonsHtml = `
+            <button class="primary" style="background: var(--ok); color: #000; font-size: 11px; padding: 4px 8px;" onclick="window.authorizeOutreach('${esc(activeDraft.id)}', '${esc(o.id)}')">Authorize Outreach</button>
+          `;
+        } else if (activeDraft.status === "authorized") {
+          buttonsHtml = `
+            <button class="primary" style="background: var(--accent); color: #000; font-size: 11px; padding: 4px 8px;" onclick="window.sendOutreach('${esc(activeDraft.id)}', '${esc(o.id)}')">Send Outreach</button>
+          `;
+        }
+
+        actionHtml = `
+          <div style="background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.03); padding: 8px; border-radius: 4px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px;">
+              <strong>ACTIVE OUTREACH PIPELINE</strong>
+              <span style="color: ${statusColor}; font-weight:700;">${activeDraft.status.toUpperCase()}</span>
+            </div>
+            <div style="font-size: 11px; border: 1px solid rgba(255,255,255,0.05); padding: 6px; background:#111; color:#fff; border-radius:4px; font-family: var(--mono); white-space: pre-wrap; margin-bottom: 8px;">${esc(activeDraft.contentText)}</div>
+            <div style="display:flex; gap:8px;">
+              ${buttonsHtml}
+            </div>
+          </div>
+        `;
+      } else {
+        // Let operator create a draft outreach.
+        const defaultText = `Hello ${contact.displayName || "Owner"},\n\nWe would like to make an offer of ${money(activeVer.purchasePrice)} for your property at ${o.property.address || "Wichita Property"} with ${activeVer.inspectionDays} inspection days and ${activeVer.closingDays} closing days.\n\nBest regards,\nOperator`;
+
+        actionHtml = `
+          <div id="create-outreach-form">
+            <div class="form-group-compact" style="margin-bottom: 8px;">
+              <label>Subject</label>
+              <input type="text" id="outreach-subject" value="Offer for ${o.property.address || "Wichita Property"}" style="width:100%; background:#111; color:#fff; border:1px solid #333; padding:4px;" />
+            </div>
+            <div class="form-group-compact" style="margin-bottom: 8px;">
+              <label>Outreach Message</label>
+              <textarea id="outreach-content" style="width:100%; height:80px; background:#111; color:#fff; border:1px solid #333; padding:4px; font-family: var(--mono); font-size:11px;">${esc(defaultText)}</textarea>
+            </div>
+            <button class="primary" style="background: var(--ok); color: #000; font-size: 11px; padding: 4px 8px;" onclick="window.createOutreachDraft('${esc(o.id)}', '${esc(activeVer.id)}', '${esc(contact.personId)}', '${esc(contact.value)}', '${esc(contact.channel)}')">Create Outreach Draft</button>
+          </div>
+        `;
+      }
+    }
+
+    // History timeline
+    let historyHtml = "";
+    if (o.communications && o.communications.length > 0) {
+      historyHtml = `
+        <div style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+          <h4 style="margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8;">Outreach Audit History</h4>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${o.communications.map(c => {
+              let statusColor = "var(--accent)";
+              if (c.status === "failed") statusColor = "#ff4444";
+              else if (c.status === "sent" || c.status === "delivered") statusColor = "var(--ok)";
+
+              const latestEvent = c.events[c.events.length - 1];
+              const outcomeText = latestEvent?.outcome ? ` - Outcome: ${latestEvent.outcome}` : "";
+
+              return `
+                <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); padding: 8px; border-radius: 4px; font-size: 11px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <strong>${c.direction.toUpperCase()} (${esc(c.recipientChannel.toUpperCase())})</strong>
+                    <span style="color: ${statusColor}; font-weight:700;">${c.status.toUpperCase()}</span>
+                  </div>
+                  <div style="font-style: italic; margin-bottom: 4px; color: #fff;">"${esc(c.contentText)}"</div>
+                  <div class="muted" style="font-size: 9px; display: flex; justify-content: space-between;">
+                    <span>Ref: ${esc(c.id.slice(0, 8))}...${outcomeText}</span>
+                    <span>${esc(new Date(c.createdAt).toLocaleString())}</span>
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h2 style="margin:0; font-size: 16px;">Seller Outreach & Audit Gate</h2>
+          <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Outreach</span>
+        </div>
+        ${contactCard}
+        ${actionHtml}
+        ${historyHtml}
+      </div>
+    `;
+  }
 })();

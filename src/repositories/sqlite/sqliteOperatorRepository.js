@@ -15,8 +15,9 @@ import { randomUUID } from "node:crypto";
 const now = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
 export class SqliteOperatorRepository {
-  constructor(db) {
+  constructor(db, config = {}) {
     this.db = db;
+    this.config = config;
   }
 
   // --- next actions --------------------------------------------------------
@@ -301,6 +302,304 @@ export class SqliteOperatorRepository {
     }
 
     return this.listOffers(offer.opportunity_id).find(o => o.id === offerId);
+  }
+
+  // --- seller communications & outreach ------------------------------------
+
+  _getDerivedStatus(commId) {
+    const event = this.db.prepare(`
+      SELECT event_type FROM seller_communication_events 
+      WHERE communication_id = ? 
+      ORDER BY occurred_at DESC, rowid DESC LIMIT 1
+    `).get(commId);
+    return event ? event.event_type : null;
+  }
+
+  _validateTransition(currentStatus, nextEvent) {
+    if (!currentStatus) {
+      return ["drafted", "received"].includes(nextEvent);
+    }
+    if (currentStatus === "drafted") {
+      return ["authorized", "canceled"].includes(nextEvent);
+    }
+    if (currentStatus === "authorized") {
+      return ["send_attempted", "canceled"].includes(nextEvent);
+    }
+    if (currentStatus === "send_attempted") {
+      return ["sent", "failed"].includes(nextEvent);
+    }
+    if (currentStatus === "sent") {
+      return ["delivered", "failed"].includes(nextEvent);
+    }
+    if (currentStatus === "failed") {
+      return ["send_attempted", "canceled"].includes(nextEvent);
+    }
+    return false;
+  }
+
+  _addCommunicationEvent(commId, eventType, actorId, providerRef = null, outcome = null, metadataJson = null) {
+    const currentStatus = this._getDerivedStatus(commId);
+    if (!this._validateTransition(currentStatus, eventType)) {
+      throw new Error(`invalid_state_transition: Cannot transition from ${currentStatus || "none"} to ${eventType}`);
+    }
+
+    const id = randomUUID();
+    const ts = now();
+    this.db.prepare(`
+      INSERT INTO seller_communication_events (id, communication_id, event_type, actor_id, provider_ref, outcome, metadata_json, occurred_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, commId, eventType, actorId, providerRef, outcome, metadataJson, ts);
+
+    return {
+      id,
+      communicationId: commId,
+      eventType,
+      actorId,
+      providerRef,
+      outcome,
+      metadata: metadataJson ? JSON.parse(metadataJson) : null,
+      occurredAt: ts
+    };
+  }
+
+  resolveContact(opportunityId) {
+    const participant = this.db.prepare(`
+      SELECT * FROM seller_opportunity_participants 
+      WHERE opportunity_id = ? AND is_primary = 1
+    `).get(opportunityId);
+    
+    if (!participant) {
+      return { status: "MISSING", value: null, channel: null };
+    }
+    
+    const contact = this.db.prepare(`
+      SELECT * FROM pipeline_contacts WHERE id = ?
+    `).get(participant.ocg_one_person_id);
+    
+    if (!contact) {
+      return { status: "MISSING", value: null, channel: null };
+    }
+    
+    const value = contact.email || contact.phone;
+    const channel = contact.email ? "email" : (contact.phone ? "sms" : null);
+    
+    if (!value || !channel) {
+      return { status: "MISSING", value: null, channel: null };
+    }
+    
+    return {
+      status: participant.verification_status || "SOURCE_SUPPLIED",
+      personId: contact.id,
+      displayName: `${contact.first_name} ${contact.last_name}`,
+      value,
+      channel,
+      sourceType: participant.source_id ? "deal_scout_handoff" : "manual_entry",
+      sourceId: participant.source_id || null
+    };
+  }
+
+  createOutreachDraft({ opportunityId, offerVersionId = null, recipientPersonId, recipientValueSnapshot, recipientChannel, subject = null, contentText, templateVersion = null, actor }) {
+    // 1. Resolve contact details and perform strict verification check
+    const contact = this.resolveContact(opportunityId);
+    if (contact.status === "MISSING" || !contact.value) {
+      throw new Error("recipient_contact_required");
+    }
+
+    // Ensure snapshots match exactly
+    if (contact.personId !== recipientPersonId || contact.value !== recipientValueSnapshot || contact.channel !== recipientChannel) {
+      throw new Error("contact_value_mismatch");
+    }
+
+    // 2. If it is linked to an offer, check that the offer version is approved
+    if (offerVersionId) {
+      const ver = this.db.prepare(`
+        SELECT * FROM seller_offer_versions WHERE id = ? AND version_status = 'approved'
+      `).get(offerVersionId);
+      if (!ver) {
+        throw new Error("approved_offer_required");
+      }
+    }
+
+    if (!contentText || !contentText.trim()) {
+      throw new Error("missing_contentText");
+    }
+
+    const commId = randomUUID();
+    const ts = now();
+
+    // Start transaction for draft + event creation
+    this.db.prepare("BEGIN TRANSACTION").run();
+    try {
+      this.db.prepare(`
+        INSERT INTO seller_communications (
+          id, opportunity_id, offer_version_id, recipient_person_id, recipient_value_snapshot, 
+          recipient_channel, recipient_verification_status, recipient_source_type, recipient_source_id, 
+          direction, subject, content_text, template_version, created_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'outbound', ?, ?, ?, ?, ?)
+      `).run(
+        commId, opportunityId, offerVersionId, contact.personId, contact.value,
+        contact.channel, contact.status, contact.sourceType, contact.sourceId,
+        subject, contentText, templateVersion, actor, ts
+      );
+
+      this.db.prepare(`
+        INSERT INTO seller_communication_events (id, communication_id, event_type, actor_id, occurred_at)
+        VALUES (?, ?, 'drafted', ?, ?)
+      `).run(randomUUID(), commId, actor, ts);
+
+      this.db.prepare("COMMIT").run();
+    } catch (err) {
+      this.db.prepare("ROLLBACK").run();
+      throw err;
+    }
+
+    return this.getCommunication(commId);
+  }
+
+  authorizeOutreach(commId, actor) {
+    this._addCommunicationEvent(commId, "authorized", actor);
+    return this.getCommunication(commId);
+  }
+
+  attemptSendOutreach(commId, actor) {
+    const comm = this.db.prepare("SELECT * FROM seller_communications WHERE id = ?").get(commId);
+    if (!comm) throw new Error("communication_not_found");
+
+    this._addCommunicationEvent(comm.id, "send_attempted", actor);
+
+    // Resolve provider purely server-side
+    const provider = this.config.outreachProvider || "none";
+
+    if (provider === "mock") {
+      this.db.prepare("BEGIN TRANSACTION").run();
+      try {
+        this._addCommunicationEvent(comm.id, "sent", actor, "MOCK-REF-123");
+        this._addCommunicationEvent(comm.id, "delivered", actor, "MOCK-REF-123");
+
+        // Transactionally present offer if linked
+        if (comm.offer_version_id) {
+          // Update offer status
+          this.db.prepare(`
+            UPDATE seller_offers 
+            SET status = 'presented', updated_at = ?
+            WHERE id = (SELECT offer_id FROM seller_offer_versions WHERE id = ?)
+          `).run(now(), comm.offer_version_id);
+
+          // Update opportunity stage and presentation timestamp
+          this.db.prepare(`
+            UPDATE seller_opportunities
+            SET pipeline_stage = 'offer_presented', offer_presented_at = ?, last_contacted_at = ?, contact_status = 'in_contact', updated_at = ?
+            WHERE id = ?
+          `).run(now(), now(), now(), comm.opportunity_id);
+
+          // Add a timeline stage event
+          this.db.prepare(`
+            INSERT INTO seller_stage_events (id, opportunity_id, event_type, prior_stage, new_stage, created_by, created_at)
+            VALUES (?, ?, 'STAGE_CHANGE', 'offer_preparation', 'offer_presented', ?, ?)
+          `).run(randomUUID(), comm.opportunity_id, actor, now());
+        }
+
+        this.db.prepare("COMMIT").run();
+      } catch (err) {
+        this.db.prepare("ROLLBACK").run();
+        throw err;
+      }
+    } else {
+      // Outbound attempt failed because provider is not configured
+      this._addCommunicationEvent(comm.id, "failed", actor, null, "CHANNEL_NOT_CONFIGURED");
+    }
+
+    return this.getCommunication(comm.id);
+  }
+
+  receiveInboundCommunication({ opportunityId, recipientPersonId, recipientValueSnapshot, recipientChannel, subject = null, contentText, inReplyToCommunicationId = null, actor }) {
+    if (!contentText || !contentText.trim()) {
+      throw new Error("missing_contentText");
+    }
+
+    const commId = randomUUID();
+    const ts = now();
+
+    this.db.prepare("BEGIN TRANSACTION").run();
+    try {
+      this.db.prepare(`
+        INSERT INTO seller_communications (
+          id, opportunity_id, offer_version_id, recipient_person_id, recipient_value_snapshot, 
+          recipient_channel, recipient_verification_status, direction, subject, content_text, 
+          in_reply_to_communication_id, created_by, created_at
+        ) VALUES (?, ?, NULL, ?, ?, ?, 'VERIFIED', 'inbound', ?, ?, ?, ?, ?)
+      `).run(
+        commId, opportunityId, recipientPersonId, recipientValueSnapshot,
+        recipientChannel, subject, contentText, inReplyToCommunicationId, actor, ts
+      );
+
+      this.db.prepare(`
+        INSERT INTO seller_communication_events (id, communication_id, event_type, actor_id, occurred_at)
+        VALUES (?, ?, 'received', ?, ?)
+      `).run(randomUUID(), commId, actor, ts);
+
+      // If this is a reply to an outbound communication, update opportunity contact status and last contacted
+      this.db.prepare(`
+        UPDATE seller_opportunities
+        SET last_contacted_at = ?, contact_status = 'in_contact', updated_at = ?
+        WHERE id = ?
+      `).run(ts, opportunityId);
+
+      this.db.prepare("COMMIT").run();
+    } catch (err) {
+      this.db.prepare("ROLLBACK").run();
+      throw err;
+    }
+
+    return this.getCommunication(commId);
+  }
+
+  getCommunication(id) {
+    const c = this.db.prepare("SELECT * FROM seller_communications WHERE id = ?").get(id);
+    if (!c) return null;
+
+    const events = this.db.prepare(`
+      SELECT * FROM seller_communication_events WHERE communication_id = ? ORDER BY occurred_at ASC, rowid ASC
+    `).all(id);
+
+    const derivedStatus = events.length > 0 ? events[events.length - 1].event_type : "drafted";
+
+    return {
+      id: c.id,
+      opportunityId: c.opportunity_id,
+      offerVersionId: c.offer_version_id,
+      recipientPersonId: c.recipient_person_id,
+      recipientValueSnapshot: c.recipient_value_snapshot,
+      recipientChannel: c.recipient_channel,
+      recipientVerificationStatus: c.recipient_verification_status,
+      recipientSourceType: c.recipient_source_type,
+      recipientSourceId: c.recipient_source_id,
+      direction: c.direction,
+      subject: c.subject,
+      contentText: c.content_text,
+      templateVersion: c.template_version,
+      inReplyToCommunicationId: c.in_reply_to_communication_id,
+      createdBy: c.created_by,
+      createdAt: c.created_at,
+      status: derivedStatus,
+      events: events.map(e => ({
+        id: e.id,
+        eventType: e.event_type,
+        actorId: e.actor_id,
+        providerRef: e.provider_ref,
+        outcome: e.outcome,
+        metadata: e.metadata_json ? JSON.parse(e.metadata_json) : null,
+        occurredAt: e.occurred_at
+      }))
+    };
+  }
+
+  listCommunications(opportunityId) {
+    const rows = this.db.prepare(`
+      SELECT id FROM seller_communications WHERE opportunity_id = ? ORDER BY created_at DESC
+    `).all(opportunityId);
+
+    return rows.map(r => this.getCommunication(r.id));
   }
 }
 

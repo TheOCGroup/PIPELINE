@@ -44,7 +44,7 @@ class BadRequest extends Error {
  */
 export async function handleOperatorRoutes(req, res, ctx, url, segments) {
   const [, resource, id] = segments; // ["operator", <resource>, <id?>]
-  const known = ["next-actions", "notes", "checklist", "interactions", "offers"];
+  const known = ["next-actions", "notes", "checklist", "interactions", "offers", "outreach"];
   if (!known.includes(resource)) {
     sendJson(res, 404, { ok: false, error: "not_found" });
     return true;
@@ -87,6 +87,9 @@ export async function handleOperatorRoutes(req, res, ctx, url, segments) {
         case "offers":
           if (!opportunityId) throw new BadRequest("missing_opportunityId");
           return ok(res, { offers: repo.listOffers(opportunityId) });
+        case "outreach":
+          if (!opportunityId) throw new BadRequest("missing_opportunityId");
+          return ok(res, { communications: repo.listCommunications(opportunityId) });
       }
     }
 
@@ -174,6 +177,49 @@ export async function handleOperatorRoutes(req, res, ctx, url, segments) {
           actor
         });
         return ok(res, { offer: created }, 201);
+      }
+      case "outreach": {
+        if (id && id !== "draft" && id !== "inbound") {
+          if (segments[3] === "authorize") {
+            const comm = repo.authorizeOutreach(id, actor);
+            return ok(res, { communication: comm }, 200);
+          }
+          if (segments[3] === "send") {
+            const comm = repo.attemptSendOutreach(id, actor);
+            return ok(res, { communication: comm }, 200);
+          }
+          throw new BadRequest("invalid_action");
+        }
+        // POST /api/v1/operator/outreach/draft
+        if (id === "draft") {
+          const comm = repo.createOutreachDraft({
+            opportunityId: text(body.opportunityId, "opportunityId"),
+            offerVersionId: text(body.offerVersionId, "offerVersionId", { required: false }),
+            recipientPersonId: text(body.recipientPersonId, "recipientPersonId"),
+            recipientValueSnapshot: text(body.recipientValueSnapshot, "recipientValueSnapshot"),
+            recipientChannel: text(body.recipientChannel, "recipientChannel"),
+            subject: text(body.subject, "subject", { required: false }),
+            contentText: text(body.contentText, "contentText"),
+            templateVersion: text(body.templateVersion, "templateVersion", { required: false }),
+            actor
+          });
+          return ok(res, { communication: comm }, 201);
+        }
+        // POST /api/v1/operator/outreach/inbound
+        if (id === "inbound") {
+          const comm = repo.receiveInboundCommunication({
+            opportunityId: text(body.opportunityId, "opportunityId"),
+            recipientPersonId: text(body.recipientPersonId, "recipientPersonId"),
+            recipientValueSnapshot: text(body.recipientValueSnapshot, "recipientValueSnapshot"),
+            recipientChannel: text(body.recipientChannel, "recipientChannel"),
+            subject: text(body.subject, "subject", { required: false }),
+            contentText: text(body.contentText, "contentText"),
+            inReplyToCommunicationId: text(body.inReplyToCommunicationId, "inReplyToCommunicationId", { required: false }),
+            actor
+          });
+          return ok(res, { communication: comm }, 201);
+        }
+        throw new BadRequest("invalid_endpoint");
       }
     }
 
