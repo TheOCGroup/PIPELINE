@@ -21,6 +21,15 @@ if (-not (Test-Path $dbPath)) {
     Exit 1
 }
 
+# Ensure runtime logs directory exists
+$logDir = Join-Path $PSScriptRoot "runtime\logs"
+if (-not (Test-Path $logDir)) {
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+}
+
+$stdoutLog = Join-Path $logDir "pipeline-launch.stdout.log"
+$stderrLog = Join-Path $logDir "pipeline-launch.stderr.log"
+
 # 3. Port check & Application Identity check on port 8090
 $port = 8090
 $url = "http://127.0.0.1:$port/health"
@@ -31,7 +40,7 @@ if ($inUse) {
     Write-Host "[INFO] Port $port is in use. Checking application identity..." -ForegroundColor Yellow
     try {
         $res = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 3
-        if ($res.application -eq "OCG PIPELINE") {
+        if ($res.status -eq "ok" -and $res.application -eq "OCG PIPELINE" -and $res.database -eq "available") {
             Write-Host "[SUCCESS] Found existing running PIPELINE instance." -ForegroundColor Green
             Write-Host "Opening browser to http://127.0.0.1:$port ..." -ForegroundColor Green
             Start-Process "http://127.0.0.1:$port"
@@ -50,9 +59,17 @@ if ($inUse) {
     }
 }
 
-# 4. Start PIPELINE server using node server.js
+# Clear previous logs if they exist (only done if starting a new instance)
+if (Test-Path $stdoutLog) { Remove-Item $stdoutLog -Force -ErrorAction SilentlyContinue }
+if (Test-Path $stderrLog) { Remove-Item $stderrLog -Force -ErrorAction SilentlyContinue }
+
+# 4. Start PIPELINE server using node server.js with correct WorkingDirectory and logs
 Write-Host "Starting PIPELINE server on port $port ..." -ForegroundColor Cyan
-$process = Start-Process -FilePath "node" -ArgumentList "server.js" -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+$process = Start-Process -FilePath "node" -ArgumentList "server.js" `
+    -WorkingDirectory $PSScriptRoot `
+    -RedirectStandardOutput $stdoutLog `
+    -RedirectStandardError $stderrLog `
+    -NoNewWindow -PassThru -ErrorAction SilentlyContinue
 
 if (-not $process) {
     Write-Host "[ERROR] Failed to start Node process." -ForegroundColor Red
@@ -67,7 +84,7 @@ for ($i = 1; $i -le 15; $i++) {
     Start-Sleep -Seconds 1
     try {
         $res = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 2
-        if ($res.application -eq "OCG PIPELINE" -and $res.database -eq "available") {
+        if ($res.status -eq "ok" -and $res.application -eq "OCG PIPELINE" -and $res.database -eq "available") {
             $ready = $true
             break
         }
@@ -88,6 +105,12 @@ if ($ready) {
     } else {
         # Clean up process if it's still running but unhealthy
         Stop-Process -Id $process.Id -Force
+    }
+    
+    # Expose logs standard error tail on failure
+    if (Test-Path $stderrLog) {
+        Write-Host "`n--- Node server.js Stderr Output: ---" -ForegroundColor Yellow
+        Get-Content $stderrLog -Tail 15
     }
     Read-Host "Press Enter to exit"
     Exit 1
