@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/reactor-runtime-fixes.css" />
     <link rel="stylesheet" href="/reactor-tone-lock.css" />
+    <link rel="stylesheet" href="/piper-orbit.css" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -49,16 +50,16 @@
     </main>
 
     <aside id="piper-widget" class="piper-widget" aria-label="Piper Intelligence Workspace">
-      <button id="piper-toggle" class="piper-toggle" aria-label="Expand Piper Operating Layer">
+      <button id="piper-toggle" class="piper-toggle" aria-label="Call Piper" aria-expanded="false">
         <span class="piper-orb-mini"></span><span class="piper-toggle-text">Piper</span>
       </button>
-      <div id="piper-drawer" class="piper-drawer">
+      <div id="piper-drawer" class="piper-drawer hidden">
         <div class="piper-header">
           <div class="piper-status">
             <span class="status-dot"><span class="status-orb"></span><span class="status-ring"></span></span>
             <div class="piper-title-group">
-              <div class="piper-title-row"><span class="piper-name">Piper</span><span class="piper-badge">OPERATING LAYER</span></div>
-              <div class="piper-subtext">Primary Operating Intelligence</div>
+              <div class="piper-title-row"><span class="piper-name">Piper</span><span class="piper-badge">INTELLIGENCE</span></div>
+              <div class="piper-subtext">Context-aware operating intelligence</div>
             </div>
           </div>
           <div class="piper-header-actions">
@@ -66,8 +67,8 @@
             <span id="piper-state-chip" class="piper-state-chip s-idle">idle</span>
             <button type="button" id="piper-stop" class="piper-stop" hidden onclick="window.piperCancel()" title="Interrupt Piper execution">■ Stop</button>
             <div class="workspace-mode-toggles">
-              <button type="button" id="piper-expand-btn" class="piper-tool-btn" title="Toggle Expanded Operating Workspace (Wide)">⤢</button>
-              <button type="button" id="piper-collapse-btn" class="piper-tool-btn" title="Collapse Operating Panel">›</button>
+              <button type="button" id="piper-expand-btn" class="piper-tool-btn" title="Expand Piper for complex analysis">⤢</button>
+              <button type="button" id="piper-collapse-btn" class="piper-tool-btn" title="Return Piper to orbit">×</button>
             </div>
           </div>
         </div>
@@ -97,24 +98,25 @@
         <div class="piper-input-container">
           <form id="piper-chat-form" class="piper-chat-form">
             <div class="input-wrapper">
-              <input type="text" id="piper-chat-input" placeholder="Command Piper: e.g. 'What needs my attention?', 'Show me why', 'Go to underwriting'..." required autocomplete="off" />
+              <input type="text" id="piper-chat-input" placeholder="Ask Piper about this workspace…" required autocomplete="off" />
               <button type="submit" class="piper-send-btn" title="Execute instruction"><span class="send-icon">▲</span></button>
             </div>
           </form>
           <div class="piper-input-footer">
             <p id="piper-state-note" class="piper-state-note"></p>
-            <p id="piper-disclosure" class="piper-disclosure">Piper runs PIPELINE. Facts are retrieved from SQLite; actions are written only with your explicit approval.</p>
+            <p id="piper-disclosure" class="piper-disclosure">Piper uses PIPELINE evidence and only writes consequential actions with your approval.</p>
           </div>
         </div>
       </div>
     </aside>
 
     <footer class="footer">
-      <span>OCG PIPELINE — Agent-Led Operating Environment</span>
+      <span>OCG PIPELINE — Operating Intelligence Workspace</span>
       <span id="footer-mode" class="muted">Live Provider: Vertex AI (google/gemini-2.5-flash)</span>
     </footer>
 
     <div style="display: none;" aria-hidden="true">PIPELINE Overview standalone</div>
     <script src="/app.js"></script>
+    <script src="/piper-orbit.js"></script>
   </body>
 </html>
