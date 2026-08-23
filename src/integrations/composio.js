@@ -72,12 +72,12 @@ export async function getComposioSession(sessionId) {
   return request(`/tool_router/session/${encodeURIComponent(sessionId)}`);
 }
 
-export async function searchComposioTools(sessionId, query) {
+export async function searchComposioTools(sessionId, useCase) {
   if (!sessionId) throw new Error('sessionId is required.');
-  if (!query) throw new Error('query is required.');
+  if (!useCase) throw new Error('useCase is required.');
   return request(`/tool_router/session/${encodeURIComponent(sessionId)}/search`, {
     method: 'POST',
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ queries: [{ use_case: useCase }] }),
   });
 }
 
