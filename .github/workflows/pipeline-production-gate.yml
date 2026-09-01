@@ -1,0 +1,45 @@
+name: PIPELINE Production Gate
+
+on:
+  push:
+    branches:
+      - aiden/pipeline-production-gate
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run complete test suite
+        run: npm test
+
+      - name: Build canonical Render production image
+        run: docker build -f deploy/production/pipeline.Dockerfile -t ocg-pipeline:ci .
+
+      - name: Verify Render blueprint invariants
+        shell: bash
+        run: |
+          grep -q 'healthCheckPath: /health' render.yaml
+          grep -q 'mountPath: /data' render.yaml
+          grep -q 'PIPELINE_DB_PATH' render.yaml
+          grep -q 'value: /data/pipeline.db' render.yaml
+          grep -q 'PIPELINE_READ_ONLY' render.yaml
+          grep -q 'value: "true"' render.yaml
