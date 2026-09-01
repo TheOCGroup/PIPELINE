@@ -1,0 +1,26 @@
+name: PIPELINE CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - aiden/ocg-property-contract
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Test
+        run: npm test
