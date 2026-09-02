@@ -34,6 +34,8 @@ export async function handleApi(req, res, ctx, url) {
     isKnown = true;
   } else if (seg[0] === "data-quality" && seg.length === 1) {
     isKnown = true;
+  } else if (seg[0] === "investment-committee" && seg.length === 1) {
+    isKnown = true;
   } else if (seg[0] === "system" && seg[1] === "status" && seg.length === 2) {
     isKnown = true;
   }
@@ -82,6 +84,18 @@ export async function handleApi(req, res, ctx, url) {
 
     if (seg[0] === "data-quality" && seg.length === 1) {
       return sendJson(res, 200, { ok: true, meta: meta(ctx, req), data: await ctx.services.dataQuality.summarize() });
+    }
+
+    if (seg[0] === "investment-committee" && seg.length === 1) {
+      const opportunityId = q.get("opportunityId");
+      if (!opportunityId) {
+        return sendJson(res, 400, { ok: false, error: "missing_opportunityId", meta: meta(ctx, req) });
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        meta: meta(ctx, req),
+        data: { reviews: ctx.services.investmentCommittee.listReviews(opportunityId) },
+      });
     }
 
     if (seg[0] === "system" && seg[1] === "status" && seg.length === 2) {
