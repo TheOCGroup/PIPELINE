@@ -35,13 +35,19 @@ BEGIN
     SELECT RAISE(FAIL, 'Investment committee reviews are append-only.');
 END;
 
--- Fail closed: an offer cannot move to approved unless the latest committee
--- review for the active version is an approval. A revised offer version must be
--- reviewed again; an approval for an older version never carries forward.
+-- Fail closed once an opportunity has entered the offer approval workflow: an
+-- offer cannot move to approved unless the latest committee review for the
+-- active version is an approval. A revised version must be reviewed again.
 CREATE TRIGGER trg_require_investment_committee_before_offer_approval
 BEFORE UPDATE OF status ON seller_offers
 FOR EACH ROW
-WHEN NEW.status = 'approved' AND OLD.status <> 'approved'
+WHEN NEW.status = 'approved'
+  AND OLD.status <> 'approved'
+  AND EXISTS (
+    SELECT 1 FROM seller_opportunities
+    WHERE id = NEW.opportunity_id
+      AND pipeline_stage IN ('offer_preparation', 'offer_approval_required')
+  )
 BEGIN
     SELECT CASE
       WHEN NEW.active_version_id IS NULL
