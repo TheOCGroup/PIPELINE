@@ -105,23 +105,58 @@ export class InvestmentCommitteeService {
       monthlyDebtService,
     };
 
-    this.db.prepare(`
-      INSERT INTO investment_committee_reviews (
-        id, opportunity_id, offer_id, offer_version_id, underwriting_ref_id,
-        decision, rationale, risks_json, metrics_json, reviewed_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      opportunityId,
-      offer.id,
-      version.id,
-      underwriting.id,
-      decision,
-      rationale,
-      JSON.stringify(risks),
-      JSON.stringify(metrics),
-      actor
-    );
+    this.db.prepare("BEGIN TRANSACTION").run();
+    try {
+      this.db.prepare(`
+        INSERT INTO investment_committee_reviews (
+          id, opportunity_id, offer_id, offer_version_id, underwriting_ref_id,
+          decision, rationale, risks_json, metrics_json, reviewed_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        opportunityId,
+        offer.id,
+        version.id,
+        underwriting.id,
+        decision,
+        rationale,
+        JSON.stringify(risks),
+        JSON.stringify(metrics),
+        actor
+      );
+
+      if (decision === "approve") {
+        this.db.prepare("UPDATE seller_offer_versions SET version_status = 'pending_approval' WHERE id = ?").run(version.id);
+        this.db.prepare("UPDATE seller_offers SET status = 'pending_approval', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(offer.id);
+      } else if (decision === "kill") {
+        this.db.prepare("UPDATE seller_offer_versions SET version_status = 'rejected' WHERE id = ?").run(version.id);
+        this.db.prepare("UPDATE seller_offers SET status = 'rejected', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(offer.id);
+        this.db.prepare(`
+          UPDATE seller_opportunities
+          SET opportunity_status = 'on_hold', pipeline_stage = 'strategy_development', updated_by = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+          WHERE id = ?
+        `).run(actor, opportunityId);
+      } else if (decision === "hold") {
+        this.db.prepare("UPDATE seller_offers SET status = 'draft', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(offer.id);
+        this.db.prepare(`
+          UPDATE seller_opportunities
+          SET opportunity_status = 'on_hold', pipeline_stage = 'strategy_development', updated_by = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+          WHERE id = ?
+        `).run(actor, opportunityId);
+      } else {
+        this.db.prepare("UPDATE seller_offers SET status = 'draft', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(offer.id);
+        this.db.prepare(`
+          UPDATE seller_opportunities
+          SET opportunity_status = 'active', pipeline_stage = 'offer_preparation', updated_by = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+          WHERE id = ?
+        `).run(actor, opportunityId);
+      }
+
+      this.db.prepare("COMMIT").run();
+    } catch (err) {
+      this.db.prepare("ROLLBACK").run();
+      throw err;
+    }
 
     const row = this.db.prepare("SELECT * FROM investment_committee_reviews WHERE id = ?").get(id);
     return toReview(row);
