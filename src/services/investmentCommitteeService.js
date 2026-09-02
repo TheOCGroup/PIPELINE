@@ -123,7 +123,8 @@ export class InvestmentCommitteeService {
       actor
     );
 
-    return this.db.prepare("SELECT * FROM investment_committee_reviews WHERE id = ?").get(id) |> toReview;
+    const row = this.db.prepare("SELECT * FROM investment_committee_reviews WHERE id = ?").get(id);
+    return toReview(row);
   }
 }
 
