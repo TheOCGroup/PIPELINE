@@ -12,6 +12,7 @@ import { SqliteOperatorRepository } from "../repositories/sqlite/sqliteOperatorR
 import { PiperContextService } from "../services/piperContextService.js";
 import { PiperRuntime } from "../services/piper/piperRuntime.js";
 import { createPiperProvider } from "../services/piper/providers/index.js";
+import { InvestmentCommitteeService } from "../services/investmentCommitteeService.js";
 
 export function buildServices(config, db) {
   let repos;
@@ -34,6 +35,7 @@ export function buildServices(config, db) {
     // read API is serving fixtures: operator input and the brief must reflect
     // what is actually stored, never a demonstration set.
     operator: db ? new SqliteOperatorRepository(db, config) : null,
+    investmentCommittee: db ? new InvestmentCommitteeService(db) : null,
     piperContext: db ? new PiperContextService(db, config) : null,
     piper: db ? buildPiperRuntime(config, db) : null,
   };
