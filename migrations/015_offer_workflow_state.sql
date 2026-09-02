@@ -3,12 +3,19 @@
 -- Purpose: keep Offer Preparation -> Committee Review -> Approval -> Presentation
 -- synchronized even when callers use existing offer endpoints.
 
--- Any new active offer version enters offer preparation and clears stale approval state.
+-- A new active offer version enters offer preparation once the opportunity is
+-- already in the underwriting/strategy portion of the transaction. Legacy/raw
+-- new-lead flows are intentionally left untouched until they enter governed flow.
 CREATE TRIGGER trg_offer_version_enters_preparation
 AFTER UPDATE OF active_version_id ON seller_offers
 FOR EACH ROW
 WHEN NEW.active_version_id IS NOT NULL
   AND COALESCE(NEW.active_version_id, '') <> COALESCE(OLD.active_version_id, '')
+  AND EXISTS (
+    SELECT 1 FROM seller_opportunities
+    WHERE id = NEW.opportunity_id
+      AND pipeline_stage IN ('property_review', 'strategy_development', 'offer_preparation', 'offer_approval_required')
+  )
 BEGIN
     INSERT INTO seller_stage_events (id, opportunity_id, prior_stage, new_stage, changed_by, reason)
     SELECT lower(hex(randomblob(16))), NEW.opportunity_id, pipeline_stage, 'offer_preparation',
