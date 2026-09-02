@@ -1,77 +1,47 @@
-# OCG ONE & PIPELINE Standalone Production Deployment Package
+# OCG PIPELINE Standalone Production Deployment Package
 
-This package contains the Docker Compose configurations, Caddyfile routing parameters, environment variables templates, hardening guides, backup scripts, and cutover transition procedures to deploy standalone PIPELINE and the OCG ONE integration to an Ubuntu 24.04 LTS production server.
+This package deploys the existing standalone PIPELINE application to an Ubuntu 24.04 LTS host using Docker Compose and Caddy. It is a deployment path for the canonical PIPELINE repository; it does not create a second application or database.
 
-## Directory Layout (on VPS)
+## Production layout
 
 ```text
 /srv/ocg/
-├── compose/          # docker-compose.yml, Caddyfile, Dockerfiles, and shell scripts
+├── compose/          # docker-compose.yml, Caddyfile, Dockerfiles, deployment scripts
 ├── apps/
-│   ├── pipeline/     # PIPELINE application source
-│   └── ocg-one/      # OCG ONE application source
+│   └── pipeline/     # canonical PIPELINE application source
 ├── pipeline/
-│   ├── data/         # SQLite persistent database storage path
-│   └── logs/         # Server logs directory
-├── ocg-one/
-│   ├── app/          # OCG ONE Hub application source (apps/ocg-one)
-│   ├── data/         # SQLite database path (ocg_one.db)
-│   └── logs/         # Server logs directory
-└── backups/          # Secured pre-import and post-import DB copies
-    ├── pipeline/
-    └── ocg-one/
+│   ├── data/         # persistent SQLite storage
+│   └── logs/         # runtime logs
+└── backups/
+    └── pipeline/     # secured database snapshots
 ```
 
-## Files in this Package
+## Key files
 
-* `docker-compose.yml`: Multi-container bridge setup isolating application runtimes and mounting caddy, pipeline, and ocg-one.
-* `Caddyfile`: Reverse proxy and TLS manager directing HTTP traffic, enforcing HTTPS redirect, and providing strict security headers.
-* `pipeline.Dockerfile` & `ocg-one.Dockerfile`: Multi-stage Docker builds setting production dependencies, copying source files, and running Node services under non-root (`node`) users.
-* `pipeline.env.example` & `ocg-one.env.example`: Environment variables templates containing integration, Handshake, and S2S settings.
-* `bootstrap-server.sh`: Initial Ubuntu 24.04 hardening script setting UFW firewall rules, installing fail2ban, Docker engine, and configuring permission ownership.
-* `deploy.sh`: Docker compose compilation and execution wrapper.
-* `deploy.ps1`: Local PowerShell orchestration utility to tarball clean app sources and SCP files to the VPS via SSH.
-* `generate-secrets.sh`: Secure random secret generator and RS256 keypair generator producing base64-encoded strings and JWK mappings.
-* `migrate-pipeline.sh`: Database schema migrator applying migrations `001` through `008`.
-* `migrate-production-data.sh`: Controlled exporter/importer script executing clean VACUUM OCG ONE snapshots, exporting Pipeline-owned data objects, performing parity verification, and importing records transactionally.
-* `verify-production.sh`: Local curl smoke check for `/health` and SSL certificate headers.
-* `backup.sh` & `restore.sh`: SQLite snapshot copy procedures for disaster recovery.
-* `cutover.sh`: Feature-flag sequential cutover utility.
-* `rollback.sh`: Read-only lock, data exporter/reconciler, and rollback utility.
+- `docker-compose.yml` — container and network definition.
+- `Caddyfile` — TLS/reverse proxy and security headers.
+- `pipeline.Dockerfile` — production image running as the non-root `node` user.
+- `pipeline.env.example` — required PIPELINE runtime and integration settings.
+- `bootstrap-server.sh` — host hardening and Docker bootstrap.
+- `deploy.sh` / `deploy.ps1` — deployment orchestration.
+- `generate-secrets.sh` — cryptographic secret generation.
+- `migrate-pipeline.sh` — runs the repository's canonical migration runner and verifies **every `.sql` migration shipped in the running image** is recorded in `pipeline_migrations`.
+- `migrate-production-data.sh` — controlled import/parity sequence for legacy production data where required.
+- `verify-production.sh` — health/TLS smoke checks.
+- `backup.sh` / `restore.sh` — SQLite recovery procedures.
+- `cutover.sh` / `rollback.sh` — controlled transition and rollback utilities.
 
-## Deployment Step-by-Step Instructions
+## Deployment sequence
 
-1. **Local Package Prep**: Run `deploy.ps1` from local machine providing target VPS IP and SSH credentials:
-   ```powershell
-   .\deploy.ps1 -VpsIp "1.2.3.4" -SshUser "ubuntu"
-   ```
-2. **Server Hardening**: SSH into the server and run the bootstrap script:
-   ```bash
-   cd /srv/ocg/compose
-   chmod +x *.sh
-   ./bootstrap-server.sh
-   ```
-3. **Secrets Configuration**: Generate cryptographic configurations:
-   ```bash
-   ./generate-secrets.sh
-   ```
-4. **App Deployment**: Start Caddy and the application containers:
-   ```bash
-   ./deploy.sh
-   ```
-5. **PIPELINE Migrations**: Run target migrations `001` through `008`:
-   ```bash
-   ./migrate-pipeline.sh
-   ```
-6. **Data Migration**: Run export, preview, import, and parity check sequence:
-   ```bash
-   ./migrate-production-data.sh
-   ```
-7. **Production Smoke Check**: Confirm health endpoints and certificates:
-   ```bash
-   ./verify-production.sh
-   ```
-8. **Cutover**: Trigger the transition sequence to disable embedded writes and enable S2S conversion:
-   ```bash
-   ./cutover.sh
-   ```
+1. Prepare the existing host/package with `deploy.ps1` or the equivalent established deployment process.
+2. Run `bootstrap-server.sh` on a new host only when host hardening has not already been completed.
+3. Configure secrets and environment variables. Reuse the existing production values; do not generate replacements during a normal application update.
+4. Run `deploy.sh` to build/start the canonical PIPELINE container.
+5. Run `migrate-pipeline.sh`. The script must report that all migrations present under `/usr/src/app/migrations` are applied. It intentionally does **not** use a hard-coded migration count.
+6. If legacy data migration is actually required, run `migrate-production-data.sh` and confirm its parity checks. Do not rerun a historical migration blindly on an established production database.
+7. Run `verify-production.sh` and confirm the health endpoint and TLS/security headers.
+8. Run `cutover.sh` only for a genuine cutover event. Normal application releases should not repeatedly perform cutover operations.
+
+## Release rule
+
+Do not call PIPELINE production-ready because a container starts. A release is verified only when the running revision uses the intended source, all shipped migrations are applied, the persistent SQLite path is intact, health checks pass, and the authorized Piper intake boundary behaves correctly.
