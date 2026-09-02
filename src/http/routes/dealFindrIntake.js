@@ -1,45 +1,114 @@
 import { sendJson } from "../response.js";
 import { randomUUID } from "node:crypto";
 
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function persistVictorUnderwriting(db, opportunityId, { underwriting, marketEvidence, packageId, sourceRecordId, timestamp } = {}) {
+  if (!underwriting) return false;
+
+  const arv = numberOrNull(underwriting.arv);
+  const rehab = numberOrNull(underwriting.renovationBudget ?? underwriting.rehab);
+  const mao = numberOrNull(underwriting.mao ?? underwriting.mao70Rule);
+  const confidence = numberOrNull(underwriting.confidenceScore ?? underwriting.confidence);
+  const status = underwriting.analysisStatus || ((arv !== null || numberOrNull(underwriting.dscr) !== null) ? "completed" : "insufficient_evidence");
+
+  // opportunity_underwriting_refs is the current cross-system snapshot. Replace only
+  // Deal Scout's snapshot for this opportunity; never clear unrelated underwriting rows.
+  db.prepare(`
+    DELETE FROM opportunity_underwriting_refs
+    WHERE opportunity_id = ? AND source_system = 'deal-scout'
+  `).run(opportunityId);
+
+  const evidence = {
+    comps: Array.isArray(marketEvidence?.comps) ? marketEvidence.comps : [],
+    compsCount: numberOrNull(marketEvidence?.compsCount),
+    recommendation: underwriting.recommendation ?? null,
+    scenarios: Array.isArray(underwriting.scenarios) ? underwriting.scenarios : [],
+    hold: {
+      strategy: underwriting.holdStrategy ?? null,
+      monthlyRent: numberOrNull(underwriting.monthlyRent),
+      monthlyEffectiveGrossIncome: numberOrNull(underwriting.monthlyEffectiveGrossIncome),
+      monthlyOperatingExpenses: numberOrNull(underwriting.monthlyOperatingExpenses),
+      noi: numberOrNull(underwriting.noi),
+      monthlyDebtService: numberOrNull(underwriting.monthlyDebtService),
+      annualDebtService: numberOrNull(underwriting.annualDebtService),
+      dscr: numberOrNull(underwriting.dscr)
+    },
+    sourcePackageId: packageId ?? null
+  };
+
+  db.prepare(`
+    INSERT INTO opportunity_underwriting_refs (
+      id, opportunity_id, source_system, source_agent, source_project_id,
+      source_underwriting_id, source_version_id, analysis_status, arv, rehab, mao,
+      confidence, limitations, evidence_summary_json, analyzed_at
+    ) VALUES (?, ?, 'deal-scout', 'Victor', ?, ?, '2.0', ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    randomUUID(),
+    opportunityId,
+    sourceRecordId || null,
+    packageId || null,
+    status,
+    arv,
+    rehab,
+    mao,
+    confidence,
+    underwriting.limitations || null,
+    JSON.stringify(evidence),
+    timestamp || new Date().toISOString()
+  );
+
+  return true;
+}
+
 export async function handleDealFindrIntake(req, res, ctx) {
-  // Read body
   let body = "";
   try {
     const buffers = [];
-    for await (const chunk of req) {
-      buffers.push(chunk);
-    }
+    for await (const chunk of req) buffers.push(chunk);
     body = Buffer.concat(buffers).toString("utf8");
-  } catch (err) {
+  } catch {
     return sendJson(res, 500, { ok: false, error: "read_error" });
   }
 
   let payload;
   try {
     payload = JSON.parse(body);
-  } catch (err) {
+  } catch {
     return sendJson(res, 400, { ok: false, error: "invalid_json" });
   }
 
-  const { 
-    address, apn, askingPrice, arv, rehab, sellerName, phone, email,
-    sourceRecordId, sourceMessageId, sourceTimestamp, classification, classificationReason 
-  } = payload;
+  const victorPackage = payload?.property && payload?.underwriting ? payload : null;
+  const incoming = victorPackage?.property || payload;
+  const underwriting = victorPackage?.underwriting || null;
+  const marketEvidence = victorPackage?.marketEvidence || null;
+
+  const {
+    address, apn, askingPrice, sellerName, phone, email,
+    sourceMessageId, sourceTimestamp, classification, classificationReason
+  } = incoming;
+
+  const sourceRecordId = victorPackage?.property?.id || payload.sourceRecordId || null;
+  const arv = underwriting?.arv ?? payload.arv ?? null;
+  const rehab = underwriting?.renovationBudget ?? underwriting?.rehab ?? payload.rehab ?? null;
+  const intakeTimestamp = victorPackage?.timestamp || sourceTimestamp || null;
+  const intakeActor = victorPackage ? "victor" : "deal-findr";
 
   if (!address) {
     return sendJson(res, 400, { ok: false, error: "missing_address" });
   }
 
-  // Address Normalization
   const normalizedAddress = address.trim().toLowerCase().replace(/\s+/g, " ");
   const db = ctx.db;
 
-  // Real Deduplication (source_record_id, APN in JSON, or normalized address)
   let existingOpp = null;
   let matchType = null;
 
   try {
-    // 1. Exact source_type + source_record_id
     if (sourceRecordId) {
       existingOpp = db.prepare(`
         SELECT opportunity_id FROM seller_opportunity_sources
@@ -48,7 +117,6 @@ export async function handleDealFindrIntake(req, res, ctx) {
       if (existingOpp) matchType = "source_record_id";
     }
 
-    // 2. APN in provenance_metadata_json
     if (!existingOpp && apn) {
       existingOpp = db.prepare(`
         SELECT opportunity_id FROM seller_opportunity_sources
@@ -57,7 +125,6 @@ export async function handleDealFindrIntake(req, res, ctx) {
       if (existingOpp) matchType = "apn";
     }
 
-    // 3. Normalized property address
     if (!existingOpp) {
       existingOpp = db.prepare(`
         SELECT opportunity_id FROM seller_opportunity_sources
@@ -70,30 +137,49 @@ export async function handleDealFindrIntake(req, res, ctx) {
   }
 
   if (existingOpp) {
-    // Reconcile and log duplicate audit event
+    db.exec("BEGIN TRANSACTION;");
     try {
+      persistVictorUnderwriting(db, existingOpp.opportunity_id, {
+        underwriting,
+        marketEvidence,
+        packageId: victorPackage?.packageId,
+        sourceRecordId,
+        timestamp: victorPackage?.timestamp
+      });
+
       db.prepare(`
         INSERT INTO operational_audit_events (id, event_timestamp, event_type, actor_id, payload_json, correlation_id)
-        VALUES (?, ?, 'DEAL_FINDR_DUPLICATE_RECONCILED', 'deal-findr', ?, ?)
+        VALUES (?, ?, 'DEAL_FINDR_DUPLICATE_RECONCILED', ?, ?, ?)
       `).run(
-        randomUUID(), 
-        new Date().toISOString(), 
-        JSON.stringify({ 
-          matchType, 
-          incomingSourceRecordId: sourceRecordId || null, 
-          existingOpportunityId: existingOpp.opportunity_id 
+        randomUUID(),
+        new Date().toISOString(),
+        intakeActor,
+        JSON.stringify({
+          matchType,
+          incomingSourceRecordId: sourceRecordId || null,
+          existingOpportunityId: existingOpp.opportunity_id,
+          victorUnderwritingAttached: Boolean(underwriting)
         }),
         randomUUID()
       );
-    } catch (_) {}
+      db.exec("COMMIT;");
+    } catch (err) {
+      db.exec("ROLLBACK;");
+      console.error("Duplicate reconciliation failed:", err.message);
+      return sendJson(res, 500, { ok: false, error: "duplicate_reconciliation_failed" });
+    }
 
-    return sendJson(res, 200, { ok: true, duplicate: true, opportunityId: existingOpp.opportunity_id });
+    return sendJson(res, 200, {
+      ok: true,
+      duplicate: true,
+      opportunityId: existingOpp.opportunity_id,
+      dealId: existingOpp.opportunity_id
+    });
   }
 
-  // Address Verification & Image Metadata Verification through Google Maps (if API Key is configured)
   let addressVerification = {
     status: "ADDRESS_VERIFICATION_PENDING",
-    normalizedAddress: normalizedAddress,
+    normalizedAddress,
     latitude: null,
     longitude: null,
     placeId: null,
@@ -140,12 +226,7 @@ export async function handleDealFindrIntake(req, res, ctx) {
               verifiedAt: new Date().toISOString()
             };
           } else {
-            imageVerification = {
-              status: "NO_IMAGE",
-              source: "NONE",
-              url: null,
-              verifiedAt: new Date().toISOString()
-            };
+            imageVerification = { status: "NO_IMAGE", source: "NONE", url: null, verifiedAt: new Date().toISOString() };
           }
         } else {
           addressVerification.status = "ADDRESS_NEEDS_REVIEW";
@@ -159,87 +240,102 @@ export async function handleDealFindrIntake(req, res, ctx) {
     }
   }
 
-  // Canonical classification validation: Accept only if explicitly present and valid
   const validClassifications = new Set(['retail_listing', 'wholesale_target', 'investment_rehab', 'land_hold', 'disqualified', 'unknown']);
   const classificationValue = (classification && validClassifications.has(classification)) ? classification : 'unknown';
-  const classReason = (classification && validClassifications.has(classification)) 
-    ? (classificationReason || 'Explicit Deal Finder classification supplied at intake') 
+  const classReason = (classification && validClassifications.has(classification))
+    ? (classificationReason || 'Explicit Deal Finder classification supplied at intake')
     : 'No explicit Deal Finder classification supplied at intake';
 
-  // Legacy compatibility metadata mapping
   const provenanceMetadata = {
-    originSystem: "deal-finder",
-    originAgent: "Hunter",
+    originSystem: victorPackage ? "deal-scout" : "deal-finder",
+    originAgent: victorPackage ? "Victor" : "Hunter",
     legacySourceType: "deal_scout_handoff",
     addressVerification,
     imageVerification,
     apn: apn || null,
     arv: arv || null,
     rehab: rehab || null,
-    sourceTimestampProvided: !!sourceTimestamp,
-    originalSourceTimestamp: sourceTimestamp || null
+    sourceTimestampProvided: !!intakeTimestamp,
+    originalSourceTimestamp: intakeTimestamp || null
   };
 
-  // Insert new lead into SQLite
   const opportunityId = "opp_" + randomUUID().replace(/-/g, "").substring(0, 12);
   const opportunityCode = "OPP-" + Math.floor(100000 + Math.random() * 900000);
   const propertyId = "prop_" + randomUUID().replace(/-/g, "").substring(0, 12);
-
   const conversionTime = new Date().toISOString();
-  const sourceTimestampValue = sourceTimestamp || conversionTime;
+  const sourceTimestampValue = intakeTimestamp || conversionTime;
 
   db.exec("BEGIN TRANSACTION;");
   try {
-    // Insert into seller_opportunities
     db.prepare(`
       INSERT INTO seller_opportunities (
         id, tenant_id, opportunity_code, ocg_one_property_id, pipeline_stage,
         qualification_status, contact_status, opportunity_status, data_quality_status,
         asking_price, property_condition_summary, created_by, updated_by
-      ) VALUES (?, 'ocg-one', ?, ?, 'new_lead', 'needs_review', 'uncontacted', 'active', 'raw_ingestion', ?, ?, 'deal-findr', 'deal-findr')
-    `).run(opportunityId, opportunityCode, propertyId, askingPrice || null, "Ingested via Deal Finder");
+      ) VALUES (?, 'ocg-one', ?, ?, 'new_lead', 'needs_review', 'uncontacted', 'active', 'raw_ingestion', ?, ?, ?, ?)
+    `).run(
+      opportunityId,
+      opportunityCode,
+      propertyId,
+      askingPrice || null,
+      victorPackage ? "Ingested via Deal Scout / Victor" : "Ingested via Deal Finder",
+      intakeActor,
+      intakeActor
+    );
 
-    // Insert source (satisfies enum constraint with deal_scout_handoff, preserves deal-findr actor and timestamps)
     db.prepare(`
       INSERT INTO seller_opportunity_sources (
         id, opportunity_id, source_type, source_record_id, source_message_id,
         original_address, source_timestamp, conversion_actor, conversion_timestamp, provenance_metadata_json
-      ) VALUES (?, ?, 'deal_scout_handoff', ?, ?, ?, ?, 'deal-findr', ?, ?)
+      ) VALUES (?, ?, 'deal_scout_handoff', ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      randomUUID(), opportunityId, sourceRecordId || null, sourceMessageId || null, 
-      normalizedAddress, sourceTimestampValue, conversionTime, JSON.stringify(provenanceMetadata)
+      randomUUID(), opportunityId, sourceRecordId || null, sourceMessageId || null,
+      normalizedAddress, sourceTimestampValue, intakeActor, conversionTime, JSON.stringify(provenanceMetadata)
     );
 
-    // Insert source provenance
     db.prepare(`
       INSERT INTO source_provenance (
         id, opportunity_id, original_source_json, resolution_status
       ) VALUES (?, ?, ?, 'original_resolved')
-    `).run(randomUUID(), opportunityId, JSON.stringify({ source: "deal-findr", apn: apn || null }));
+    `).run(randomUUID(), opportunityId, JSON.stringify({ source: victorPackage ? "deal-scout" : "deal-findr", apn: apn || null }));
 
-    // Insert classification
     db.prepare(`
       INSERT INTO record_classifications (
         opportunity_id, classification_value, classification_rules_version, determined_by, reason
-      ) VALUES (?, ?, '1.0.0', 'deal-findr', ?)
-    `).run(opportunityId, classificationValue, classReason);
+      ) VALUES (?, ?, '1.0.0', ?, ?)
+    `).run(opportunityId, classificationValue, intakeActor, classReason);
 
-    // Record classification history
     db.prepare(`
       INSERT INTO classification_history (
         id, opportunity_id, prior_classification, new_classification,
         classification_rules_version, determined_by, reason
-      ) VALUES (?, ?, NULL, ?, '1.0.0', 'deal-findr', ?)
-    `).run(randomUUID(), opportunityId, classificationValue, classReason);
+      ) VALUES (?, ?, NULL, ?, '1.0.0', ?, ?)
+    `).run(randomUUID(), opportunityId, classificationValue, intakeActor, classReason);
 
-    // Log audit event
+    persistVictorUnderwriting(db, opportunityId, {
+      underwriting,
+      marketEvidence,
+      packageId: victorPackage?.packageId,
+      sourceRecordId,
+      timestamp: victorPackage?.timestamp
+    });
+
     db.prepare(`
       INSERT INTO operational_audit_events (id, event_timestamp, event_type, actor_id, payload_json, correlation_id)
-      VALUES (?, ?, 'DEAL_FINDR_INTAKE', 'deal-findr', ?, ?)
+      VALUES (?, ?, 'DEAL_FINDR_INTAKE', ?, ?, ?)
     `).run(
-      randomUUID(), 
-      conversionTime, 
-      JSON.stringify({ opportunityId, address, arv, askingPrice, rehab, sourceRecordId }),
+      randomUUID(),
+      conversionTime,
+      intakeActor,
+      JSON.stringify({
+        opportunityId,
+        address,
+        arv,
+        askingPrice,
+        rehab,
+        sourceRecordId,
+        victorUnderwritingAttached: Boolean(underwriting)
+      }),
       randomUUID()
     );
 
@@ -250,5 +346,11 @@ export async function handleDealFindrIntake(req, res, ctx) {
     return sendJson(res, 500, { ok: false, error: "intake_transaction_failed" });
   }
 
-  return sendJson(res, 201, { ok: true, duplicate: false, opportunityId, opportunityCode });
+  return sendJson(res, 201, {
+    ok: true,
+    duplicate: false,
+    opportunityId,
+    dealId: opportunityId,
+    opportunityCode
+  });
 }
