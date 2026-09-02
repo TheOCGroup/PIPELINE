@@ -1,0 +1,50 @@
+name: PIPELINE Production Gate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run complete test suite
+        run: npm test
+
+      - name: Check runtime entrypoints
+        run: |
+          node --check server.js
+          node --check src/http/routes/dealFindrIntake.js
+          node --check src/repositories/sqlite/sqliteRepositories.js
+
+      - name: Build canonical production image
+        run: docker build -f deploy/production/pipeline.Dockerfile -t ocg-pipeline:ci .
+
+      - name: Verify persistent production blueprint invariants
+        shell: bash
+        run: |
+          grep -q 'healthCheckPath: /health' render.yaml
+          grep -q 'mountPath: /data' render.yaml
+          grep -q 'PIPELINE_DB_PATH' render.yaml
+          grep -q 'value: /data/pipeline.db' render.yaml
+          grep -q 'PIPELINE_READ_ONLY' render.yaml
+          grep -q 'value: "true"' render.yaml
