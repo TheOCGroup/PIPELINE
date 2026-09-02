@@ -3,18 +3,33 @@ set -euo pipefail
 
 echo "=== Running Standalone PIPELINE Database Migrations ==="
 
-# Execute migration command inside docker container
-docker compose -f /srv/ocg/compose/docker-compose.yml exec -T pipeline node scripts/migrate.js
+COMPOSE_FILE="/srv/ocg/compose/docker-compose.yml"
 
-# Confirm migration applied status
-docker compose -f /srv/ocg/compose/docker-compose.yml exec -T pipeline node -e "
-  const { DatabaseSync } = require('node:sqlite');
+# The application migration runner is authoritative. It applies every *.sql file
+# in filename order and records each applied filename in pipeline_migrations.
+docker compose -f "$COMPOSE_FILE" exec -T pipeline node scripts/migrate.js
+
+# Verify production has applied every migration shipped in the running image.
+# Do not hard-code a historical migration count; the repository evolves.
+docker compose -f "$COMPOSE_FILE" exec -T pipeline node --input-type=module -e "
+  import { DatabaseSync } from 'node:sqlite';
+  import { readdirSync } from 'node:fs';
+
+  const migrationFiles = readdirSync('/usr/src/app/migrations')
+    .filter((name) => name.endsWith('.sql'))
+    .sort();
   const db = new DatabaseSync('/data/pipeline.db');
-  const count = db.prepare('SELECT count(1) as c FROM pipeline_migrations').get().c;
-  console.log('Successfully applied migrations count:', count);
-  if (count < 8) {
-    console.error('Migration verification failed! Schema version is lower than expected.');
+  const applied = db.prepare('SELECT filename FROM pipeline_migrations ORDER BY filename').all().map((row) => row.filename);
+  db.close();
+
+  const missing = migrationFiles.filter((name) => !applied.includes(name));
+  console.log('Migration files shipped:', migrationFiles.length);
+  console.log('Migrations recorded applied:', applied.length);
+  if (missing.length) {
+    console.error('Migration verification failed. Missing:', missing.join(', '));
     process.exit(1);
   }
+  console.log('All shipped PIPELINE migrations are applied.');
 "
+
 echo "=== Migrations Completed & Verified ==="
