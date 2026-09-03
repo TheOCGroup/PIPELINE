@@ -29,7 +29,7 @@ test("/version returns 0.1.0 and identifies as OCG PIPELINE, not OCG ONE", async
   assert.equal(body.name, "OCG PIPELINE");
   assert.equal(body.service, "pipeline");
   assert.notEqual(body.service, "ocg-one");
-  assert.equal(body.schemaVersion, "1"); // set by migration 001
+  assert.equal(body.schemaVersion, "1");
 });
 
 test("static PIPELINE page loads inside the OCG OS shell without losing subsystem identity", async (t) => {
@@ -49,7 +49,7 @@ test("static PIPELINE page loads inside the OCG OS shell without losing subsyste
   assert.match(html, /Overview/);
 });
 
-test("OCG OS command-center assets are served with their real content types", async (t) => {
+test("OCG OS command-center assets are served with their real content types and governed data sources", async (t) => {
   const db = makeTempDb();
   const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath));
   t.after(() => { app.close(); db.cleanup(); });
@@ -59,6 +59,14 @@ test("OCG OS command-center assets are served with their real content types", as
   assert.match(js.headers.get("content-type") || "", /application\/javascript/);
   const jsText = await js.text();
   assert.match(jsText, /What matters now/);
+  assert.match(jsText, /NEEDS GENARO/);
+  assert.match(jsText, /CAPITAL DECISIONS/);
+  assert.match(jsText, /TRANSACTION RISK/);
+  assert.match(jsText, /\/api\/v1\/investment-committee/);
+  assert.match(jsText, /\/api\/v1\/operator\/transactions/);
+  assert.match(jsText, /\/api\/v1\/operator\/acquisition-handoffs/);
+  assert.match(jsText, /\/api\/v1\/operator\/dispositions/);
+  assert.match(jsText, /No simulated completion percentage is shown/);
   assert.doesNotMatch(jsText, /<!doctype html>/i);
 
   const css = await fetch(`${baseUrl}/ocg-os-command.css`);
@@ -66,6 +74,8 @@ test("OCG OS command-center assets are served with their real content types", as
   assert.match(css.headers.get("content-type") || "", /text\/css/);
   const cssText = await css.text();
   assert.match(cssText, /\.ocg-command-center/);
+  assert.match(cssText, /\.ocg-executive-grid/);
+  assert.match(cssText, /\.ocg-priority-row/);
   assert.doesNotMatch(cssText, /<!doctype html>/i);
 });
 
