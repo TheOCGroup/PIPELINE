@@ -1,14 +1,11 @@
 (() => {
   const ACTIVE_STATES = new Set(["retrieving", "generating", "executing"]);
-  const ATTENTION_STATES = new Set(["awaiting_approval", "failed"]);
-  const TERMINAL_STATES = new Set(["complete", "canceled"]);
 
   const lifecycleGroups = [
     { key: "discovery", label: "Hunter / Discovery", stages: ["new_lead", "needs_review", "attempting_contact", "contacted", "qualified", "appointment_scheduled"] },
     { key: "underwriting", label: "Victor / Underwriting", stages: ["property_review", "strategy_development"] },
     { key: "decision", label: "Committee / Offer", stages: ["offer_preparation", "offer_approval_required", "offer_presented", "negotiating"] },
     { key: "transaction", label: "Piper / Transaction", stages: ["under_contract", "due_diligence", "closing_scheduled"] },
-    { key: "exit", label: "Mission Control / Exit", stages: ["closed", "nurture", "disqualified", "lost", "archived"] },
   ];
 
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({
@@ -36,7 +33,7 @@
     return { tone: "muted", label: "IDLE", detail: "No active Piper task is running." };
   }
 
-  function countLifecycle(opportunities) {
+  function countPipelineLifecycle(opportunities) {
     return lifecycleGroups.map((group) => ({
       ...group,
       count: opportunities.filter((opp) => group.stages.includes(opp.stage || "new_lead")).length,
@@ -45,12 +42,43 @@
 
   function getAttentionCount(brief) {
     const sections = Array.isArray(brief?.sections) ? brief.sections : [];
-    return sections.reduce((sum, section) => {
+    const ids = new Set();
+    let withoutId = 0;
+    for (const section of sections) {
       const title = String(section.title || "").toLowerCase();
-      return title === "needs you" || title === "risk" || title === "stalled"
-        ? sum + (Array.isArray(section.items) ? section.items.length : 0)
-        : sum;
-    }, 0);
+      if (title !== "needs you" && title !== "risk" && title !== "stalled") continue;
+      for (const item of Array.isArray(section.items) ? section.items : []) {
+        if (item?.opportunityId) ids.add(String(item.opportunityId));
+        else withoutId += 1;
+      }
+    }
+    return ids.size + withoutId;
+  }
+
+  async function postCloseState(opportunities) {
+    const closed = opportunities.filter((opp) => opp.stage === "closed");
+    if (!closed.length) return { missionControl: 0, exitExecution: 0, verified: true };
+
+    const rows = await Promise.all(closed.map(async (opp) => {
+      const id = encodeURIComponent(opp.id);
+      const [handoffData, dispositionData] = await Promise.all([
+        json(`/api/v1/operator/acquisition-handoffs?opportunityId=${id}`).catch(() => null),
+        json(`/api/v1/operator/dispositions?opportunityId=${id}`).catch(() => null),
+      ]);
+      const handoffs = Array.isArray(handoffData?.handoffs) ? handoffData.handoffs : [];
+      const plans = Array.isArray(dispositionData?.plans) ? dispositionData.plans : [];
+      return {
+        handoff: handoffs.length > 0,
+        disposition: plans.some((plan) => String(plan.status || "").toLowerCase() !== "completed"),
+        readable: handoffData !== null && dispositionData !== null,
+      };
+    }));
+
+    return {
+      missionControl: rows.filter((row) => row.handoff).length,
+      exitExecution: rows.filter((row) => row.disposition).length,
+      verified: rows.every((row) => row.readable),
+    };
   }
 
   async function buildSnapshot() {
@@ -61,12 +89,19 @@
       json("/api/v1/system/status").catch(() => ({})),
     ]);
     const opportunities = Array.isArray(opps) ? opps.filter((o) => showFixtures || !o.isFixture) : [];
+    const postClose = await postCloseState(opportunities);
+    const lifecycle = countPipelineLifecycle(opportunities);
+    lifecycle.push(
+      { key: "mission-control", label: "Mission Control / Renovation", count: postClose.missionControl },
+      { key: "exit", label: "OCG OS / Exit Execution", count: postClose.exitExecution },
+    );
     return {
-      lifecycle: countLifecycle(opportunities),
+      lifecycle,
       attention: getAttentionCount(brief),
       total: opportunities.length,
       headline: brief?.headline || "OCG OS operating state",
       system,
+      postCloseVerified: postClose.verified,
     };
   }
 
@@ -106,7 +141,7 @@
       <div class="ocg-lifecycle" aria-label="Deal lifecycle">
         ${lifecycle}
       </div>
-      <div class="ocg-command-truth">Live work status is derived from Piper's actual run state. No simulated progress percentage is shown.</div>
+      <div class="ocg-command-truth">Live work status is derived from Piper's actual run state. Post-close counts are derived from acquisition-handoff and disposition records${snapshot.postCloseVerified ? "." : " where those records are currently readable."} No simulated progress percentage is shown.</div>
     `;
     view.prepend(section);
   }
