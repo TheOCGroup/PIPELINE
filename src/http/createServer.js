@@ -38,6 +38,7 @@ const STATIC = {
   "/ocg-os-command.js": "application/javascript; charset=utf-8",
   "/ocg-os-deal-story.js": "application/javascript; charset=utf-8",
   "/ocg-os-work-room.js": "application/javascript; charset=utf-8",
+  "/ocg-os-hierarchy-lock.js": "application/javascript; charset=utf-8",
 };
 function readPublic(publicDir,file){return readFileSync(normalize(join(publicDir,file)));}
 export function createServer(ctx){const{publicDir}=ctx;ctx.authDbService=createAuthDatabaseService(ctx.db);return httpCreateServer(async(req,res)=>{let url;try{url=new URL(req.url,`http://${req.headers.host||"127.0.0.1"}`);}catch{return sendJson(res,400,{ok:false,error:"bad_request"});}const path=url.pathname;try{
