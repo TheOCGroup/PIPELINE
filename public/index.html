@@ -24,21 +24,10 @@
         <a href="/data-quality" data-nav id="nav-data-quality"><span class="nav-icon">◉</span><span>Data Quality</span></a>
         <a href="/system" data-nav id="nav-system"><span class="nav-icon">⚙</span><span>System</span></a>
       </div>
-      <div class="sidebar-telemetry">
-        <div id="demo-banner" class="demo-banner" role="status" hidden>DEMO FIXTURES</div>
-        <div class="system-health-status"><span class="health-pulse"></span><span id="sidebar-connection-status">Operational</span></div>
-        <div class="sidebar-meta-row"><span id="sidebar-active-provider" class="provider-pill">Vertex AI · gemini-2.5-flash</span><span id="app-version" class="telemetry-pill">v0.1.0</span></div>
-      </div>
+      <div class="sidebar-telemetry"><div id="demo-banner" class="demo-banner" role="status" hidden>DEMO FIXTURES</div><div class="system-health-status"><span class="health-pulse"></span><span id="sidebar-connection-status">Operational</span></div><div class="sidebar-meta-row"><span id="sidebar-active-provider" class="provider-pill">Vertex AI · gemini-2.5-flash</span><span id="app-version" class="telemetry-pill">v0.1.0</span></div></div>
     </nav>
     <main id="main" tabindex="-1">
-      <section class="ocg-command-context" aria-label="OCG OS command hierarchy">
-        <div class="ocg-command-chain">
-          <span class="ocg-command-node"><strong>Aiden</strong>&nbsp;· Executive Orchestrator</span><span class="ocg-command-arrow" aria-hidden="true">→</span>
-          <span class="ocg-command-node"><strong>OCG OS Director</strong>&nbsp;· Department Owner</span><span class="ocg-command-arrow" aria-hidden="true">→</span>
-          <span class="ocg-command-node"><strong>Piper</strong>&nbsp;· Seller Pipeline Lead</span>
-        </div>
-        <div class="ocg-command-scope">Current surface: seller CRM, follow-up, transaction and disposition execution</div>
-      </section>
+      <section class="ocg-command-context" aria-label="OCG OS command hierarchy"><div class="ocg-command-chain"><span class="ocg-command-node"><strong>Aiden</strong>&nbsp;· Executive Orchestrator</span><span class="ocg-command-arrow" aria-hidden="true">→</span><span class="ocg-command-node"><strong>OCG OS Director</strong>&nbsp;· Department Owner</span><span class="ocg-command-arrow" aria-hidden="true">→</span><span class="ocg-command-node"><strong>Piper</strong>&nbsp;· Seller Pipeline Lead</span></div><div class="ocg-command-scope">Current surface: seller CRM, follow-up, transaction and disposition execution</div></section>
       <div id="view" aria-live="polite"><p class="muted">Loading workspace...</p></div>
     </main>
     <aside id="piper-widget" class="piper-widget" aria-label="Piper Seller Pipeline Workspace">
@@ -57,5 +46,6 @@
     <script src="/app.js"></script>
     <script src="/ocg-os-command.js"></script>
     <script src="/ocg-os-deal-story.js"></script>
+    <script src="/ocg-os-work-room.js"></script>
   </body>
 </html>
