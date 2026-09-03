@@ -14,24 +14,36 @@ function seedPresentedDeal(db, suffix = "happy") {
   return {opportunityId,offerId,versionId};
 }
 
+function completeTask(service, opportunityId, task) {
+  return service.upsertTask({ opportunityId, taskKey:task.taskKey, category:task.category, title:task.title, status:"complete", requiredForClosing:task.requiredForClosing, requiredForScheduling:task.requiredForScheduling, dueAt:task.dueAt, evidenceRef:`evidence://${task.taskKey}`, actor:"test", reason:"Verified" });
+}
 function completeClosingTasks(service, opportunityId) {
   const tasks=service.listTasks(opportunityId);
   assert.equal(tasks.length,6);
-  for(const task of tasks) service.upsertTask({ opportunityId, taskKey:task.taskKey, category:task.category, title:task.title, status:"complete", requiredForClosing:true, dueAt:task.dueAt, evidenceRef:`evidence://${task.taskKey}`, actor:"test", reason:"Verified for closing" });
+  for(const task of tasks) completeTask(service, opportunityId, task);
 }
 
-test("post-offer workflow reaches closed purchase and creates immutable Mission Control handoff",()=>{
+test("post-offer workflow separates scheduling readiness from final closing readiness and creates Mission Control handoff",()=>{
  const tempDb=makeTempDb(), app=createApp(testConfig(tempDb.dbPath));
  try{
   const deal=seedPresentedDeal(app.db);
   app.services.transactions.transition({opportunityId:deal.opportunityId,action:"start_negotiation",actor:"test"});
   app.services.transactions.transition({opportunityId:deal.opportunityId,action:"accept",actor:"test",effectiveAt:"2026-09-03T14:00:00Z"});
   app.services.transactions.transition({opportunityId:deal.opportunityId,action:"begin_due_diligence",actor:"test"});
-  assert.equal(app.services.transactions.readiness(deal.opportunityId).unresolvedCount,6);
-  assert.throws(()=>app.services.transactions.transition({opportunityId:deal.opportunityId,action:"schedule_closing",actor:"test",scheduledClosingAt:"2026-09-25T15:00:00Z"}),/closing_readiness_incomplete/);
-  assert.throws(()=>{const t=app.services.transactions.listTasks(deal.opportunityId)[0];app.services.transactions.upsertTask({opportunityId:deal.opportunityId,taskKey:t.taskKey,category:t.category,title:t.title,status:"complete",requiredForClosing:true,actor:"test"});},/closing_task_evidence_required/);
-  completeClosingTasks(app.services.transactions,deal.opportunityId);
+  const initial=app.services.transactions.readiness(deal.opportunityId);
+  assert.equal(initial.unresolvedCount,6);
+  assert.equal(initial.scheduleRequiredCount,3);
+  assert.throws(()=>app.services.transactions.transition({opportunityId:deal.opportunityId,action:"schedule_closing",actor:"test",scheduledClosingAt:"2026-09-25T15:00:00Z"}),/closing_schedule_readiness_incomplete/);
+  assert.throws(()=>{const t=app.services.transactions.listTasks(deal.opportunityId)[0];app.services.transactions.upsertTask({opportunityId:deal.opportunityId,taskKey:t.taskKey,category:t.category,title:t.title,status:"complete",requiredForClosing:true,requiredForScheduling:t.requiredForScheduling,actor:"test"});},/closing_task_evidence_required/);
+
+  for(const task of app.services.transactions.listTasks(deal.opportunityId).filter(t=>t.requiredForScheduling)) completeTask(app.services.transactions,deal.opportunityId,task);
+  const scheduledReady=app.services.transactions.readiness(deal.opportunityId);
+  assert.equal(scheduledReady.readyToScheduleClosing,true);
+  assert.equal(scheduledReady.readyToClose,false);
   app.services.transactions.transition({opportunityId:deal.opportunityId,action:"schedule_closing",actor:"test",scheduledClosingAt:"2026-09-25T15:00:00Z"});
+  assert.throws(()=>app.services.transactions.transition({opportunityId:deal.opportunityId,action:"close",actor:"test",effectiveAt:"2026-09-25T16:00:00Z"}),/closing_readiness_incomplete/);
+
+  for(const task of app.services.transactions.listTasks(deal.opportunityId).filter(t=>!["complete","waived"].includes(t.status))) completeTask(app.services.transactions,deal.opportunityId,task);
   const closed=app.services.transactions.transition({opportunityId:deal.opportunityId,action:"close",actor:"test",effectiveAt:"2026-09-25T16:00:00Z"});
   assert.equal(closed.type,"closed_purchased");
   assert.ok(closed.details.missionControlHandoffId);
@@ -46,7 +58,7 @@ test("post-offer workflow reaches closed purchase and creates immutable Mission 
  }finally{app.close();tempDb.cleanup();}
 });
 
-test("transaction workflow refuses stage skipping, tracks blockers, and records loss without acquisition handoff",()=>{
+test("waivers require rationale, blockers remain visible, and loss creates no acquisition handoff",()=>{
  const tempDb=makeTempDb(),app=createApp(testConfig(tempDb.dbPath));
  try{
   const deal=seedPresentedDeal(app.db,"guard");
@@ -54,7 +66,10 @@ test("transaction workflow refuses stage skipping, tracks blockers, and records 
   app.services.transactions.transition({opportunityId:deal.opportunityId,action:"accept",actor:"test"});
   app.services.transactions.transition({opportunityId:deal.opportunityId,action:"begin_due_diligence",actor:"test"});
   const title=app.services.transactions.listTasks(deal.opportunityId).find(t=>t.category==="title");
-  app.services.transactions.upsertTask({opportunityId:deal.opportunityId,taskKey:title.taskKey,category:title.category,title:title.title,status:"blocked",requiredForClosing:true,blockerReason:"Unreleased lien",actor:"test"});
+  app.services.transactions.upsertTask({opportunityId:deal.opportunityId,taskKey:title.taskKey,category:title.category,title:title.title,status:"blocked",requiredForClosing:title.requiredForClosing,requiredForScheduling:title.requiredForScheduling,blockerReason:"Unreleased lien",actor:"test"});
+  const walkthrough=app.services.transactions.listTasks(deal.opportunityId).find(t=>t.taskKey==="final_walkthrough");
+  assert.throws(()=>app.services.transactions.upsertTask({opportunityId:deal.opportunityId,taskKey:walkthrough.taskKey,category:walkthrough.category,title:walkthrough.title,status:"waived",requiredForClosing:true,requiredForScheduling:false,actor:"test"}),/waiver_reason_required/);
+  app.services.transactions.upsertTask({opportunityId:deal.opportunityId,taskKey:walkthrough.taskKey,category:walkthrough.category,title:walkthrough.title,status:"waived",requiredForClosing:true,requiredForScheduling:false,actor:"test",reason:"Seller occupied; attorney-approved remote verification"});
   const readiness=app.services.transactions.readiness(deal.opportunityId); assert.equal(readiness.blockedCount,1); assert.match(readiness.blocked[0].blockerReason,/lien/);
   const milestone=app.services.transactions.transition({opportunityId:deal.opportunityId,action:"lose",actor:"test",reason:"Title defect could not be cured"}); assert.equal(milestone.type,"transaction_lost");
   const opp=app.db.prepare("SELECT * FROM seller_opportunities WHERE id = ?").get(deal.opportunityId); assert.equal(opp.pipeline_stage,"lost"); assert.equal(opp.opportunity_status,"closed_lost");
