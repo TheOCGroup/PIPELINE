@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeTempDb, testConfig, startApp } from "./helpers/temporaryDatabase.mjs";
 import { createApp } from "../src/app/createApp.js";
+import { buildBrief } from "../src/domain/piper/briefModel.js";
 
 function seedApprovedSell(db){
   const opportunityId="opp_disp_api", handoffId="exit_disp_api", reviewId="review_disp_api";
@@ -45,6 +46,12 @@ test("operator API exposes governed disposition execution and Piper surfaces blo
   assert.match(opportunity.dispositionNextAction,/Resolve sell disposition blocker/);
   assert.ok(opportunity.risks.some(r=>r.source==="post-renovation-disposition"&&r.severity==="high"));
   assert.ok(snapshot.totals.blockedDispositions>=1);
+
+  const brief=buildBrief(snapshot);
+  const exitSection=brief.sections.find(s=>s.title==="EXIT EXECUTION");
+  assert.ok(exitSection,"closed purchased property remains visible while disposition is active");
+  assert.ok(exitSection.items.some(i=>i.opportunityId===seeded.opportunityId));
+  assert.ok(brief.sections.find(s=>s.title==="NEXT")?.items.some(i=>i.opportunityId===seeded.opportunityId));
 
   const badComplete=await post(baseUrl,`/api/v1/operator/dispositions/${planId}`,{eventType:"completed"});
   assert.equal(badComplete.status,409);
