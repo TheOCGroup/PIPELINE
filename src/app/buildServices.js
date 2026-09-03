@@ -14,6 +14,7 @@ import { PiperRuntime } from "../services/piper/piperRuntime.js";
 import { createPiperProvider } from "../services/piper/providers/index.js";
 import { InvestmentCommitteeService } from "../services/investmentCommitteeService.js";
 import { TransactionWorkflowService } from "../services/transactionWorkflowService.js";
+import { RenovationExitGovernanceService } from "../services/renovationExitGovernanceService.js";
 
 export function buildServices(config, db) {
   let repos;
@@ -38,6 +39,7 @@ export function buildServices(config, db) {
     operator: db ? new SqliteOperatorRepository(db, config) : null,
     investmentCommittee: db ? new InvestmentCommitteeService(db) : null,
     transactions: transactionService,
+    renovationExits: db ? new RenovationExitGovernanceService(db) : null,
     piperContext,
     piper: db ? buildPiperRuntime(config, db, piperContext) : null,
   };
