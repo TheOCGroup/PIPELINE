@@ -49,6 +49,26 @@ test("static PIPELINE page loads inside the OCG OS shell without losing subsyste
   assert.match(html, /Overview/);
 });
 
+test("OCG OS command-center assets are served with their real content types", async (t) => {
+  const db = makeTempDb();
+  const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath));
+  t.after(() => { app.close(); db.cleanup(); });
+
+  const js = await fetch(`${baseUrl}/ocg-os-command.js`);
+  assert.equal(js.status, 200);
+  assert.match(js.headers.get("content-type") || "", /application\/javascript/);
+  const jsText = await js.text();
+  assert.match(jsText, /What matters now/);
+  assert.doesNotMatch(jsText, /<!doctype html>/i);
+
+  const css = await fetch(`${baseUrl}/ocg-os-command.css`);
+  assert.equal(css.status, 200);
+  assert.match(css.headers.get("content-type") || "", /text\/css/);
+  const cssText = await css.text();
+  assert.match(cssText, /\.ocg-command-center/);
+  assert.doesNotMatch(cssText, /<!doctype html>/i);
+});
+
 test("unknown API routes return a deterministic 404 with no internals", async (t) => {
   const db = makeTempDb();
   const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath));
