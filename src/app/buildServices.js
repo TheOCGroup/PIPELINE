@@ -30,7 +30,8 @@ export function buildServices(config, db) {
   }
 
   const transactionService = db ? new TransactionWorkflowService(db) : null;
-  const piperContext = db ? buildRiskAwarePiperContext(db, config, transactionService) : null;
+  const dispositionService = db ? new PostRenovationDispositionService(db) : null;
+  const piperContext = db ? buildRiskAwarePiperContext(db, config, transactionService, dispositionService) : null;
 
   return {
     opportunities: new OpportunityReadService(repos.opportunity),
@@ -41,31 +42,30 @@ export function buildServices(config, db) {
     investmentCommittee: db ? new InvestmentCommitteeService(db) : null,
     transactions: transactionService,
     renovationExits: db ? new RenovationExitGovernanceService(db) : null,
-    dispositions: db ? new PostRenovationDispositionService(db) : null,
+    dispositions: dispositionService,
     piperContext,
     piper: db ? buildPiperRuntime(config, db, piperContext) : null,
   };
 }
 
-function buildRiskAwarePiperContext(db, config, transactions) {
+function buildRiskAwarePiperContext(db, config, transactions, dispositions = null) {
   const context = new PiperContextService(db, config);
   const baseSnapshot = context.snapshot.bind(context);
   context.snapshot = (options = {}) => {
     const snapshot = baseSnapshot(options);
     let criticalTransactionRisks = 0;
     let highTransactionRisks = 0;
+    let blockedDispositions = 0;
+    let activeDispositions = 0;
 
     snapshot.opportunities = snapshot.opportunities.map((opportunity) => {
       let transactionRisk = null;
-      try {
-        transactionRisk = transactions.riskReport(opportunity.id, snapshot.generatedAt);
-      } catch {
-        return opportunity;
-      }
+      try { transactionRisk = transactions.riskReport(opportunity.id, snapshot.generatedAt); } catch {}
 
-      criticalTransactionRisks += transactionRisk.criticalCount;
-      highTransactionRisks += transactionRisk.highCount;
-      const transactionRisks = transactionRisk.risks.map((risk) => ({
+      let disposition = null;
+      try { disposition = dispositions?.list(opportunity.id)?.[0] || null; } catch {}
+
+      const transactionRisks = transactionRisk ? transactionRisk.risks.map((risk) => ({
         kind: risk.kind,
         severity: risk.severity,
         detail: risk.detail,
@@ -73,12 +73,33 @@ function buildRiskAwarePiperContext(db, config, transactions) {
         taskKey: risk.taskKey || null,
         category: risk.category || null,
         source: "transaction-workflow",
-      }));
+      })) : [];
+      if (transactionRisk) {
+        criticalTransactionRisks += transactionRisk.criticalCount;
+        highTransactionRisks += transactionRisk.highCount;
+      }
+
+      const dispositionRisks = [];
+      let dispositionNextAction = null;
+      if (disposition) {
+        if (disposition.status !== "completed") activeDispositions += 1;
+        if (disposition.status === "blocked") {
+          blockedDispositions += 1;
+          dispositionRisks.push({kind:"disposition_blocked",severity:"high",detail:disposition.statusDetail || `${disposition.dispositionType} disposition is blocked.`,source:"post-renovation-disposition"});
+          dispositionNextAction = `Resolve ${disposition.dispositionType} disposition blocker: ${disposition.statusDetail || "review blocking item"}`;
+        } else if (disposition.status === "failed") {
+          dispositionRisks.push({kind:"disposition_failed",severity:"critical",detail:disposition.statusDetail || `${disposition.dispositionType} disposition failed.`,source:"post-renovation-disposition"});
+          dispositionNextAction = `Review failed ${disposition.dispositionType} disposition and determine recovery path`;
+        } else if (disposition.status === "ready") dispositionNextAction = `Start approved ${disposition.dispositionType} disposition execution`;
+        else if (["started","unblocked"].includes(disposition.status)) dispositionNextAction = `Continue approved ${disposition.dispositionType} disposition and satisfy remaining evidence requirements`;
+      }
 
       return {
         ...opportunity,
         transactionRisk,
-        risks: [...(opportunity.risks || []), ...transactionRisks],
+        disposition,
+        dispositionNextAction,
+        risks: [...(opportunity.risks || []), ...transactionRisks, ...dispositionRisks],
       };
     });
 
@@ -87,6 +108,8 @@ function buildRiskAwarePiperContext(db, config, transactions) {
       criticalTransactionRisks,
       highTransactionRisks,
       transactionsAtRisk: snapshot.opportunities.filter(o => ["critical", "high"].includes(o.transactionRisk?.riskLevel)).length,
+      activeDispositions,
+      blockedDispositions,
     };
     return snapshot;
   };
@@ -94,7 +117,7 @@ function buildRiskAwarePiperContext(db, config, transactions) {
 }
 
 function buildPiperRuntime(config, db, contextService = null) {
-  const context = contextService || buildRiskAwarePiperContext(db, config, new TransactionWorkflowService(db));
+  const context = contextService || buildRiskAwarePiperContext(db, config, new TransactionWorkflowService(db), new PostRenovationDispositionService(db));
   const operator = new SqliteOperatorRepository(db, config);
   let provider;
   try {
