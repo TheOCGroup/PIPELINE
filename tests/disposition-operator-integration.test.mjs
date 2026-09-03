@@ -28,6 +28,7 @@ test("operator API exposes governed disposition execution and Piper surfaces blo
   assert.equal(created.status,201);
   assert.equal(created.body.data.plan.dispositionType,"sell");
   const planId=created.body.data.plan.id;
+  const requirements=created.body.data.plan.requirements;
 
   const listed=await fetch(`${baseUrl}/api/v1/operator/dispositions?opportunityId=${seeded.opportunityId}`);
   assert.equal(listed.status,200);
@@ -53,7 +54,14 @@ test("operator API exposes governed disposition execution and Piper surfaces blo
   assert.ok(exitSection.items.some(i=>i.opportunityId===seeded.opportunityId));
   assert.ok(brief.sections.find(s=>s.title==="NEXT")?.items.some(i=>i.opportunityId===seeded.opportunityId));
 
-  const badComplete=await post(baseUrl,`/api/v1/operator/dispositions/${planId}`,{eventType:"completed"});
-  assert.equal(badComplete.status,409);
-  assert.equal(badComplete.body.error,"disposition_completion_evidence_required");
+  const premature=await post(baseUrl,`/api/v1/operator/dispositions/${planId}`,{eventType:"completed",evidenceRef:"closing://sale"});
+  assert.equal(premature.status,409);
+  assert.match(premature.body.error,/disposition_requirements_incomplete:/);
+
+  for(const requirementKey of requirements){
+    const verified=await post(baseUrl,`/api/v1/operator/dispositions/${planId}/requirements`,{requirementKey,evidenceRef:`evidence://${requirementKey}`});
+    assert.equal(verified.status,200);
+  }
+  const ready=app.services.dispositions.get(planId);
+  assert.equal(ready.requirementsComplete,true);
 });
