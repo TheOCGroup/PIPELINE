@@ -3,13 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>OCG PIPELINE — Operating Intelligence Workspace</title>
+    <title>OCG OS — Seller Pipeline Workspace</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/reactor-runtime-fixes.css" />
     <link rel="stylesheet" href="/reactor-tone-lock.css" />
+    <link rel="stylesheet" href="/ocg-os-command.css" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -19,8 +20,8 @@
         <div class="brand-header">
           <div class="brand-orb" aria-hidden="true"></div>
           <div>
-            <div class="brand-name">OCG PIPELINE</div>
-            <div class="brand-sub">Operating Intelligence</div>
+            <div class="brand-name">OCG OS</div>
+            <div class="brand-sub">PIPELINE / Seller Operations</div>
           </div>
         </div>
       </div>
@@ -45,11 +46,21 @@
     </nav>
 
     <main id="main" tabindex="-1">
+      <section class="ocg-command-context" aria-label="OCG OS command hierarchy">
+        <div class="ocg-command-chain">
+          <span class="ocg-command-node"><strong>Aiden</strong>&nbsp;· Executive Orchestrator</span>
+          <span class="ocg-command-arrow" aria-hidden="true">→</span>
+          <span class="ocg-command-node"><strong>OCG OS Director</strong>&nbsp;· Department Owner</span>
+          <span class="ocg-command-arrow" aria-hidden="true">→</span>
+          <span class="ocg-command-node"><strong>Piper</strong>&nbsp;· Seller Pipeline Lead</span>
+        </div>
+        <div class="ocg-command-scope">Current surface: seller CRM, follow-up, transaction and disposition execution</div>
+      </section>
       <div id="view" aria-live="polite"><p class="muted">Loading workspace...</p></div>
     </main>
 
-    <aside id="piper-widget" class="piper-widget" aria-label="Piper Intelligence Workspace">
-      <button id="piper-toggle" class="piper-toggle" aria-label="Expand Piper Operating Layer">
+    <aside id="piper-widget" class="piper-widget" aria-label="Piper Seller Pipeline Workspace">
+      <button id="piper-toggle" class="piper-toggle" aria-label="Expand Piper Seller Pipeline Workspace">
         <span class="piper-orb-mini"></span><span class="piper-toggle-text">Piper</span>
       </button>
       <div id="piper-drawer" class="piper-drawer">
@@ -57,8 +68,8 @@
           <div class="piper-status">
             <span class="status-dot"><span class="status-orb"></span><span class="status-ring"></span></span>
             <div class="piper-title-group">
-              <div class="piper-title-row"><span class="piper-name">Piper</span><span class="piper-badge">OPERATING LAYER</span></div>
-              <div class="piper-subtext">Primary Operating Intelligence</div>
+              <div class="piper-title-row"><span class="piper-name">Piper</span><span class="piper-badge">SELLER PIPELINE LEAD</span></div>
+              <div class="piper-subtext">Seller CRM & Transaction Intelligence</div>
             </div>
           </div>
           <div class="piper-header-actions">
@@ -80,7 +91,7 @@
         <div id="piper-canvas" class="piper-canvas">
           <div class="canvas-glow"></div>
           <div class="canvas-content">
-            <div class="canvas-indicator"><span class="canvas-pulse"></span><span id="piper-canvas-title">Active Operational Intelligence</span></div>
+            <div class="canvas-indicator"><span class="canvas-pulse"></span><span id="piper-canvas-title">Active Seller Pipeline Intelligence</span></div>
             <div id="piper-canvas-details" class="canvas-details"><div class="intel-event-list" id="piper-intelligence-stream"></div></div>
           </div>
         </div>
@@ -103,14 +114,14 @@
           </form>
           <div class="piper-input-footer">
             <p id="piper-state-note" class="piper-state-note"></p>
-            <p id="piper-disclosure" class="piper-disclosure">Piper runs PIPELINE. Facts are retrieved from SQLite; actions are written only with your explicit approval.</p>
+            <p id="piper-disclosure" class="piper-disclosure">Piper leads the seller pipeline inside OCG OS. Facts come from PIPELINE state; governed writes still require the applicable approval policy.</p>
           </div>
         </div>
       </div>
     </aside>
 
     <footer class="footer">
-      <span>OCG PIPELINE — Agent-Led Operating Environment</span>
+      <span>OCG OS — PIPELINE / Seller Operations</span>
       <span id="footer-mode" class="muted">Live Provider: Vertex AI (google/gemini-2.5-flash)</span>
     </footer>
 
