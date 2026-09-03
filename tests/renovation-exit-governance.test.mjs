@@ -74,7 +74,7 @@ test("Mission Control exit handoff returns to OCG OS and cannot bypass Investmen
     assert.equal(app.services.renovationExits.reviews(first.handoff.id).length,1);
 
     assert.throws(()=>app.db.prepare("UPDATE renovation_exit_handoffs SET original_decision='hold'").run(),/immutable/i);
-    assert.throws(()=>app.db.prepare("UPDATE renovation_exit_reviews SET rationale='rewrite'").run(),/append-only/i);
+    assert.throws(()=>app.db.prepare("UPDATE renovation_exit_reviews SET rationale='rewrite'").run(),/append[_-]only/i);
   } finally { app.close(); tempDb.cleanup(); }
 });
 
@@ -82,7 +82,7 @@ test("exit receiver refuses incomplete renovation evidence and non-purchased opp
   const tempDb=makeTempDb(), app=createApp(testConfig(tempDb.dbPath));
   try {
     const opportunityId="opp_exit_bad";
-    app.db.prepare(`INSERT INTO seller_opportunities (id, opportunity_code, created_by, pipeline_stage, opportunity_status) VALUES (?, 'EXIT-BAD', 'test', 'due_diligence', 'under_contract')`).run(opportunityId);
+    app.db.prepare(`INSERT INTO seller_opportunities (id, opportunity_code, ocg_one_property_id, created_by, pipeline_stage, opportunity_status) VALUES (?, 'EXIT-BAD', 'property-exit-bad', 'test', 'due_diligence', 'under_contract')`).run(opportunityId);
     assert.throws(()=>app.services.renovationExits.receive({payload:handoff(opportunityId)}),/closed_purchase_required/);
     const closedId=seedClosedPurchase(app.db,"opp_exit_missing_evidence");
     const payload=handoff(closedId); delete payload.renovation.completionEvidenceRef;
