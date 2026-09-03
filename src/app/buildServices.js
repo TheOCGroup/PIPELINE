@@ -27,27 +27,71 @@ export function buildServices(config, db) {
     repos = buildFixtureRepositories(config.dataSource);
   }
 
+  const transactionService = db ? new TransactionWorkflowService(db) : null;
+  const piperContext = db ? buildRiskAwarePiperContext(db, config, transactionService) : null;
+
   return {
     opportunities: new OpportunityReadService(repos.opportunity),
     provenance: new ProvenanceReadService(repos.provenance),
     classifications: new ClassificationReadService(repos.classification),
     dataQuality: new DataQualityReadService(repos.opportunity),
-    // Operator state and Piper always read the database directly, even when the
-    // read API is serving fixtures: operator input and the brief must reflect
-    // what is actually stored, never a demonstration set.
     operator: db ? new SqliteOperatorRepository(db, config) : null,
     investmentCommittee: db ? new InvestmentCommitteeService(db) : null,
-    transactions: db ? new TransactionWorkflowService(db) : null,
-    piperContext: db ? new PiperContextService(db, config) : null,
-    piper: db ? buildPiperRuntime(config, db) : null,
+    transactions: transactionService,
+    piperContext,
+    piper: db ? buildPiperRuntime(config, db, piperContext) : null,
   };
 }
 
-function buildPiperRuntime(config, db) {
-  const contextService = new PiperContextService(db, config);
+function buildRiskAwarePiperContext(db, config, transactions) {
+  const context = new PiperContextService(db, config);
+  const baseSnapshot = context.snapshot.bind(context);
+  context.snapshot = (options = {}) => {
+    const snapshot = baseSnapshot(options);
+    let criticalTransactionRisks = 0;
+    let highTransactionRisks = 0;
+
+    snapshot.opportunities = snapshot.opportunities.map((opportunity) => {
+      let transactionRisk = null;
+      try {
+        transactionRisk = transactions.riskReport(opportunity.id, snapshot.generatedAt);
+      } catch {
+        return opportunity;
+      }
+
+      criticalTransactionRisks += transactionRisk.criticalCount;
+      highTransactionRisks += transactionRisk.highCount;
+      const transactionRisks = transactionRisk.risks.map((risk) => ({
+        kind: risk.kind,
+        severity: risk.severity,
+        detail: risk.detail,
+        dueAt: risk.dueAt || null,
+        taskKey: risk.taskKey || null,
+        category: risk.category || null,
+        source: "transaction-workflow",
+      }));
+
+      return {
+        ...opportunity,
+        transactionRisk,
+        risks: [...(opportunity.risks || []), ...transactionRisks],
+      };
+    });
+
+    snapshot.totals = {
+      ...snapshot.totals,
+      criticalTransactionRisks,
+      highTransactionRisks,
+      transactionsAtRisk: snapshot.opportunities.filter(o => ["critical", "high"].includes(o.transactionRisk?.riskLevel)).length,
+    };
+    return snapshot;
+  };
+  return context;
+}
+
+function buildPiperRuntime(config, db, contextService = null) {
+  const context = contextService || buildRiskAwarePiperContext(db, config, new TransactionWorkflowService(db));
   const operator = new SqliteOperatorRepository(db, config);
-  // A misconfigured provider must not take the whole application down; Piper
-  // degrades to deterministic answers and the System view reports why.
   let provider;
   try {
     provider = createPiperProvider(config);
@@ -55,5 +99,5 @@ function buildPiperRuntime(config, db) {
     console.error(`[piper] provider disabled: ${err.message}`);
     provider = createPiperProvider({ piperProvider: "none" });
   }
-  return new PiperRuntime({ db, config, contextService, operator, provider });
+  return new PiperRuntime({ db, config, contextService: context, operator, provider });
 }
