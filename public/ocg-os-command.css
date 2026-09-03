@@ -45,6 +45,166 @@
   white-space: nowrap;
 }
 
+.ocg-command-center {
+  margin: 0 0 22px;
+  padding: 24px;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(255,255,255,0.045), rgba(255,255,255,0.018));
+  box-shadow: 0 18px 55px rgba(0,0,0,0.18);
+}
+
+.ocg-command-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.ocg-command-kicker {
+  margin-bottom: 7px;
+  color: rgba(255,255,255,0.48);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.ocg-command-center h1 {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.ocg-command-center p {
+  max-width: 720px;
+  margin: 10px 0 0;
+  color: rgba(255,255,255,0.62);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.ocg-live-work {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 190px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.025);
+}
+
+.ocg-live-work > div {
+  display: grid;
+  gap: 3px;
+}
+
+.ocg-live-work strong {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.ocg-live-work span:not(.ocg-live-dot) {
+  color: rgba(255,255,255,0.58);
+  font-size: 11px;
+}
+
+.ocg-live-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.35);
+}
+
+.ocg-live-active .ocg-live-dot { background: #69d6ff; box-shadow: 0 0 0 5px rgba(105,214,255,0.08); }
+.ocg-live-attention .ocg-live-dot { background: #ffd166; }
+.ocg-live-danger .ocg-live-dot { background: #ff7a90; }
+.ocg-live-complete .ocg-live-dot { background: #7de3ae; }
+
+.ocg-command-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.ocg-command-metric {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 14px;
+  background: rgba(0,0,0,0.1);
+}
+
+.ocg-command-metric span {
+  color: rgba(255,255,255,0.5);
+  font-size: 11px;
+}
+
+.ocg-command-metric strong {
+  font-size: 21px;
+  text-transform: capitalize;
+}
+
+.ocg-lifecycle {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin-top: 12px;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.06);
+}
+
+.ocg-lifecycle-step {
+  min-height: 84px;
+  padding: 15px;
+  background: rgba(8,13,22,0.92);
+}
+
+.ocg-lifecycle-count {
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.ocg-lifecycle-label {
+  margin-top: 5px;
+  color: rgba(255,255,255,0.52);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ocg-command-truth {
+  margin-top: 10px;
+  color: rgba(255,255,255,0.38);
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .ocg-command-head {
+    flex-direction: column;
+  }
+
+  .ocg-live-work {
+    width: 100%;
+  }
+
+  .ocg-lifecycle {
+    grid-template-columns: 1fr;
+  }
+
+  .ocg-lifecycle-step {
+    min-height: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
 @media (max-width: 760px) {
   .ocg-command-context {
     align-items: flex-start;
@@ -53,5 +213,13 @@
 
   .ocg-command-scope {
     white-space: normal;
+  }
+
+  .ocg-command-center {
+    padding: 18px;
+  }
+
+  .ocg-command-metrics {
+    grid-template-columns: 1fr;
   }
 }
