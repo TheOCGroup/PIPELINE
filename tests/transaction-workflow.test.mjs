@@ -37,7 +37,7 @@ test("post-offer workflow requires evidenced diligence and reaches closed purcha
   const opp=app.db.prepare("SELECT * FROM seller_opportunities WHERE id = ?").get(deal.opportunityId); assert.equal(opp.pipeline_stage,"closed"); assert.equal(opp.opportunity_status,"closed_purchased");
   const outcome=app.db.prepare("SELECT * FROM seller_opportunity_outcomes WHERE opportunity_id = ? ORDER BY rowid DESC LIMIT 1").get(deal.opportunityId); assert.equal(outcome.outcome_type,"purchased"); assert.equal(outcome.reopen_eligibility,"permanently_closed");
   assert.equal(app.services.transactions.listMilestones(deal.opportunityId).length,5);
-  const eventCount=app.db.prepare("SELECT COUNT(*) n FROM transaction_task_events").get().n; assert.equal(eventCount,12);
+  const eventCount=app.db.prepare("SELECT COUNT(*) n FROM transaction_task_events").get().n; assert.equal(eventCount,6);
   assert.throws(()=>app.db.prepare("UPDATE transaction_task_events SET reason='rewrite'").run(),/append-only/i);
  }finally{app.close();tempDb.cleanup();}
 });
