@@ -20,6 +20,7 @@ test("approved sell exit creates one immutable execution plan with evidence-gate
     assert.equal(first.duplicate,false);
     assert.equal(first.plan.dispositionType,"sell");
     assert.equal(first.plan.status,"ready");
+    assert.equal(first.plan.requirementsComplete,false);
     assert.ok(first.plan.requirements.includes("current_market_value"));
     assert.ok(first.plan.requirements.includes("net_proceeds_estimate"));
     const duplicate=app.services.dispositions.createPlan({handoffId:seeded.handoffId,reviewId:seeded.reviewId,actor:"operator"});
@@ -34,11 +35,24 @@ test("approved sell exit creates one immutable execution plan with evidence-gate
     plan=app.services.dispositions.recordEvent({planId:first.plan.id,eventType:"unblocked",detail:"Invoice received",actor:"operator"});
     assert.equal(plan.status,"unblocked");
     assert.throws(()=>app.services.dispositions.recordEvent({planId:first.plan.id,eventType:"completed",actor:"operator"}),/disposition_completion_evidence_required/);
+    assert.throws(()=>app.services.dispositions.recordEvent({planId:first.plan.id,eventType:"completed",evidenceRef:"closing://sale-123",actor:"operator"}),/disposition_requirements_incomplete:/);
+
+    assert.throws(()=>app.services.dispositions.verifyRequirement({planId:first.plan.id,requirementKey:"not_real",evidenceRef:"evidence://x"}),/invalid_disposition_requirement/);
+    for(const requirementKey of first.plan.requirements){
+      plan=app.services.dispositions.verifyRequirement({planId:first.plan.id,requirementKey,evidenceRef:`evidence://${requirementKey}`,actor:"operator"});
+    }
+    assert.equal(plan.requirementsComplete,true);
+    assert.equal(plan.verifiedRequirements.length,first.plan.requirements.length);
+    assert.throws(()=>app.services.dispositions.verifyRequirement({planId:first.plan.id,requirementKey:first.plan.requirements[0],evidenceRef:"evidence://duplicate"}),/disposition_requirement_already_verified/);
+
     plan=app.services.dispositions.recordEvent({planId:first.plan.id,eventType:"completed",evidenceRef:"closing://sale-123",externalRef:"sale-123",actor:"operator"});
     assert.equal(plan.status,"completed");
     assert.throws(()=>app.services.dispositions.recordEvent({planId:first.plan.id,eventType:"started",actor:"operator"}),/completed_disposition_is_terminal/);
     assert.throws(()=>app.db.prepare("UPDATE disposition_plans SET disposition_type='hold'").run(),/immutable/i);
     assert.throws(()=>app.db.prepare("UPDATE disposition_plan_events SET detail='rewrite'").run(),/disposition_event_append_only/i);
+    const evidence=app.services.dispositions.requirementEvidence(first.plan.id)[0];
+    assert.throws(()=>app.db.prepare("UPDATE disposition_requirement_evidence SET evidence_ref='rewrite'").run(),/immutable/i);
+    assert.ok(evidence.evidenceRef.startsWith("evidence://"));
   }finally{app.close();tempDb.cleanup();}
 });
 
