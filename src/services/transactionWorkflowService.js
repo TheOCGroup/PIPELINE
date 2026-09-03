@@ -1,10 +1,25 @@
 import { randomUUID } from "node:crypto";
 
 const now = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+const DAY_MS = 86400000;
 
 function parseJson(value, fallback = {}) {
   if (!value) return fallback;
   try { return JSON.parse(value); } catch { return fallback; }
+}
+
+function addDays(value, days) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getTime() + Number(days || 0) * DAY_MS).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function daysUntil(asOf, dueAt) {
+  if (!dueAt) return null;
+  const a = new Date(asOf).getTime();
+  const d = new Date(dueAt).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(d)) return null;
+  return Math.ceil((d - a) / DAY_MS);
 }
 
 const DEFAULT_DUE_DILIGENCE = Object.freeze([
@@ -33,6 +48,85 @@ export class TransactionWorkflowService {
     const unresolved = required.filter(t => !["complete", "waived"].includes(t.status));
     const blocked = tasks.filter(t => t.status === "blocked");
     return { readyToScheduleClosing: required.length > 0 && unresolved.length === 0, requiredCount: required.length, unresolvedCount: unresolved.length, blockedCount: blocked.length, unresolved, blocked };
+  }
+
+  riskReport(opportunityId, asOf = now()) {
+    const opp = this.db.prepare("SELECT * FROM seller_opportunities WHERE id = ?").get(opportunityId);
+    if (!opp) throw new Error("opportunity_not_found");
+    const tasks = this.listTasks(opportunityId);
+    const activeTasks = tasks.filter(t => !["complete", "waived"].includes(t.status));
+    const risks = [];
+
+    for (const task of activeTasks) {
+      const remaining = daysUntil(asOf, task.dueAt);
+      let severity = "medium";
+      let kind = "transaction_task_open";
+      let detail = `${task.title} remains ${task.status}.`;
+
+      if (task.status === "blocked") {
+        severity = "critical";
+        kind = `${task.category}_blocked`;
+        detail = `${task.title} is blocked${task.blockerReason ? `: ${task.blockerReason}` : "."}`;
+      } else if (remaining !== null && remaining < 0) {
+        severity = "critical";
+        kind = `${task.category}_overdue`;
+        detail = `${task.title} is overdue by ${Math.abs(remaining)} day${Math.abs(remaining) === 1 ? "" : "s"}.`;
+      } else if (remaining !== null && remaining <= 1) {
+        severity = "critical";
+        kind = `${task.category}_deadline_imminent`;
+        detail = `${task.title} is due ${remaining === 0 ? "today" : "within 1 day"}.`;
+      } else if (remaining !== null && remaining <= 3) {
+        severity = "high";
+        kind = `${task.category}_deadline_near`;
+        detail = `${task.title} is due in ${remaining} days.`;
+      } else if (remaining !== null && remaining <= 7) {
+        severity = "medium";
+        kind = `${task.category}_deadline_upcoming`;
+        detail = `${task.title} is due in ${remaining} days.`;
+      }
+
+      if (task.requiredForClosing || task.status === "blocked" || remaining === null || remaining <= 7) {
+        risks.push({
+          kind,
+          severity,
+          detail,
+          taskId: task.id,
+          taskKey: task.taskKey,
+          category: task.category,
+          dueAt: task.dueAt,
+          daysUntilDue: remaining,
+          blockerReason: task.blockerReason || null,
+        });
+      }
+    }
+
+    if (opp.scheduled_closing_at && opp.pipeline_stage === "closing_scheduled") {
+      const remaining = daysUntil(asOf, opp.scheduled_closing_at);
+      const unresolved = activeTasks.filter(t => t.requiredForClosing);
+      if (unresolved.length > 0) {
+        risks.push({
+          kind: "closing_at_risk",
+          severity: remaining !== null && remaining <= 3 ? "critical" : "high",
+          detail: `${unresolved.length} required closing item${unresolved.length === 1 ? " is" : "s are"} unresolved before scheduled closing.`,
+          dueAt: opp.scheduled_closing_at,
+          daysUntilDue: remaining,
+        });
+      }
+    }
+
+    const priority = { critical: 4, high: 3, medium: 2, low: 1 };
+    risks.sort((a, b) => (priority[b.severity] || 0) - (priority[a.severity] || 0) || ((a.daysUntilDue ?? 9999) - (b.daysUntilDue ?? 9999)));
+
+    return {
+      opportunityId,
+      asOf,
+      riskLevel: risks[0]?.severity || "clear",
+      criticalCount: risks.filter(r => r.severity === "critical").length,
+      highCount: risks.filter(r => r.severity === "high").length,
+      openRiskCount: risks.length,
+      nextDeadline: risks.find(r => r.dueAt)?.dueAt || null,
+      risks,
+    };
   }
 
   upsertTask({ opportunityId, taskKey, category, title, status = "pending", requiredForClosing = true, dueAt = null, evidenceRef = null, notes = null, blockerReason = null, actor = "local-operator", reason = null }) {
@@ -120,11 +214,23 @@ export class TransactionWorkflowService {
 
   _beginDueDiligence(ctx) {
     if (ctx.opp.pipeline_stage !== "under_contract" || ctx.opp.opportunity_status !== "under_contract") throw new Error("executed_contract_required");
+    const acceptedAt = ctx.opp.contract_executed_at || ctx.at;
+    const inspectionDays = Math.max(1, Number(ctx.version?.inspection_days || 10));
+    const closingDays = Math.max(inspectionDays + 1, Number(ctx.version?.closing_days || 30));
+    const targetClosingAt = addDays(acceptedAt, closingDays);
+    const dueByKey = {
+      property_inspection: addDays(acceptedAt, inspectionDays),
+      title_commitment: addDays(acceptedAt, Math.min(7, Math.max(2, closingDays - 7))),
+      financing_clearance: addDays(acceptedAt, Math.max(1, closingDays - 5)),
+      insurance_binder: addDays(acceptedAt, Math.max(1, closingDays - 3)),
+      final_walkthrough: addDays(acceptedAt, Math.max(1, closingDays - 1)),
+      closing_statement: addDays(acceptedAt, Math.max(1, closingDays - 1)),
+    };
     for (const [category, key, title] of DEFAULT_DUE_DILIGENCE) {
-      this.db.prepare(`INSERT OR IGNORE INTO transaction_tasks (id, opportunity_id, category, task_key, title, status, required_for_closing, created_by, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?)`).run(randomUUID(), ctx.opp.id, category, key, title, ctx.actor, ctx.actor, ctx.at, ctx.at);
+      this.db.prepare(`INSERT OR IGNORE INTO transaction_tasks (id, opportunity_id, category, task_key, title, status, required_for_closing, due_at, created_by, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?)`).run(randomUUID(), ctx.opp.id, category, key, title, dueByKey[key] || targetClosingAt, ctx.actor, ctx.actor, ctx.at, ctx.at);
     }
     this._stage(ctx, "due_diligence", "under_contract", ctx.reason || "Due diligence opened");
-    return this._milestone(ctx, "due_diligence_started", { reason: ctx.reason || null, requiredTaskCount: DEFAULT_DUE_DILIGENCE.length });
+    return this._milestone(ctx, "due_diligence_started", { reason: ctx.reason || null, requiredTaskCount: DEFAULT_DUE_DILIGENCE.length, targetClosingAt });
   }
 
   _scheduleClosing(ctx) {
