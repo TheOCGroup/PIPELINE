@@ -13,6 +13,7 @@ import { PiperContextService } from "../services/piperContextService.js";
 import { PiperRuntime } from "../services/piper/piperRuntime.js";
 import { createPiperProvider } from "../services/piper/providers/index.js";
 import { InvestmentCommitteeService } from "../services/investmentCommitteeService.js";
+import { TransactionWorkflowService } from "../services/transactionWorkflowService.js";
 
 export function buildServices(config, db) {
   let repos;
@@ -36,6 +37,7 @@ export function buildServices(config, db) {
     // what is actually stored, never a demonstration set.
     operator: db ? new SqliteOperatorRepository(db, config) : null,
     investmentCommittee: db ? new InvestmentCommitteeService(db) : null,
+    transactions: db ? new TransactionWorkflowService(db) : null,
     piperContext: db ? new PiperContextService(db, config) : null,
     piper: db ? buildPiperRuntime(config, db) : null,
   };
