@@ -34,24 +34,48 @@ export class PostRenovationDispositionService {
 
   get(id){
     const row=this.db.prepare(`SELECT p.*,(SELECT event_type FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) latest_event,(SELECT detail FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) latest_detail,(SELECT external_ref FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) external_ref FROM disposition_plans p WHERE p.id=?`).get(id);
-    return row?toPlan(row):null;
+    return row?this._decorate(toPlan(row)):null;
   }
 
   list(opportunityId){
-    return this.db.prepare(`SELECT p.*,(SELECT event_type FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) latest_event,(SELECT detail FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) latest_detail,(SELECT external_ref FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) external_ref FROM disposition_plans p WHERE p.opportunity_id=? ORDER BY p.created_at DESC,rowid DESC`).all(opportunityId).map(toPlan);
+    return this.db.prepare(`SELECT p.*,(SELECT event_type FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) latest_event,(SELECT detail FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) latest_detail,(SELECT external_ref FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) external_ref FROM disposition_plans p WHERE p.opportunity_id=? ORDER BY p.created_at DESC,rowid DESC`).all(opportunityId).map(r=>this._decorate(toPlan(r)));
   }
 
   events(planId){ return this.db.prepare("SELECT * FROM disposition_plan_events WHERE disposition_plan_id=? ORDER BY rowid").all(planId).map(toEvent); }
+
+  requirementEvidence(planId){
+    return this.db.prepare("SELECT * FROM disposition_requirement_evidence WHERE disposition_plan_id=? ORDER BY rowid").all(planId).map(r=>({id:r.id,planId:r.disposition_plan_id,requirementKey:r.requirement_key,evidenceRef:r.evidence_ref,note:r.note,verifiedBy:r.verified_by,verifiedAt:r.verified_at,createdAt:r.created_at}));
+  }
+
+  verifyRequirement({ planId, requirementKey, evidenceRef, note=null, actor="local-operator", verifiedAt=null }){
+    const plan=this.get(planId); if(!plan) throw new Error("disposition_plan_not_found");
+    if(plan.status==="completed") throw new Error("completed_disposition_is_terminal");
+    if(!plan.requirements.includes(requirementKey)) throw new Error("invalid_disposition_requirement");
+    if(!String(evidenceRef||"").trim()) throw new Error("disposition_requirement_evidence_required");
+    const existing=this.db.prepare("SELECT * FROM disposition_requirement_evidence WHERE disposition_plan_id=? AND requirement_key=?").get(planId,requirementKey);
+    if(existing) throw new Error("disposition_requirement_already_verified");
+    this.db.prepare(`INSERT INTO disposition_requirement_evidence (id,disposition_plan_id,requirement_key,evidence_ref,note,verified_by,verified_at) VALUES (?,?,?,?,?,?,?)`).run(randomUUID(),planId,requirementKey,evidenceRef.trim(),note,actor,verifiedAt||now());
+    return this.get(planId);
+  }
 
   recordEvent({ planId, eventType, detail=null, evidenceRef=null, externalRef=null, actor="local-operator", occurredAt=null }){
     if(!EVENTS.has(eventType)) throw new Error("invalid_disposition_event");
     const plan=this.get(planId); if(!plan) throw new Error("disposition_plan_not_found");
     if(eventType==="blocked"&&!String(detail||"").trim()) throw new Error("disposition_blocker_detail_required");
-    if(eventType==="completed"&&!String(evidenceRef||"").trim()) throw new Error("disposition_completion_evidence_required");
     if(plan.status==="completed") throw new Error("completed_disposition_is_terminal");
     if(eventType==="unblocked"&&plan.status!=="blocked") throw new Error("blocked_disposition_required");
+    if(eventType==="completed"){
+      if(!String(evidenceRef||"").trim()) throw new Error("disposition_completion_evidence_required");
+      const missing=plan.requirements.filter(k=>!plan.verifiedRequirements.includes(k));
+      if(missing.length) throw new Error(`disposition_requirements_incomplete:${missing.join(",")}`);
+    }
     this.db.prepare(`INSERT INTO disposition_plan_events (id,disposition_plan_id,event_type,detail,evidence_ref,external_ref,actor_id,occurred_at) VALUES (?,?,?,?,?,?,?,?)`).run(randomUUID(),planId,eventType,detail,evidenceRef,externalRef,actor,occurredAt||now());
     return this.get(planId);
+  }
+
+  _decorate(plan){
+    const evidence=this.requirementEvidence(plan.id), verifiedRequirements=evidence.map(e=>e.requirementKey), missingRequirements=plan.requirements.filter(k=>!verifiedRequirements.includes(k));
+    return {...plan,requirementEvidence:evidence,verifiedRequirements,missingRequirements,requirementsComplete:missingRequirements.length===0};
   }
 }
 
