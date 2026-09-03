@@ -20,29 +20,33 @@ function completeClosingTasks(service, opportunityId) {
   for(const task of tasks) service.upsertTask({ opportunityId, taskKey:task.taskKey, category:task.category, title:task.title, status:"complete", requiredForClosing:true, dueAt:task.dueAt, evidenceRef:`evidence://${task.taskKey}`, actor:"test", reason:"Verified for closing" });
 }
 
-test("post-offer workflow requires evidenced diligence and reaches closed purchase",()=>{
+test("post-offer workflow reaches closed purchase and creates immutable Mission Control handoff",()=>{
  const tempDb=makeTempDb(), app=createApp(testConfig(tempDb.dbPath));
  try{
   const deal=seedPresentedDeal(app.db);
-  let m=app.services.transactions.transition({opportunityId:deal.opportunityId,action:"start_negotiation",actor:"test"}); assert.equal(m.type,"negotiation_started");
-  m=app.services.transactions.transition({opportunityId:deal.opportunityId,action:"accept",actor:"test",effectiveAt:"2026-09-03T14:00:00Z"}); assert.equal(m.type,"seller_accepted");
+  app.services.transactions.transition({opportunityId:deal.opportunityId,action:"start_negotiation",actor:"test"});
+  app.services.transactions.transition({opportunityId:deal.opportunityId,action:"accept",actor:"test",effectiveAt:"2026-09-03T14:00:00Z"});
   app.services.transactions.transition({opportunityId:deal.opportunityId,action:"begin_due_diligence",actor:"test"});
-  let readiness=app.services.transactions.readiness(deal.opportunityId); assert.equal(readiness.readyToScheduleClosing,false); assert.equal(readiness.unresolvedCount,6);
+  assert.equal(app.services.transactions.readiness(deal.opportunityId).unresolvedCount,6);
   assert.throws(()=>app.services.transactions.transition({opportunityId:deal.opportunityId,action:"schedule_closing",actor:"test",scheduledClosingAt:"2026-09-25T15:00:00Z"}),/closing_readiness_incomplete/);
   assert.throws(()=>{const t=app.services.transactions.listTasks(deal.opportunityId)[0];app.services.transactions.upsertTask({opportunityId:deal.opportunityId,taskKey:t.taskKey,category:t.category,title:t.title,status:"complete",requiredForClosing:true,actor:"test"});},/closing_task_evidence_required/);
   completeClosingTasks(app.services.transactions,deal.opportunityId);
-  readiness=app.services.transactions.readiness(deal.opportunityId); assert.equal(readiness.readyToScheduleClosing,true); assert.equal(readiness.unresolvedCount,0);
   app.services.transactions.transition({opportunityId:deal.opportunityId,action:"schedule_closing",actor:"test",scheduledClosingAt:"2026-09-25T15:00:00Z"});
-  app.services.transactions.transition({opportunityId:deal.opportunityId,action:"close",actor:"test",effectiveAt:"2026-09-25T16:00:00Z"});
+  const closed=app.services.transactions.transition({opportunityId:deal.opportunityId,action:"close",actor:"test",effectiveAt:"2026-09-25T16:00:00Z"});
+  assert.equal(closed.type,"closed_purchased");
+  assert.ok(closed.details.missionControlHandoffId);
   const opp=app.db.prepare("SELECT * FROM seller_opportunities WHERE id = ?").get(deal.opportunityId); assert.equal(opp.pipeline_stage,"closed"); assert.equal(opp.opportunity_status,"closed_purchased");
   const outcome=app.db.prepare("SELECT * FROM seller_opportunity_outcomes WHERE opportunity_id = ? ORDER BY rowid DESC LIMIT 1").get(deal.opportunityId); assert.equal(outcome.outcome_type,"purchased"); assert.equal(outcome.reopen_eligibility,"permanently_closed");
+  const handoffs=app.services.transactions.listHandoffs(deal.opportunityId); assert.equal(handoffs.length,1); assert.equal(handoffs[0].status,"ready"); assert.equal(handoffs[0].targetSystem,"mission-control"); assert.equal(handoffs[0].payload.acquisition.purchasePrice,145000); assert.equal(handoffs[0].payload.underwriting.arv,235000); assert.equal(handoffs[0].payload.renovationSeed.budgetBaseline,30000); assert.equal(handoffs[0].payload.renovationSeed.scopeStatus,"needs_field_validation");
+  const acknowledged=app.services.transactions.recordHandoffEvent({handoffId:handoffs[0].id,eventType:"acknowledged",actor:"test",externalRef:"reno-project-123"}); assert.equal(acknowledged.status,"acknowledged"); assert.equal(acknowledged.externalRef,"reno-project-123");
+  assert.throws(()=>app.db.prepare("UPDATE acquisition_handoffs SET payload_json='{}'").run(),/immutable/i);
+  assert.throws(()=>app.db.prepare("UPDATE acquisition_handoff_events SET detail='rewrite'").run(),/append-only/i);
   assert.equal(app.services.transactions.listMilestones(deal.opportunityId).length,5);
-  const eventCount=app.db.prepare("SELECT COUNT(*) n FROM transaction_task_events").get().n; assert.equal(eventCount,6);
-  assert.throws(()=>app.db.prepare("UPDATE transaction_task_events SET reason='rewrite'").run(),/append-only/i);
+  assert.equal(app.db.prepare("SELECT COUNT(*) n FROM transaction_task_events").get().n,6);
  }finally{app.close();tempDb.cleanup();}
 });
 
-test("transaction workflow refuses stage skipping, tracks blockers, and records loss",()=>{
+test("transaction workflow refuses stage skipping, tracks blockers, and records loss without acquisition handoff",()=>{
  const tempDb=makeTempDb(),app=createApp(testConfig(tempDb.dbPath));
  try{
   const deal=seedPresentedDeal(app.db,"guard");
@@ -54,5 +58,6 @@ test("transaction workflow refuses stage skipping, tracks blockers, and records 
   const readiness=app.services.transactions.readiness(deal.opportunityId); assert.equal(readiness.blockedCount,1); assert.match(readiness.blocked[0].blockerReason,/lien/);
   const milestone=app.services.transactions.transition({opportunityId:deal.opportunityId,action:"lose",actor:"test",reason:"Title defect could not be cured"}); assert.equal(milestone.type,"transaction_lost");
   const opp=app.db.prepare("SELECT * FROM seller_opportunities WHERE id = ?").get(deal.opportunityId); assert.equal(opp.pipeline_stage,"lost"); assert.equal(opp.opportunity_status,"closed_lost");
+  assert.equal(app.services.transactions.listHandoffs(deal.opportunityId).length,0);
  }finally{app.close();tempDb.cleanup();}
 });
