@@ -4,14 +4,6 @@
  * The only operator-facing write surface in PIPELINE. Reads are GET; writes are
  * POST and refuse when the deployment is read-only, so `PIPELINE_READ_ONLY=true`
  * blocks every mutation in the application uniformly.
- *
- * These are dispatched after the session enforcement block in createServer.js,
- * so in production with integration enabled a caller must already hold a valid
- * PIPELINE session before reaching here.
- *
- * Stage is intentionally absent. Stage belongs to the systems of record, and
- * the browser-local override this replaces silently outranked the server's
- * value in list and funnel counts.
  */
 
 import { sendJson } from "../response.js";
@@ -39,12 +31,9 @@ class BadRequest extends Error {
   constructor(code) { super(code); this.code = code; }
 }
 
-/**
- * @returns {boolean} true when the request was handled here
- */
 export async function handleOperatorRoutes(req, res, ctx, url, segments) {
-  const [, resource, id] = segments; // ["operator", <resource>, <id?>]
-  const known = ["next-actions", "notes", "checklist", "interactions", "offers", "outreach"];
+  const [, resource, id] = segments;
+  const known = ["next-actions", "notes", "checklist", "interactions", "offers", "outreach", "transactions"];
   if (!known.includes(resource)) {
     sendJson(res, 404, { ok: false, error: "not_found" });
     return true;
@@ -90,6 +79,10 @@ export async function handleOperatorRoutes(req, res, ctx, url, segments) {
         case "outreach":
           if (!opportunityId) throw new BadRequest("missing_opportunityId");
           return ok(res, { communications: repo.listCommunications(opportunityId) });
+        case "transactions":
+          if (!opportunityId) throw new BadRequest("missing_opportunityId");
+          if (!ctx.services.transactions) throw new Error("transaction_workflow_unavailable");
+          return ok(res, { milestones: ctx.services.transactions.listMilestones(opportunityId) });
       }
     }
 
@@ -190,7 +183,6 @@ export async function handleOperatorRoutes(req, res, ctx, url, segments) {
           }
           throw new BadRequest("invalid_action");
         }
-        // POST /api/v1/operator/outreach/draft
         if (id === "draft") {
           const comm = repo.createOutreachDraft({
             opportunityId: text(body.opportunityId, "opportunityId"),
@@ -205,7 +197,6 @@ export async function handleOperatorRoutes(req, res, ctx, url, segments) {
           });
           return ok(res, { communication: comm }, 201);
         }
-        // POST /api/v1/operator/outreach/inbound
         if (id === "inbound") {
           const comm = repo.receiveInboundCommunication({
             opportunityId: text(body.opportunityId, "opportunityId"),
@@ -221,6 +212,19 @@ export async function handleOperatorRoutes(req, res, ctx, url, segments) {
         }
         throw new BadRequest("invalid_endpoint");
       }
+      case "transactions": {
+        if (!ctx.services.transactions) throw new Error("transaction_workflow_unavailable");
+        const milestone = ctx.services.transactions.transition({
+          opportunityId: text(body.opportunityId, "opportunityId", { max: 200 }),
+          action: text(body.action, "action", { max: 80 }),
+          effectiveAt: text(body.effectiveAt, "effectiveAt", { required: false, max: 40 }),
+          scheduledClosingAt: text(body.scheduledClosingAt, "scheduledClosingAt", { required: false, max: 40 }),
+          reason: text(body.reason, "reason", { required: false, max: 1000 }),
+          details: body.details && typeof body.details === "object" ? body.details : {},
+          actor,
+        });
+        return ok(res, { milestone }, 200);
+      }
     }
 
     sendJson(res, 404, { ok: false, error: "not_found" });
@@ -234,7 +238,16 @@ export async function handleOperatorRoutes(req, res, ctx, url, segments) {
       sendJson(res, 400, { ok: false, error: "invalid_json" });
       return true;
     }
-    // Never leak internals; matches the contract apiRouter holds itself to.
+    const workflowErrors = new Set([
+      "opportunity_not_found", "active_offer_required", "presented_offer_required",
+      "negotiation_not_allowed_from_current_stage", "acceptance_not_allowed_from_current_stage",
+      "executed_contract_required", "due_diligence_required", "scheduled_closing_at_required",
+      "closing_schedule_required", "closed_opportunity_cannot_be_lost", "invalid_transaction_action"
+    ]);
+    if (workflowErrors.has(err.message)) {
+      sendJson(res, 409, { ok: false, error: err.message });
+      return true;
+    }
     console.error("[operator] request failed");
     sendJson(res, 500, { ok: false, error: "operator_request_failed" });
     return true;
