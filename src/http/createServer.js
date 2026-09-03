@@ -30,7 +30,6 @@ import { authorizePiperIntake } from "./routes/piperIntakeAuthorization.js";
 import { handleOperatorRoutes } from "./routes/operatorRoutes.js";
 import { handlePiperRoutes } from "./routes/piperRoutes.js";
 
-
 const STATIC = {
   "/app.js": "application/javascript; charset=utf-8",
   "/styles.css": "text/css; charset=utf-8",
@@ -38,6 +37,7 @@ const STATIC = {
   "/reactor-tone-lock.css": "text/css; charset=utf-8",
   "/ocg-os-command.css": "text/css; charset=utf-8",
   "/ocg-os-command.js": "application/javascript; charset=utf-8",
+  "/ocg-os-deal-story.js": "application/javascript; charset=utf-8",
 };
 
 function readPublic(publicDir, file) {
@@ -46,8 +46,6 @@ function readPublic(publicDir, file) {
 
 export function createServer(ctx) {
   const { publicDir } = ctx;
-
-  // Initialize auth db service
   ctx.authDbService = createAuthDatabaseService(ctx.db);
 
   return httpCreateServer(async (req, res) => {
@@ -60,7 +58,6 @@ export function createServer(ctx) {
     const path = url.pathname;
 
     try {
-      // 1. Health endpoint (GET/HEAD only)
       if (path === "/health") {
         if (req.method !== "GET" && req.method !== "HEAD") {
           return sendJson(res, 405, { ok: false, error: "method_not_allowed" }, { "Allow": "GET, HEAD" });
@@ -68,7 +65,6 @@ export function createServer(ctx) {
         return sendJson(res, 200, healthPayload(ctx));
       }
 
-      // 2. Version endpoint (GET/HEAD only)
       if (path === "/version") {
         if (req.method !== "GET" && req.method !== "HEAD") {
           return sendJson(res, 405, { ok: false, error: "method_not_allowed" }, { "Allow": "GET, HEAD" });
@@ -76,7 +72,6 @@ export function createServer(ctx) {
         return sendJson(res, 200, versionPayload(ctx));
       }
 
-      // 3. API versioned boundary
       if (path.startsWith("/api/")) {
         if (path === "/api/integrations/deal-findr/intake") {
           if (req.method !== "POST") {
@@ -131,15 +126,11 @@ export function createServer(ctx) {
                 }
               }
 
-              if (s2sError) {
-                return sendJson(res, 403, { ok: false, error: s2sError });
-              }
+              if (s2sError) return sendJson(res, 403, { ok: false, error: s2sError });
 
               if (!isS2S) {
                 const session = authenticatePipelineSession(req, res, ctx);
-                if (!session) {
-                  return sendJson(res, 401, { ok: false, error: "Authentication required" });
-                }
+                if (!session) return sendJson(res, 401, { ok: false, error: "Authentication required" });
                 if (!session.permissions || !session.permissions.includes("pipeline.read")) {
                   return sendJson(res, 403, { ok: false, error: "forbidden_insufficient_permissions" });
                 }
@@ -168,9 +159,7 @@ export function createServer(ctx) {
         return handleAuthHandoff(req, res, ctx);
       }
 
-      if (path.startsWith("/auth/")) {
-        return sendJson(res, 404, { ok: false, error: "not_found" });
-      }
+      if (path.startsWith("/auth/")) return sendJson(res, 404, { ok: false, error: "not_found" });
 
       if (req.method !== "GET" && req.method !== "HEAD") {
         return sendJson(res, 405, { ok: false, error: "method_not_allowed" }, { "Allow": "GET, HEAD" });
@@ -181,7 +170,7 @@ export function createServer(ctx) {
       }
 
       return sendHtml(res, 200, readPublic(publicDir, "index.html").toString("utf8"));
-    } catch (err) {
+    } catch {
       return sendJson(res, 500, { ok: false, error: "internal_error" });
     }
   });
