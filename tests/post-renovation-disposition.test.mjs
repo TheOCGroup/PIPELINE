@@ -38,7 +38,7 @@ test("approved sell exit creates one immutable execution plan with evidence-gate
     assert.equal(plan.status,"completed");
     assert.throws(()=>app.services.dispositions.recordEvent({planId:first.plan.id,eventType:"started",actor:"operator"}),/completed_disposition_is_terminal/);
     assert.throws(()=>app.db.prepare("UPDATE disposition_plans SET disposition_type='hold'").run(),/immutable/i);
-    assert.throws(()=>app.db.prepare("UPDATE disposition_plan_events SET detail='rewrite'").run(),/append-only/i);
+    assert.throws(()=>app.db.prepare("UPDATE disposition_plan_events SET detail='rewrite'").run(),/disposition_event_append_only/i);
   }finally{app.close();tempDb.cleanup();}
 });
 
