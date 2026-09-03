@@ -30,7 +30,7 @@ CREATE TABLE acquisition_handoff_events (
 );
 
 CREATE INDEX idx_acquisition_handoff_events_handoff
-ON acquisition_handoff_events(handoff_id, occurred_at, rowid);
+ON acquisition_handoff_events(handoff_id, occurred_at, id);
 
 CREATE TRIGGER trg_prevent_acquisition_handoff_update
 BEFORE UPDATE ON acquisition_handoffs
