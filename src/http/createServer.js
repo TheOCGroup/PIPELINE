@@ -36,6 +36,8 @@ const STATIC = {
   "/styles.css": "text/css; charset=utf-8",
   "/reactor-runtime-fixes.css": "text/css; charset=utf-8",
   "/reactor-tone-lock.css": "text/css; charset=utf-8",
+  "/ocg-os-command.css": "text/css; charset=utf-8",
+  "/ocg-os-command.js": "application/javascript; charset=utf-8",
 };
 
 function readPublic(publicDir, file) {
