@@ -15,6 +15,7 @@ import { createPiperProvider } from "../services/piper/providers/index.js";
 import { InvestmentCommitteeService } from "../services/investmentCommitteeService.js";
 import { TransactionWorkflowService } from "../services/transactionWorkflowService.js";
 import { RenovationExitGovernanceService } from "../services/renovationExitGovernanceService.js";
+import { PostRenovationDispositionService } from "../services/postRenovationDispositionService.js";
 
 export function buildServices(config, db) {
   let repos;
@@ -40,6 +41,7 @@ export function buildServices(config, db) {
     investmentCommittee: db ? new InvestmentCommitteeService(db) : null,
     transactions: transactionService,
     renovationExits: db ? new RenovationExitGovernanceService(db) : null,
+    dispositions: db ? new PostRenovationDispositionService(db) : null,
     piperContext,
     piper: db ? buildPiperRuntime(config, db, piperContext) : null,
   };
