@@ -29,6 +29,7 @@ import { handleDealFindrIntake } from "./routes/dealFindrIntake.js";
 import { authorizePiperIntake } from "./routes/piperIntakeAuthorization.js";
 import { handleOperatorRoutes } from "./routes/operatorRoutes.js";
 import { handlePiperRoutes } from "./routes/piperRoutes.js";
+import { handleWorkRoomRoutes } from "./routes/workRoomRoutes.js";
 
 const STATIC = {
   "/app.js": "application/javascript; charset=utf-8",
@@ -145,6 +146,9 @@ export function createServer(ctx) {
           }
           if (seg[0] === "piper") {
             if (await handlePiperRoutes(req, res, ctx, url, seg)) return;
+          }
+          if (seg[0] === "work-room") {
+            if (await handleWorkRoomRoutes(req, res, ctx, url, seg)) return;
           }
 
           return handleApi(req, res, ctx, url);
