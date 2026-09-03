@@ -16,6 +16,7 @@ import { InvestmentCommitteeService } from "../services/investmentCommitteeServi
 import { TransactionWorkflowService } from "../services/transactionWorkflowService.js";
 import { RenovationExitGovernanceService } from "../services/renovationExitGovernanceService.js";
 import { PostRenovationDispositionService } from "../services/postRenovationDispositionService.js";
+import { createAgentWorkRoomService } from "../services/agentWorkRoomService.js";
 
 export function buildServices(config, db) {
   let repos;
@@ -43,6 +44,7 @@ export function buildServices(config, db) {
     transactions: transactionService,
     renovationExits: db ? new RenovationExitGovernanceService(db) : null,
     dispositions: dispositionService,
+    workRoom: db ? createAgentWorkRoomService(db) : null,
     piperContext,
     piper: db ? buildPiperRuntime(config, db, piperContext) : null,
   };
