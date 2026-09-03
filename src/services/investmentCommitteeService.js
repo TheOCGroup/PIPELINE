@@ -133,7 +133,7 @@ export class InvestmentCommitteeService {
         this.db.prepare("UPDATE seller_offers SET status = 'rejected', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(offer.id);
         this.db.prepare(`
           UPDATE seller_opportunities
-          SET opportunity_status = 'on_hold', pipeline_stage = 'strategy_development', updated_by = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+          SET opportunity_status = 'on_hold', pipeline_stage = 'offer_approval_required', updated_by = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
           WHERE id = ?
         `).run(actor, opportunityId);
       } else if (decision === "hold") {
