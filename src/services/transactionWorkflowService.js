@@ -44,8 +44,8 @@ export class TransactionWorkflowService {
   listHandoffs(opportunityId) {
     return this.db.prepare(`
       SELECT h.*,
-        (SELECT event_type FROM acquisition_handoff_events e WHERE e.handoff_id=h.id ORDER BY occurred_at DESC, rowid DESC LIMIT 1) latest_event,
-        (SELECT external_ref FROM acquisition_handoff_events e WHERE e.handoff_id=h.id ORDER BY occurred_at DESC, rowid DESC LIMIT 1) external_ref
+        (SELECT event_type FROM acquisition_handoff_events e WHERE e.handoff_id=h.id ORDER BY rowid DESC LIMIT 1) latest_event,
+        (SELECT external_ref FROM acquisition_handoff_events e WHERE e.handoff_id=h.id ORDER BY rowid DESC LIMIT 1) external_ref
       FROM acquisition_handoffs h WHERE h.opportunity_id=? ORDER BY h.created_at DESC
     `).all(opportunityId).map(toHandoff);
   }
