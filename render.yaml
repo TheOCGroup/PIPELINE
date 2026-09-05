@@ -37,10 +37,10 @@ services:
       - key: PIPELINE_DB_PATH
         value: /data/pipeline.db
 
-      # Production ships refusing every mutation, including intake. Flip to
-      # false only at a deliberate cutover.
+      # Deal Finder intake is the single authorized production mutation boundary.
+      # All other mutation surfaces remain governed by their existing route gates.
       - key: PIPELINE_READ_ONLY
-        value: "true"
+        value: "false"
 
       # Never serve demonstration fixtures from production.
       - key: PIPELINE_DATA_SOURCE
@@ -49,10 +49,10 @@ services:
       - key: PIPELINE_ALLOW_OCG_ONE_INTEGRATION
         value: "false"
 
-      # Intake stays off until Deal Findr is ready to call it. When enabled in
-      # production, boot fails unless the secret is at least 16 characters.
+      # Enable only the fail-closed Deal Finder/Piper intake boundary. Production
+      # boot refuses to start unless PIPELINE_PIPER_INTAKE_SECRET is >=16 chars.
       - key: PIPELINE_ENABLE_PIPER_INTAKE
-        value: "false"
+        value: "true"
       - key: PIPELINE_PIPER_INTAKE_SECRET
         sync: false
       - key: PIPELINE_SESSION_SECRET
