@@ -47,4 +47,8 @@ jobs:
           grep -q 'PIPELINE_DB_PATH' render.yaml
           grep -q 'value: /data/pipeline.db' render.yaml
           grep -q 'PIPELINE_READ_ONLY' render.yaml
-          grep -q 'value: "true"' render.yaml
+          grep -A1 'PIPELINE_READ_ONLY' render.yaml | grep -q 'value: "false"'
+          grep -q 'PIPELINE_ENABLE_PIPER_INTAKE' render.yaml
+          grep -A1 'PIPELINE_ENABLE_PIPER_INTAKE' render.yaml | grep -q 'value: "true"'
+          grep -q 'PIPELINE_PIPER_INTAKE_SECRET' render.yaml
+          grep -A1 'PIPELINE_PIPER_INTAKE_SECRET' render.yaml | grep -q 'sync: false'
