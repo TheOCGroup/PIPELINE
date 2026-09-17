@@ -52,8 +52,8 @@ test("system status reports configured handoff from the active verification keys
   const response = await fetch(`${baseUrl}/api/v1/system/status`);
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.data.integration, "enabled");
-  assert.equal(body.data.handoff, "configured");
+  assert.equal(body.data.integration, "LIVE");
+  assert.equal(body.data.handoff, "LIVE");
 });
 
 test("production package uses the staged source layout and live config names", () => {

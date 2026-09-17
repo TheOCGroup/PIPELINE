@@ -1539,6 +1539,8 @@
         <dt>Database</dt><dd>${esc(data.database)}</dd>
         <dt>OCG ONE integration</dt><dd>${esc(data.integration)}</dd>
         <dt>Handoff</dt><dd>${esc(data.handoff)}</dd>
+        <dt>Piper provider</dt><dd>${esc(data.piperProvider || "AVAILABLE BUT NEEDS CREDENTIALS")}</dd>
+        <dt>Outreach providers</dt><dd>${esc(data.outreachProviders || "NOT IMPLEMENTED")}</dd>
         <dt>API contract version</dt><dd>${esc(data.apiContractVersion)}</dd>
       </dl></div>`;
   }
