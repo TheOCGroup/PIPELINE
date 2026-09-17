@@ -54,6 +54,9 @@ export class InvestmentCommitteeService {
 
     const risks = [];
     let decision = "approve";
+    // Label the MAO honestly: Victor/Deal Scout analysis vs operator assumptions.
+    const maoSourceLabel =
+      underwriting.source_system === "operator_assumption" ? "operator-assumed" : "Victor";
 
     if (mao === null || mao <= 0) {
       risks.push("No defensible MAO is available.");
@@ -64,7 +67,7 @@ export class InvestmentCommitteeService {
       risks.push("Offer price is missing or invalid.");
       decision = "hold";
     } else if (mao !== null && mao > 0 && purchasePrice > mao) {
-      risks.push(`Offer price exceeds Victor MAO by ${Math.round(purchasePrice - mao)}.`);
+      risks.push(`Offer price exceeds ${maoSourceLabel} MAO by ${Math.round(purchasePrice - mao)}.`);
       decision = "kill";
     }
 

@@ -44,7 +44,7 @@ class FakeProvider {
 }
 
 function buildRuntime(dbPath, { provider = new NullProvider(), readOnly = false } = {}) {
-  const config = testConfig(dbPath, { readOnly, isTest: false });
+  const config = testConfig(dbPath, { readOnly, isTest: false, dataSource: "fixtures" });
   const app = createApp(config);
   const db = openPipelineDatabase(dbPath);
   const runtime = new PiperRuntime({

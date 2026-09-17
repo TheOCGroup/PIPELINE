@@ -112,6 +112,15 @@ test("Seller Offers and Outreach Workflow: draft creation, state transitions, mo
   const bodyPrep = await resPrep.json();
   const offer = bodyPrep.data.offer;
 
+  // Committee review must clear the active version before approval (server-side gate).
+  const resReview = await fetch(`${baseUrl}/api/v1/investment-committee/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ opportunityId: "opp_3d9274ef0cb9" })
+  });
+  assert.equal(resReview.status, 200);
+  assert.equal((await resReview.json()).review.decision, "approve");
+
   // Approve offer
   const resApprove = await fetch(`${baseUrl}/api/v1/operator/offers/${offer.id}`, {
     method: "POST",
@@ -287,6 +296,12 @@ test("Seller Offers and Outreach Workflow: draft creation, state transitions, mo
   });
   const bodyPrepMock = await resPrepMock.json();
   const offerMock = bodyPrepMock.data.offer;
+
+  await fetch(`${appMock.baseUrl}/api/v1/investment-committee/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ opportunityId: "opp_3d9274ef0cb9" })
+  });
 
   await fetch(`${appMock.baseUrl}/api/v1/operator/offers/${offerMock.id}`, {
     method: "POST",

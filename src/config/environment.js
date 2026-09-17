@@ -67,6 +67,25 @@ export function loadConfig(env = process.env) {
   const piperIntakeEnabled = asBool(env.PIPELINE_ENABLE_PIPER_INTAKE);
   const piperIntakeSecret = env.PIPELINE_PIPER_INTAKE_SECRET || "";
 
+  // Founder operator credential. When set, `Authorization: Bearer <secret>`
+  // on /api/v1/* authenticates the founder as operator with full pipeline
+  // permissions. This is the direct-access path for the single-operator
+  // deployment; the OCG ONE handoff remains the SSO path when integration
+  // is enabled. Never logged, never returned to clients.
+  const operatorSecret = env.PIPELINE_OPERATOR_SECRET || "";
+  const OPERATOR_SECRET_MIN = 32;
+
+  // Session TTL for handoff-created sessions (minutes). Absolute expiry,
+  // no sliding refresh. Default 8 hours — an acquisition workday — instead
+  // of a hard 15-minute logout in the middle of operator work.
+  const sessionTtlMinutes = env.PIPELINE_SESSION_TTL_MINUTES === undefined
+    || String(env.PIPELINE_SESSION_TTL_MINUTES).trim() === ""
+    ? 480
+    : Number(env.PIPELINE_SESSION_TTL_MINUTES);
+  if (!Number.isInteger(sessionTtlMinutes) || sessionTtlMinutes < 5 || sessionTtlMinutes > 10080) {
+    throw new Error("invalid PIPELINE_SESSION_TTL_MINUTES: must be an integer between 5 and 10080");
+  }
+
   // Piper's model provider. Absent by default: Piper answers from stored state
   // deterministically, and only gains language understanding once a provider is
   // configured. Facts always come from retrieval, never from the model.
@@ -162,10 +181,23 @@ export function loadConfig(env = process.env) {
     }
   }
 
-  // Intake is the only write path in the application. If an operator enables it
-  // in production, refuse to boot on a guessable shared secret.
+  // Write paths (intake, manual opportunity creation, stage moves, operator
+  // state, committee review) are authenticated in production. If an operator
+  // enables intake in production, refuse to boot on a guessable shared secret.
   if (appEnv === "production" && piperIntakeEnabled && isWeak(piperIntakeSecret)) {
     throw new Error(`PIPELINE_PIPER_INTAKE_SECRET is missing or too weak for production intake (min ${MIN_SECRET_LEN} chars)`);
+  }
+
+  // Fail closed: a production deployment with writes enabled must have an
+  // operator credential. Without it, every operator/piper/work-room write
+  // would be unauthenticated ("local-operator"). Refuse to boot instead.
+  if (appEnv === "production" && !readOnly && !integrationEnabled) {
+    if (!operatorSecret || operatorSecret.length < OPERATOR_SECRET_MIN) {
+      throw new Error(`PIPELINE_OPERATOR_SECRET is required in production when PIPELINE_READ_ONLY=false and OCG ONE integration is disabled (min ${OPERATOR_SECRET_MIN} chars)`);
+    }
+  }
+  if (operatorSecret && operatorSecret.length < OPERATOR_SECRET_MIN && appEnv === "production") {
+    throw new Error(`PIPELINE_OPERATOR_SECRET is too weak for production (min ${OPERATOR_SECRET_MIN} chars)`);
   }
 
   return {
@@ -177,6 +209,9 @@ export function loadConfig(env = process.env) {
     readOnly,
     sessionSecret,
     handoffSecret,
+    operatorSecret,
+    operatorAuthEnabled: operatorSecret.length >= OPERATOR_SECRET_MIN,
+    sessionTtlMinutes,
     piperIntakeEnabled,
     piperIntakeSecret,
     piperProvider,

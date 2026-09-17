@@ -27,7 +27,7 @@ const ask = async (baseUrl, question, activeOpportunityId = null) => {
 test("Piper's brief is derived from stored state", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   const res = await fetch(`${baseUrl}/api/v1/piper/brief`);
@@ -60,13 +60,13 @@ test("Piper's brief is derived from stored state", async (t) => {
 test("Piper's counts match the database exactly", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const app = createApp(testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const app = createApp(testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.close());
 
   const db = openPipelineDatabase(tempDb.dbPath);
   t.after(() => db.close());
 
-  const piper = new PiperContextService(db, testConfig(tempDb.dbPath, { isTest: false }));
+  const piper = new PiperContextService(db, testConfig(tempDb.dbPath, { isTest: false, dataSource: "fixtures" }));
   const snapshot = piper.snapshot();
 
   const actual = db.prepare("SELECT COUNT(*) n FROM seller_opportunities").get().n;
@@ -83,7 +83,7 @@ test("Piper's counts match the database exactly", async (t) => {
 test("Piper refuses to rank when the data cannot support it", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   // Seeded fixtures carry no underwriting, so "strongest" has nothing to rank on.
@@ -96,7 +96,7 @@ test("Piper refuses to rank when the data cannot support it", async (t) => {
 test("Piper never claims underwriting that Victor did not supply", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   const { body } = await ask(baseUrl, "Did Victor change the numbers?");
@@ -106,7 +106,7 @@ test("Piper never claims underwriting that Victor did not supply", async (t) => 
 test("Piper uses the on-screen opportunity as context", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   const withContext = await ask(baseUrl, "what am I missing?", "FX-OPP-0001");
@@ -123,7 +123,7 @@ test("Piper uses the on-screen opportunity as context", async (t) => {
 test("Piper declines to move a stage and offers a real alternative", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   const { body } = await ask(baseUrl, "move this to follow-up", "FX-OPP-0001");
@@ -134,7 +134,7 @@ test("Piper declines to move a stage and offers a real alternative", async (t) =
 test("Piper proposes rather than performs a write", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   const { body } = await ask(baseUrl, "create next action call the seller tomorrow", "FX-OPP-0001");
@@ -151,7 +151,7 @@ test("Piper proposes rather than performs a write", async (t) => {
 test("Piper admits when she does not understand", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   const { body } = await ask(baseUrl, "write me a seller negotiation script in the style of a poem");
@@ -162,7 +162,7 @@ test("Piper admits when she does not understand", async (t) => {
 test("Piper reflects operator state once it exists", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   await fetch(`${baseUrl}/api/v1/operator/next-actions`, {
@@ -172,7 +172,7 @@ test("Piper reflects operator state once it exists", async (t) => {
   });
 
   const db = openPipelineDatabase(tempDb.dbPath);
-  const piper = new PiperContextService(db, testConfig(tempDb.dbPath, { isTest: false }));
+  const piper = new PiperContextService(db, testConfig(tempDb.dbPath, { isTest: false, dataSource: "fixtures" }));
   const snapshot = piper.snapshot();
   db.close();
 

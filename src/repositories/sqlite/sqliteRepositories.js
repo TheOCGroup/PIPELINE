@@ -118,6 +118,23 @@ export class SqliteOpportunityRepository {
         const payload = parseJson(audit.payload_json);
         if (payload.sellerName) sellerName = payload.sellerName;
       }
+      // Fall back to the primary seller contact (manual entries, intake
+      // contacts) when no intake audit row named the seller.
+      if (sellerName === "Seller") {
+        try {
+          const contact = this.db.prepare(`
+            SELECT c.first_name, c.last_name
+            FROM seller_opportunity_participants p
+            JOIN pipeline_contacts c ON c.id = p.ocg_one_person_id
+            WHERE p.opportunity_id = ? AND p.is_primary = 1
+            LIMIT 1
+          `).get(r.id);
+          if (contact) {
+            const full = `${contact.first_name || ""} ${contact.last_name || ""}`.trim();
+            if (full) sellerName = full;
+          }
+        } catch { /* contacts optional; keep default */ }
+      }
 
       const underwriting = r.ref_id ? {
         source: r.ref_source_system || "deal-scout",
@@ -132,9 +149,9 @@ export class SqliteOpportunityRepository {
         limitations: r.ref_limitations,
         analyzedAt: r.ref_analyzed_at,
         evidence: r.ref_evidence_summary_json ? parseJson(r.ref_evidence_summary_json) : null,
-        fee: 5000,
-        holding: 8000,
-        askingPrice: r.asking_price || 120000
+        fee: null,
+        holding: null,
+        askingPrice: r.asking_price ?? null
       } : null;
 
       return {
@@ -143,9 +160,9 @@ export class SqliteOpportunityRepository {
         sellerDisplayName: sellerName,
         property: {
           externalPropertyId: r.source_record_id || null,
-          address: r.original_address || "Wichita Property"
+          address: r.original_address || null
         },
-        assignedOperator: r.assignedOperator || "operator.demo",
+        assignedOperator: r.assignedOperator || null,
         stage: r.stage || "new_lead",
         classification: r.classification || "unknown",
         lastActivity: r.lastActivity || new Date().toISOString(),
@@ -232,9 +249,9 @@ export class SqliteOpportunityRepository {
       limitations: opp.ref_limitations,
       analyzedAt: opp.ref_analyzed_at,
       evidence: opp.ref_evidence_summary_json ? parseJson(opp.ref_evidence_summary_json) : null,
-      fee: 5000,
-      holding: 8000,
-      askingPrice: opp.asking_price || 120000
+      fee: null,
+      holding: null,
+      askingPrice: opp.asking_price ?? null
     } : null;
 
     return {
@@ -243,9 +260,9 @@ export class SqliteOpportunityRepository {
       sellerDisplayName: sellerName,
       property: {
         externalPropertyId: opp.source_record_id || null,
-        address: opp.original_address || "Wichita Property"
+        address: opp.original_address || null
       },
-      assignedOperator: opp.assignedOperator || "operator.demo",
+      assignedOperator: opp.assignedOperator || null,
       stage: opp.stage || "new_lead",
       classification: opp.classification || "unknown",
       lastActivity: opp.lastActivity || new Date().toISOString(),
@@ -364,7 +381,7 @@ export class SqliteProvenanceRepository {
         o.id AS opportunityId,
         src.source_message_id AS originalSourceMessageId,
         src.source_type AS sourceType,
-        prov.resolution_status AS provenanceState
+        prov.resolution_status AS resolutionStatus
       FROM seller_opportunities o
       LEFT JOIN seller_opportunity_sources src ON src.opportunity_id = o.id
       LEFT JOIN source_provenance prov ON prov.opportunity_id = o.id
@@ -372,12 +389,27 @@ export class SqliteProvenanceRepository {
 
     return rows.map(r => ({
       opportunityId: r.opportunityId,
-      provenanceState: r.provenanceState || "original",
+      // Domain states are original | recovered | unresolved. The database
+      // stores resolution_status (unresolved | original_resolved |
+      // recovered_resolved | manually_resolved). Map honestly; a missing
+      // provenance row is "unresolved", never "original".
+      provenanceState: toProvenanceState(r.resolutionStatus),
+      resolutionStatus: r.resolutionStatus || "unresolved",
       originalSourceMessageId: r.originalSourceMessageId || null,
       recoveredSourceMessageId: null,
       recoveryMethodLabel: "—",
       recoveryConfidence: null
     }));
+  }
+}
+
+function toProvenanceState(resolutionStatus) {
+  switch (resolutionStatus) {
+    case "original_resolved": return "original";
+    case "recovered_resolved":
+    case "manually_resolved": return "recovered";
+    case "unresolved":
+    default: return "unresolved";
   }
 }
 

@@ -1,5 +1,6 @@
 import { sendJson } from "../response.js";
 import { randomUUID } from "node:crypto";
+import { persistSellerContact } from "../../services/sellerContactService.js";
 
 function numberOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -69,7 +70,13 @@ export async function handleDealFindrIntake(req, res, ctx) {
   let body = "";
   try {
     const buffers = [];
-    for await (const chunk of req) buffers.push(chunk);
+    let size = 0;
+    for await (const chunk of req) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buf.length;
+      if (size > 512 * 1024) return sendJson(res, 413, { ok: false, error: "body_too_large" });
+      buffers.push(buf);
+    }
     body = Buffer.concat(buffers).toString("utf8");
   } catch {
     return sendJson(res, 500, { ok: false, error: "read_error" });
@@ -112,7 +119,7 @@ export async function handleDealFindrIntake(req, res, ctx) {
     if (sourceRecordId) {
       existingOpp = db.prepare(`
         SELECT opportunity_id FROM seller_opportunity_sources
-        WHERE source_type = 'deal_scout_handoff' AND source_record_id = ?
+        WHERE source_type IN ('deal_scout_handoff', 'deal_finder_intake') AND source_record_id = ?
       `).get(sourceRecordId);
       if (existingOpp) matchType = "source_record_id";
     }
@@ -249,7 +256,7 @@ export async function handleDealFindrIntake(req, res, ctx) {
   const provenanceMetadata = {
     originSystem: victorPackage ? "deal-scout" : "deal-finder",
     originAgent: victorPackage ? "Victor" : "Hunter",
-    legacySourceType: "deal_scout_handoff",
+    legacySourceType: victorPackage ? "deal_scout_handoff" : "deal_finder_intake",
     addressVerification,
     imageVerification,
     apn: apn || null,
@@ -287,9 +294,10 @@ export async function handleDealFindrIntake(req, res, ctx) {
       INSERT INTO seller_opportunity_sources (
         id, opportunity_id, source_type, source_record_id, source_message_id,
         original_address, source_timestamp, conversion_actor, conversion_timestamp, provenance_metadata_json
-      ) VALUES (?, ?, 'deal_scout_handoff', ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      randomUUID(), opportunityId, sourceRecordId || null, sourceMessageId || null,
+      randomUUID(), opportunityId, victorPackage ? "deal_scout_handoff" : "deal_finder_intake",
+      sourceRecordId || null, sourceMessageId || null,
       normalizedAddress, sourceTimestampValue, intakeActor, conversionTime, JSON.stringify(provenanceMetadata)
     );
 
@@ -318,6 +326,16 @@ export async function handleDealFindrIntake(req, res, ctx) {
       packageId: victorPackage?.packageId,
       sourceRecordId,
       timestamp: victorPackage?.timestamp
+    });
+
+    // The intake payload may carry seller identity — persist it as the
+    // primary seller contact instead of dropping it.
+    persistSellerContact(db, opportunityId, {
+      name: sellerName || null,
+      phone: phone || null,
+      email: email || null,
+      role: "primary_owner",
+      actor: intakeActor,
     });
 
     db.prepare(`

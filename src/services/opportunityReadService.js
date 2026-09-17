@@ -12,10 +12,22 @@ import { ValidationError, NotFoundError } from "./serviceErrors.js";
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
 
+const DEAL_CLASSIFICATIONS = new Set([
+  "retail_listing",
+  "wholesale_target",
+  "investment_rehab",
+  "land_hold",
+  "disqualified",
+  "unknown",
+]);
+
 const ALLOWED = {
   stage: new Set(STAGES),
   provenanceState: new Set(Object.values(PROVENANCE_STATES)),
-  classification: new Set(Object.values(CLASSIFICATIONS)),
+  // NOTE: the stored taxonomy is the deal-type classification
+  // (record_classifications.classification_value); lineage (REAL/SYNTHETIC/
+  // AMBIGUOUS) is not recorded by the schema and cannot be filtered.
+  classification: DEAL_CLASSIFICATIONS,
   status: new Set(Object.values(OPPORTUNITY_STATUS)),
 };
 
@@ -28,6 +40,9 @@ function validateFilters(filters = {}) {
     clean[key] = v;
   }
   if (filters.assignedOperator) clean.assignedOperator = String(filters.assignedOperator);
+  if (filters.q != null && String(filters.q).trim() !== "") {
+    clean.q = String(filters.q).trim().slice(0, 200);
+  }
   return clean;
 }
 
@@ -47,12 +62,14 @@ export class OpportunityReadService {
     const { page: p, pageSize: ps } = validatePagination({ page, pageSize });
 
     const all = (await this.repository.listAll()).map(toListItem);
+    const needle = clean.q ? clean.q.toLowerCase() : null;
     const filtered = all.filter((o) =>
       (clean.stage == null || o.stage === clean.stage) &&
       (clean.provenanceState == null || o.provenanceState === clean.provenanceState) &&
       (clean.classification == null || o.classification === clean.classification) &&
       (clean.status == null || o.status === clean.status) &&
-      (clean.assignedOperator == null || o.assignedOperator === clean.assignedOperator)
+      (clean.assignedOperator == null || o.assignedOperator === clean.assignedOperator) &&
+      (needle == null || matchesQuery(o, needle))
     );
     // Deterministic order by id.
     filtered.sort((a, b) => a.id.localeCompare(b.id));
@@ -99,4 +116,16 @@ export class OpportunityReadService {
       lastActivity: opp.lastActivity ?? null,
     };
   }
+}
+
+function matchesQuery(o, needle) {
+  const haystacks = [
+    o.id,
+    o.code,
+    o.sellerDisplayName,
+    o.property && o.property.address,
+    o.stage,
+    o.classification,
+  ];
+  return haystacks.some((h) => h && String(h).toLowerCase().includes(needle));
 }

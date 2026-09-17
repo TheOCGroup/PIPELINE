@@ -54,7 +54,7 @@ export async function handleApi(req, res, ctx, url) {
         filters: {
           stage: q.get("stage"), provenanceState: q.get("provenanceState"),
           classification: q.get("classification"), assignedOperator: q.get("assignedOperator"),
-          status: q.get("status"),
+          status: q.get("status"), q: q.get("q"),
         },
         page: q.get("page"), pageSize: q.get("pageSize"),
       });

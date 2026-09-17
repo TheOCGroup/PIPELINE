@@ -31,7 +31,7 @@ async function get(baseUrl, resource, oppId) {
 test("Operator state is written to the database and survives the request", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   await t.test("a next action persists", async () => {
@@ -112,7 +112,7 @@ test("Operator state is written to the database and survives the request", async
 test("Read-only mode blocks every operator write but still serves reads", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: true, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: true, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   for (const [resource, payload] of [
@@ -140,7 +140,7 @@ test("Read-only mode blocks every operator write but still serves reads", async 
 test("Operator routes reject unsupported methods and unknown resources", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false }));
+  const { app, baseUrl } = await startApp(createApp, testConfig(tempDb.dbPath, { readOnly: false, isTest: false, dataSource: "fixtures" }));
   t.after(() => app.server.close());
 
   const notFound = await fetch(`${baseUrl}/api/v1/operator/nonsense`);

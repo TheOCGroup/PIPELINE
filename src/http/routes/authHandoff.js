@@ -91,7 +91,7 @@ export async function handleAuthHandoff(req, res, ctx) {
     email: identity.email,
     roles: identity.roles,
     permissions: identity.permissions,
-    expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() // 15 mins absolute expiry
+    expiresAt: new Date(Date.now() + (ctx.config.sessionTtlMinutes || 480) * 60 * 1000).toISOString() // absolute expiry, no sliding refresh
   };
 
   try {
@@ -113,7 +113,10 @@ export async function handleAuthHandoff(req, res, ctx) {
 
   // Session Cookie
   const secure = config.env === "production" || config.pipelineEnv === "production";
-  const sessionCookie = sessionCookieHeader(sessionId, { secure });
+  const sessionCookie = sessionCookieHeader(sessionId, {
+    secure,
+    maxAgeSeconds: (config.sessionTtlMinutes || 480) * 60,
+  });
 
   // Browser forms must leave the handoff endpoint after the cookie is minted.
   // JSON callers retain the documented response body for programmatic use.
