@@ -235,6 +235,20 @@ export class SqliteOpportunityRepository {
       const payload = parseJson(audit.payload_json);
       if (payload.sellerName) sellerName = payload.sellerName;
     }
+    // Primary seller contact fallback (manual opportunities have no intake audit).
+    if (sellerName === "Seller") {
+      const primary = this.db.prepare(`
+        SELECT c.first_name, c.last_name
+        FROM pipeline_contacts c
+        JOIN seller_opportunity_participants p ON p.ocg_one_person_id = c.id
+        WHERE p.opportunity_id = ? AND p.participant_role = 'primary_owner'
+        ORDER BY p.created_at ASC LIMIT 1
+      `).get(id);
+      if (primary) {
+        const full = [primary.first_name, primary.last_name].filter(Boolean).join(" ").trim();
+        if (full) sellerName = full;
+      }
+    }
 
     const underwriting = opp.ref_id ? {
       source: opp.ref_source_system || "deal-scout",
