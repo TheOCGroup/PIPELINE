@@ -149,7 +149,7 @@ test("Intake enabled: only a caller holding the secret may write", async (t) => 
     const source = db.prepare("SELECT * FROM seller_opportunity_sources WHERE opportunity_id = ?").get(id);
     assert.ok(source, "seller_opportunity_sources");
     assert.equal(source.original_address, "4820 bayshore blvd, tampa fl 33611", "address is normalized");
-    assert.equal(source.source_type, "deal_scout_handoff");
+    assert.equal(source.source_type, "deal_finder_intake", "plain Deal Finder intake is not a Victor handoff");
 
     const provenance = db.prepare("SELECT * FROM source_provenance WHERE opportunity_id = ?").get(id);
     assert.ok(provenance, "source_provenance");
@@ -169,6 +169,20 @@ test("Intake enabled: only a caller holding the secret may write", async (t) => 
       .get(`%${id}%`);
     assert.ok(audit, "operational_audit_events");
     assert.equal(audit.actor_id, "deal-findr");
+
+    // Seller identity from the intake payload is persisted, not dropped.
+    const contact = db.prepare("SELECT * FROM pipeline_contacts WHERE phone = ?").get("813-555-0199");
+    assert.ok(contact, "pipeline_contacts");
+    assert.equal(contact.first_name, "Authorized");
+    assert.equal(contact.last_name, "Seller");
+    assert.equal(contact.email, "authorized@example.com");
+    const participant = db
+      .prepare("SELECT * FROM seller_opportunity_participants WHERE opportunity_id = ? AND ocg_one_person_id = ?")
+      .get(id, contact.id);
+    assert.ok(participant, "seller_opportunity_participants");
+    assert.equal(participant.participant_role, "primary_owner");
+    assert.equal(participant.is_primary, 1);
+    assert.equal(participant.verification_status, "source_supplied");
   });
 
   await t.test("duplicate reconciliation still works for an authorized caller", async () => {
@@ -191,13 +205,16 @@ test("Intake enabled: only a caller holding the secret may write", async (t) => 
     assert.equal(n, 1, "duplicate must not create a second source row");
   });
 
-  await t.test("no seller contact data is persisted anywhere", async () => {
+  await t.test("seller contact data is persisted only in the contact/participant tables", async () => {
     const db = openPipelineDatabase(tempDb.dbPath);
+    // Allowed homes for seller PII: pipeline_contacts + the participant link.
+    const allowed = new Set(["pipeline_contacts", "seller_opportunity_participants"]);
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
     const needles = ["%813-555-0199%", "%authorized@example.com%", "%Authorized Seller%"];
     const leaks = [];
 
     for (const table of tables) {
+      if (allowed.has(table)) continue;
       const columns = db
         .prepare(`PRAGMA table_info(${table})`)
         .all()
@@ -210,7 +227,7 @@ test("Intake enabled: only a caller holding the secret may write", async (t) => 
       }
     }
     db.close();
-    assert.deepEqual(leaks, [], "PIPELINE must hold no seller contact details");
+    assert.deepEqual(leaks, [], "seller PII must live only in the contact/participant tables");
   });
 });
 

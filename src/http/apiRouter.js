@@ -13,7 +13,7 @@ function meta(ctx, req, extra = {}) {
   return {
     dataSource: ctx.config.dataSource,
     demo: ctx.config.dataSource === "fixtures",
-    integration: ctx.config.integrationEnabled ? "enabled" : "disabled",
+    integration: ctx.config.integrationEnabled ? "LIVE" : "AVAILABLE BUT NEEDS CREDENTIALS",
     correlationId,
     ...extra,
   };
@@ -54,7 +54,7 @@ export async function handleApi(req, res, ctx, url) {
         filters: {
           stage: q.get("stage"), provenanceState: q.get("provenanceState"),
           classification: q.get("classification"), assignedOperator: q.get("assignedOperator"),
-          status: q.get("status"),
+          status: q.get("status"), q: q.get("q"),
         },
         page: q.get("page"), pageSize: q.get("pageSize"),
       });
@@ -109,8 +109,12 @@ export async function handleApi(req, res, ctx, url) {
           dataSource: ctx.config.dataSource,
           demo: ctx.config.dataSource === "fixtures",
           database: "available",
-          integration: ctx.config.integrationEnabled ? "enabled" : "disabled",
-          handoff: ctx.config.integrationEnabled && Object.keys(ctx.config.handoffPublicKeys || {}).length > 0 ? "configured" : "disabled",
+          // Integration labels use the exact production vocabulary:
+          // LIVE | AVAILABLE BUT NEEDS CREDENTIALS | NOT IMPLEMENTED
+          integration: ctx.config.integrationEnabled ? "LIVE" : "AVAILABLE BUT NEEDS CREDENTIALS",
+          handoff: ctx.config.integrationEnabled && Object.keys(ctx.config.handoffPublicKeys || {}).length > 0 ? "LIVE" : "AVAILABLE BUT NEEDS CREDENTIALS",
+          piperProvider: ctx.config.piperProvider && ctx.config.piperProvider !== "none" ? "LIVE" : "AVAILABLE BUT NEEDS CREDENTIALS",
+          outreachProviders: "NOT IMPLEMENTED",
           apiContractVersion: applicationInfo.integrationContractVersion,
         },
       });

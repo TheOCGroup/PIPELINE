@@ -199,7 +199,7 @@ export class SqliteOperatorRepository {
     const insp = inspectionDays;
     const cls = closingDays;
     const cont = contingencies || JSON.stringify(["Subject to satisfactory inspection of major systems"]);
-    const notes = internalNotes || "Initial draft prepared by operator via Victor underwriting recommendation.";
+    const notes = internalNotes || (uw.source_system === "operator_assumption" ? "Initial draft prepared by operator from recorded operator assumptions (not Victor underwriting)." : "Initial draft prepared by operator via Victor underwriting recommendation.");
 
     let offer = this.db.prepare("SELECT * FROM seller_offers WHERE opportunity_id = ?").get(opportunityId);
     let offerId;
@@ -230,7 +230,7 @@ export class SqliteOperatorRepository {
     `).run(
       versionId, offerId, nextVersionNumber, strategy, price, em, insp, cls,
       typeof cont === "string" ? cont : JSON.stringify(cont), notes,
-      uw.source_system === "deal-scout" ? "victor_analysis" : "deal_scout_project",
+      uw.source_system === "deal-scout" ? "victor_analysis" : uw.source_system === "operator_assumption" ? "operator_assumption" : "deal_scout_project",
       uw.source_underwriting_id || "unknown", uw.source_version_id || "1",
       uw.arv || 0, uw.rehab || 0, uw.mao || 0, uw.confidence || 0, uw.limitations || "",
       uw.analyzed_at || now(), actor
@@ -253,6 +253,16 @@ export class SqliteOperatorRepository {
     if (!currentVer) throw new Error("active_version_not_found");
 
     if (action === "approve") {
+      // Server-side gate: an offer cannot be approved unless the investment
+      // committee has recorded an 'approve' decision against the active
+      // version. This is enforced here, not just in the UI.
+      const clearance = this.db.prepare(`
+        SELECT id FROM investment_committee_reviews
+        WHERE offer_version_id = ? AND decision = 'approve'
+        ORDER BY created_at DESC, rowid DESC
+        LIMIT 1
+      `).get(offer.active_version_id);
+      if (!clearance) throw new Error("committee_approval_required");
       this.db.prepare("UPDATE seller_offers SET status = 'approved', updated_at = ? WHERE id = ?").run(now(), offerId);
       this.db.prepare("UPDATE seller_offer_versions SET version_status = 'approved' WHERE id = ?").run(offer.active_version_id);
     } else if (action === "decline") {
@@ -286,7 +296,7 @@ export class SqliteOperatorRepository {
         ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         nextVerId, offerId, nextVerNum, strategy, price, em, insp, cls, cont, notes,
-        uw.source_system === "deal-scout" ? "victor_analysis" : "deal_scout_project",
+        uw.source_system === "deal-scout" ? "victor_analysis" : uw.source_system === "operator_assumption" ? "operator_assumption" : "deal_scout_project",
         uw.source_underwriting_id || "unknown", uw.source_version_id || "1",
         uw.arv || 0, uw.rehab || 0, uw.mao || 0, uw.confidence || 0, uw.limitations || "",
         uw.analyzed_at || now(), actor
@@ -396,6 +406,74 @@ export class SqliteOperatorRepository {
       sourceType: participant.source_id ? "deal_scout_handoff" : "manual_entry",
       sourceId: participant.source_id || null
     };
+  }
+
+  // --- operator underwriting assumptions -------------------------------------
+  //
+  // Founder-recorded deal math for opportunities that have no Victor/Deal
+  // Scout analysis. These are OPERATOR ASSUMPTIONS — working estimates the
+  // founder records and owns — explicitly labeled so they can never be
+  // mistaken for canonical Victor underwriting. Recording assumptions
+  // unblocks offer preparation for manually entered and Deal Finder leads.
+
+  getUnderwritingAssumptions(opportunityId) {
+    const row = this.db.prepare(
+      `SELECT * FROM opportunity_underwriting_refs
+       WHERE opportunity_id = ? AND source_system = 'operator_assumption'
+       ORDER BY created_at DESC, rowid DESC LIMIT 1`
+    ).get(opportunityId);
+    return row ? toUnderwritingAssumptions(row) : null;
+  }
+
+  recordUnderwritingAssumptions({
+    opportunityId, arv = null, rehab = null, fee = null, holding = null,
+    askingPrice = null, confidence = null, limitations = null, basis = null, actor,
+  }) {
+    const opp = this.db.prepare("SELECT id FROM seller_opportunities WHERE id = ?").get(opportunityId);
+    if (!opp) throw new Error("opportunity_not_found");
+
+    const a = finiteOrNull(arv);
+    const r = finiteOrNull(rehab);
+    const f = finiteOrNull(fee);
+    const h = finiteOrNull(holding);
+    if (a === null && r === null && f === null && h === null && finiteOrNull(askingPrice) === null) {
+      throw new Error("missing_assumptions");
+    }
+
+    // Operator MAO convention: 75% of ARV minus rehab, assignment fee, and
+    // holding costs. A working estimate, not a Victor computation.
+    const mao = a !== null && r !== null ? Math.round(a * 0.75 - r - (f || 0) - (h || 0)) : null;
+    const honesty =
+      "OPERATOR ASSUMPTIONS — recorded by the founder-operator as working estimates. " +
+      "Not Victor/Deal Scout underwriting. Verify independently before presenting an offer.";
+    const fullLimitations = [honesty, limitations ? String(limitations).trim() : ""]
+      .filter(Boolean)
+      .join(" ");
+
+    const id = randomUUID();
+    const at = now();
+    const evidence = {
+      kind: "operator_assumption",
+      basis: basis ? String(basis).trim() : null,
+      inputs: { arv: a, rehab: r, fee: f, holding: h, askingPrice: finiteOrNull(askingPrice) },
+      maoFormula: "round(arv * 0.75 - rehab - fee - holding)",
+    };
+
+    this.db.prepare(
+      `INSERT INTO opportunity_underwriting_refs (
+         id, opportunity_id, source_system, source_agent, analysis_status,
+         arv, rehab, mao, confidence, limitations, evidence_summary_json, analyzed_at
+       ) VALUES (?, ?, 'operator_assumption', 'operator', 'completed', ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, opportunityId, a, r, mao, finiteOrNull(confidence), fullLimitations || null, JSON.stringify(evidence), at);
+
+    this.db.prepare(
+      `INSERT INTO operational_audit_events (id, event_timestamp, event_type, actor_id, payload_json, correlation_id)
+       VALUES (?, ?, 'OPERATOR_UNDERWRITING_RECORDED', ?, ?, ?)`
+    ).run(randomUUID(), at, actor || "local-operator", JSON.stringify({ opportunityId, refId: id, mao }), randomUUID());
+
+    return toUnderwritingAssumptions(
+      this.db.prepare("SELECT * FROM opportunity_underwriting_refs WHERE id = ?").get(id)
+    );
   }
 
   createOutreachDraft({ opportunityId, offerVersionId = null, recipientPersonId, recipientValueSnapshot, recipientChannel, subject = null, contentText, templateVersion = null, actor }) {
@@ -615,5 +693,37 @@ function toNextAction(r) {
     createdBy: r.created_by,
     createdAt: r.created_at,
     completedAt: r.completed_at,
+  };
+}
+
+function finiteOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toUnderwritingAssumptions(r) {
+  if (!r) return null;
+  let evidence = null;
+  try {
+    evidence = r.evidence_summary_json ? JSON.parse(r.evidence_summary_json) : null;
+  } catch {
+    evidence = null;
+  }
+  return {
+    id: r.id,
+    opportunityId: r.opportunity_id,
+    kind: "operator_assumption",
+    arv: r.arv,
+    rehab: r.rehab,
+    fee: evidence && evidence.inputs ? evidence.inputs.fee : null,
+    holding: evidence && evidence.inputs ? evidence.inputs.holding : null,
+    askingPrice: evidence && evidence.inputs ? evidence.inputs.askingPrice : null,
+    mao: r.mao,
+    confidence: r.confidence,
+    limitations: r.limitations,
+    basis: evidence ? evidence.basis : null,
+    analyzedAt: r.analyzed_at,
+    createdAt: r.created_at,
   };
 }

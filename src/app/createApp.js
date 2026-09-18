@@ -21,7 +21,10 @@ export function createApp(config) {
 
   const db = openPipelineDatabase(config.dbPath);
   const migrations = runMigrations(db, migrationsDir);
-  if (!config.isTest) seedDatabaseIfEmpty(db);
+  // Fixtures seed only when explicitly requested via PIPELINE_DATA_SOURCE=fixtures.
+  // A fresh production database must start EMPTY — never with demo records.
+  // (environment.js already forbids fixtures in production.)
+  if (!config.isTest && config.dataSource === "fixtures") seedDatabaseIfEmpty(db);
   const services = buildServices(config, db);
   const server = createServer({ config, db, publicDir, services, info: applicationInfo });
 

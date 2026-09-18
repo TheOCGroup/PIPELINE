@@ -2,7 +2,7 @@
 -- System: PIPELINE
 -- Status: EXECUTABLE MIGRATION
 
-CREATE TABLE opportunity_underwriting_refs (
+CREATE TABLE IF NOT EXISTS opportunity_underwriting_refs (
     id TEXT PRIMARY KEY,
     opportunity_id TEXT NOT NULL REFERENCES seller_opportunities(id) ON DELETE CASCADE,
     source_system TEXT NOT NULL DEFAULT 'deal-scout',
@@ -21,4 +21,4 @@ CREATE TABLE opportunity_underwriting_refs (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
-CREATE INDEX idx_underwriting_refs_opportunity_id ON opportunity_underwriting_refs(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_underwriting_refs_opportunity_id ON opportunity_underwriting_refs(opportunity_id);

@@ -98,6 +98,12 @@
   // Helper: Escape HTML
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+  // Inline navigation helper used by anchor onclick handlers across views.
+  window.routeTo = (event, path) => {
+    if (event) event.preventDefault();
+    navigate(path);
+  };
+
   // Custom Modals
   window.showCustomConfirm = (message, title, onConfirm, onCancel) => {
     const backdrop = document.createElement("div");
@@ -243,24 +249,56 @@
   const empty = (msg) => `<div class="state">${esc(msg)}</div>`;
 
   // API REST Client
+  //
+  // Operator auth: production PIPELINE requires the founder-operator bearer on
+  // every API call. The secret lives in sessionStorage (this tab only — never
+  // localStorage, never in source) and is attached as a Bearer token.
+  function authHeaders() {
+    try {
+      const s = sessionStorage.getItem("pipeline_operator_secret");
+      return s ? { Authorization: "Bearer " + s } : {};
+    } catch { return {}; }
+  }
+
+  function pfetch(path, opts = {}) {
+    const headers = { ...(opts.headers || {}), ...authHeaders() };
+    return fetch(path, { ...opts, headers });
+  }
+
+  let operatorAuthBannerShown = false;
+  function noteOperatorAuthRequired() {
+    if (operatorAuthBannerShown) return;
+    operatorAuthBannerShown = true;
+    window.showCustomAlert(
+      "PIPELINE requires operator access for this. Enter the founder-operator secret (stored in this tab only, never written to disk).",
+      "Operator Access Required"
+    );
+  }
+
+  window.setOperatorSecret = (secret) => {
+    try { sessionStorage.setItem("pipeline_operator_secret", String(secret || "").trim()); }
+    catch { /* storage unavailable */ }
+    operatorAuthBannerShown = false;
+    render();
+  };
+  window.clearOperatorSecret = () => {
+    try { sessionStorage.removeItem("pipeline_operator_secret"); } catch { /* noop */ }
+    render();
+  };
+  window.hasOperatorSecret = () => {
+    try { return !!sessionStorage.getItem("pipeline_operator_secret"); } catch { return false; }
+  };
+
   async function api(path) {
-    const res = await fetch(path, { headers: { accept: "application/json" } });
+    const res = await pfetch(path, { headers: { accept: "application/json" } });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error ? `${res.status} ${body.error}` : `${res.status}`);
+    if (!res.ok) {
+      if (res.status === 401 && body.error === "operator_auth_required") noteOperatorAuthRequired();
+      const err = new Error(body.error ? `${res.status} ${body.error}` : `${res.status}`);
+      err.code = body.error;
+      throw err;
+    }
     return body;
-  }
-
-  // Local Storage Overrides Helpers
-  function getOverrides(id) {
-    const data = JSON.parse(localStorage.getItem("pipeline_overrides") || "{}");
-    return data[id] || {};
-  }
-
-  function setOverride(id, key, val) {
-    const data = JSON.parse(localStorage.getItem("pipeline_overrides") || "{}");
-    if (!data[id]) data[id] = {};
-    data[id][key] = val;
-    localStorage.setItem("pipeline_overrides", JSON.stringify(data));
   }
 
   // Operator state lives in PIPELINE, not the browser. These call the
@@ -275,14 +313,14 @@
   ];
 
   async function operatorGet(resource, oppId) {
-    const res = await fetch(`/api/v1/operator/${resource}?opportunityId=${encodeURIComponent(oppId)}`);
+    const res = await ppfetch(`/api/v1/operator/${resource}?opportunityId=${encodeURIComponent(oppId)}`);
     const body = await res.json();
     if (!body.ok) throw new Error(body.error || "operator_read_failed");
     return body.data;
   }
 
   async function operatorPost(resource, payload) {
-    const res = await fetch(`/api/v1/operator/${resource}`, {
+    const res = await ppfetch(`/api/v1/operator/${resource}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -559,27 +597,14 @@
     const columnsHtml = KANBAN_COLUMNS.map(col => {
       const cards = groups[col.key];
       const cardsHtml = cards.map(o => {
-        const overrides = getOverrides(o.id);
-        
         let underwritingLabel = "";
         let underwritingClass = "underwriting-unavailable";
-        if (o.underwriting) {
-          if (o.underwriting.status === "insufficient_evidence" || o.underwriting.arv === null || o.underwriting.arv === undefined) {
-            underwritingLabel = "Underwriting: Insufficient Evidence";
-            underwritingClass = "underwriting-unavailable";
-          } else {
-            const arv = o.underwriting.arv || 0;
-            const rehab = o.underwriting.rehab || 0;
-            const fee = o.underwriting.fee || 5000;
-            const holding = o.underwriting.holding || 8000;
-            const victorMao = Math.max(0, Math.round(arv * 0.75 - rehab - fee - holding));
-            underwritingLabel = `75% Rule Ref — Victor inputs: ${money(victorMao)}`;
-            underwritingClass = "underwriting-victor";
-          }
-        } else if (overrides.arv) {
-          const localMao = Math.max(0, Math.round(overrides.arv * 0.75 - (overrides.rehab || 0) - (overrides.fee || 0) - (overrides.holding || 0)));
-          underwritingLabel = `Scratchpad MAO: ${money(localMao)}`;
-          underwritingClass = "underwriting-scratchpad";
+        if (o.underwriting && o.underwriting.mao != null) {
+          underwritingLabel = `Victor MAO: ${money(o.underwriting.mao)}`;
+          underwritingClass = "underwriting-victor";
+        } else if (o.underwriting && (o.underwriting.status === "insufficient_evidence" || o.underwriting.arv == null)) {
+          underwritingLabel = "Underwriting: Insufficient Evidence";
+          underwritingClass = "underwriting-unavailable";
         } else {
           underwritingLabel = "Underwriting: unavailable";
         }
@@ -672,7 +697,7 @@
           "Proposed Stage Change Approval",
           async () => {
             try {
-              const res = await fetch("/api/v1/operator/next-actions", {
+              const res = await pfetch("/api/v1/operator/next-actions", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ opportunityId: oppId, title }),
@@ -709,7 +734,7 @@
     updatePiperContext();
     const params = new URLSearchParams(location.search);
     const qs = new URLSearchParams();
-    for (const k of ["stage", "provenanceState", "classification", "status", "page", "pageSize"]) if (params.get(k)) qs.set(k, params.get(k));
+    for (const k of ["stage", "provenanceState", "classification", "status", "page", "pageSize", "q"]) if (params.get(k)) qs.set(k, params.get(k));
     const currentView = localStorage.getItem("pipeline_view_mode") || "board";
     if (currentView === "board" && !qs.has("pageSize")) {
       qs.set("pageSize", "100");
@@ -730,6 +755,7 @@
           <p class="sub">${currentTotal} record(s) active${!showFixtures && body.data.some(o => o.isFixture) ? " (demo fixtures hidden)" : ""}</p>
         </div>
         <div class="toggle-group" style="display:flex; align-items:center; gap:16px;">
+          <button class="primary" onclick="window.openNewOpportunityModal()" style="font-size: 12px; padding: 6px 12px;">＋ New Opportunity</button>
           <label class="switch-label" style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; user-select:none;">
             <input type="checkbox" id="show-fixtures-checkbox" ${showFixtures ? 'checked' : ''} onchange="window.toggleFixtures(this.checked)">
             <span class="muted" style="font-weight: 500;">Show Demo Fixtures</span>
@@ -791,6 +817,7 @@
       ${sel("provenanceState", ["original", "recovered", "unresolved"])}
       ${sel("classification", ["retail_listing", "wholesale_target", "investment_rehab", "land_hold", "disqualified", "unknown"])}
       ${sel("status", ["active", "closed"])}
+      <label>Search<input type="search" data-search placeholder="Address, seller, ID…" value="${esc(params.get("q") || "")}" style="min-width: 180px;" /></label>
       <label>&nbsp;<button class="secondary" data-clear>Clear</button></label>
     </div>`;
   }
@@ -800,6 +827,20 @@
       v ? p.set(s.dataset.filter, v) : p.delete(s.dataset.filter); p.delete("page");
       navigate("/opportunities?" + p.toString());
     }));
+    const search = view.querySelector("[data-search]");
+    if (search) {
+      let t = null;
+      search.addEventListener("input", () => {
+        clearTimeout(t);
+        t = setTimeout(() => {
+          const p = new URLSearchParams(location.search);
+          const v = search.value.trim();
+          v ? p.set("q", v) : p.delete("q"); p.delete("page");
+          navigate("/opportunities?" + p.toString());
+        }, 450);
+      });
+      search.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+    }
     const clr = view.querySelector("[data-clear]"); if (clr) clr.addEventListener("click", () => navigate("/opportunities"));
   }
 
@@ -814,14 +855,16 @@
     state.activeOpp = o;
     updatePiperContext();
 
-    // Load Local overrides
-    const overrides = getOverrides(o.id);
     const stageVal = o.stage || "new_lead";
-    const arvVal = overrides.arv || 250000;
-    const rehabVal = overrides.rehab || 50000;
-    const feeVal = overrides.fee || 5000;
-    const holdingVal = overrides.holding || 8000;
-    const askingVal = overrides.askingPrice || 120000;
+    // Operator assumptions live in PIPELINE (server), never the browser.
+    let assumptions = null;
+    try { ({ assumptions } = await operatorGet("underwriting", o.id)); } catch { assumptions = null; }
+    const arvVal = assumptions?.arv ?? 0;
+    const rehabVal = assumptions?.rehab ?? 0;
+    const feeVal = assumptions?.fee ?? 0;
+    const holdingVal = assumptions?.holding ?? 0;
+    const askingVal = assumptions?.askingPrice ?? 0;
+    const basisVal = assumptions?.basis ?? "";
 
     // Calculate MAO
     const mao = Math.max(0, Math.round(arvVal * 0.75 - rehabVal - feeVal - holdingVal));
@@ -936,17 +979,24 @@
       }
     }
           let offersHtml = "";
-    if (o.underwriting) {
+    // Offers need deal math: Victor underwriting or founder-recorded assumptions.
+    const dealMath = o.underwriting || (assumptions && assumptions.mao != null
+      ? { status: "completed", mao: assumptions.mao, arv: assumptions.arv, rehab: assumptions.rehab,
+          evidence: { comps: [] }, operatorAssumption: true }
+      : null);
+    if (dealMath) {
       const hasOffer = o.offers && o.offers.length > 0;
       if (!hasOffer) {
         let recText = "";
         let recActionHtml = "";
         
-        if (o.underwriting.status === "insufficient_evidence") {
+        if (dealMath.status === "insufficient_evidence") {
           recText = "Hold. Insufficient comparable sales evidence is available for this property. Do not prepare an offer at this time.";
           recActionHtml = `<div style="color: #ff4444; font-weight: 600; font-size: 13px; margin-top: 8px;">HOLD / INSUFFICIENT EVIDENCE</div>`;
+        } else if (dealMath.operatorAssumption) {
+          recText = `Operator assumptions recorded (not Victor underwriting). MAO ${money(dealMath.mao)} is a working estimate — verify before presenting.`;
         } else {
-          const compsCount = o.underwriting.evidence?.comps?.length;
+          const compsCount = dealMath.evidence?.comps?.length;
           const compLabel = compsCount !== undefined ? `${compsCount} comps` : "Comparable count unavailable";
           recText = `High-confidence underwriting exists based on ${compLabel}.`;
           
@@ -957,14 +1007,14 @@
               <div id="prepare-offer-form" style="display: none; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px; margin-top: 12px; width: 100%;">
                 <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase;">Prepare Offer terms</h4>
                 <div style="font-size: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
-                  <div><strong>Victor Analysis (Victor MAO):</strong> ${money(o.underwriting.mao)}</div>
-                  <div><strong>Piper Recommended Opening Price:</strong> ${money(Math.round(o.underwriting.mao))}</div>
+                  <div><strong>${dealMath.operatorAssumption ? "Operator Assumptions (working MAO)" : "Victor Analysis (Victor MAO)"}:</strong> ${money(dealMath.mao)}</div>
+                  <div><strong>Piper Recommended Opening Price:</strong> ${money(Math.round(dealMath.mao))}</div>
                   <div class="muted" style="margin-top: 4px;">(Recommendation is based on Cash Purchase under standard 75% rule pricing guidelines)</div>
                 </div>
                 <div class="form-grid-compact">
                   <div class="form-group-compact">
                     <label>Proposed Purchase Price</label>
-                    <input type="number" id="prep-price" value="${Math.round(o.underwriting.mao)}" />
+                    <input type="number" id="prep-price" value="${Math.round(dealMath.mao)}" />
                   </div>
                   <div class="form-group-compact">
                     <label>Strategy Type (Piper Suggested)</label>
@@ -1028,6 +1078,14 @@
         let gateHtml = "";
         if (activeVer.versionStatus === "draft") {
           gateHtml = `
+            <div style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8;">Investment Committee</h4>
+              <p class="muted" style="font-size: 11px; margin: 0 0 8px;">The committee rules engine reviews the active offer against underwriting. Approval is blocked until the latest review is <strong>approve</strong>.</p>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                <button class="secondary" style="font-size: 12px; padding: 6px 12px;" onclick="window.runCommitteeReview('${esc(o.id)}')">Run Committee Review</button>
+                <span id="committee-review-result" style="font-size: 12px;"></span>
+              </div>
+            </div>
             <div style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
               <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8;">Operator Approval Gate</h4>
               <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -1260,12 +1318,13 @@
           ${offersHtml}
           ${outreachHtml}
 
-          <!-- Operator Scratchpad -->
-          <div class="bridge-panel scratchpad-panel">
+          <!-- Operator Underwriting Assumptions (server-persisted) -->
+          <div class="bridge-panel scratchpad-panel" id="detail-underwriting-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 8px;">
-              <h2 style="margin:0; font-size: 14px;">Operator Underwriting Scratchpad</h2>
-              <span class="scratchpad-badge">Local Only</span>
+              <h2 style="margin:0; font-size: 14px;">Operator Underwriting Assumptions</h2>
+              <span class="scratchpad-badge">Server · not Victor</span>
             </div>
+            <p class="muted" style="font-size: 11px; margin: 0 0 10px;">Working estimates you own. These are <strong>not</strong> Victor/Deal Scout underwriting — verify independently before presenting an offer.</p>
             <div class="form-grid-compact">
               <div class="form-group-compact">
                 <label>ARV Target</label>
@@ -1301,8 +1360,12 @@
 
             ${calcChartHtml(arvVal, rehabVal, feeVal, holdingVal, askingVal, mao, isWarning)}
 
+            <div class="form-group-compact" style="margin-top: 10px;">
+              <label>Basis for these numbers</label>
+              <input type="text" id="detail-basis" value="${esc(basisVal)}" placeholder="e.g. comp pull on 9/17, contractor walk-through" />
+            </div>
             <div style="margin-top: 14px; text-align: right;">
-              <button class="primary" onclick="window.saveDetailUnderwriting('${o.id}')">Save Local Assumptions</button>
+              <button class="primary" onclick="window.saveDetailUnderwriting('${o.id}')">Save Assumptions to PIPELINE</button>
             </div>
           </div>
 
@@ -1382,7 +1445,7 @@
 
   window.completeNextAction = async (id, oppId, checked) => {
     try {
-      const res = await fetch(`/api/v1/operator/next-actions/${encodeURIComponent(id)}`, {
+      const res = await pfetch(`/api/v1/operator/next-actions/${encodeURIComponent(id)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: checked ? "done" : "open" }),
@@ -1476,6 +1539,8 @@
         <dt>Database</dt><dd>${esc(data.database)}</dd>
         <dt>OCG ONE integration</dt><dd>${esc(data.integration)}</dd>
         <dt>Handoff</dt><dd>${esc(data.handoff)}</dd>
+        <dt>Piper provider</dt><dd>${esc(data.piperProvider || "AVAILABLE BUT NEEDS CREDENTIALS")}</dd>
+        <dt>Outreach providers</dt><dd>${esc(data.outreachProviders || "NOT IMPLEMENTED")}</dd>
         <dt>API contract version</dt><dd>${esc(data.apiContractVersion)}</dd>
       </dl></div>`;
   }
@@ -1503,20 +1568,29 @@
     }
   };
 
-  window.saveDetailUnderwriting = (oppId) => {
-    const arv = Number(document.getElementById("detail-arv").value || 0);
-    const rehab = Number(document.getElementById("detail-rehab").value || 0);
-    const fee = Number(document.getElementById("detail-fee").value || 0);
-    const holding = Number(document.getElementById("detail-holding").value || 0);
-    const asking = Number(document.getElementById("detail-asking").value || 0);
-
-    setOverride(oppId, "arv", arv);
-    setOverride(oppId, "rehab", rehab);
-    setOverride(oppId, "fee", fee);
-    setOverride(oppId, "holding", holding);
-    setOverride(oppId, "askingPrice", asking);
-
-    window.showCustomAlert("Saved to this browser only. PIPELINE does not persist underwriting assumptions \u2014 the API is read-only.", "Local Underwriting Saved");
+  window.saveDetailUnderwriting = async (oppId) => {
+    const numOrNull = (id) => {
+      const el = document.getElementById(id);
+      if (!el || el.value === "" || el.value == null) return null;
+      const n = Number(el.value);
+      return Number.isFinite(n) ? n : null;
+    };
+    const payload = {
+      opportunityId: oppId,
+      arv: numOrNull("detail-arv"),
+      rehab: numOrNull("detail-rehab"),
+      fee: numOrNull("detail-fee"),
+      holding: numOrNull("detail-holding"),
+      askingPrice: numOrNull("detail-asking"),
+      basis: (document.getElementById("detail-basis") || {}).value || null,
+    };
+    try {
+      await operatorPost("underwriting", payload);
+      window.showCustomAlert("Saved to PIPELINE. These are your working estimates — not Victor underwriting.", "Assumptions Saved");
+      opportunityDetail(oppId);
+    } catch (e) {
+      window.showCustomAlert("Could not save assumptions: " + esc(e.message), "Save Failed");
+    }
   };
 
   window.prepareOffer = async (oppId) => {
@@ -1546,7 +1620,7 @@
     const internalNotes = document.getElementById("prep-notes").value;
 
     try {
-      const res = await fetch("/api/v1/operator/offers", {
+      const res = await pfetch("/api/v1/operator/offers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1584,7 +1658,7 @@
     const closingDays = Number(document.getElementById("mod-closing").value || 0);
     
     try {
-      const res = await fetch(`/api/v1/operator/offers/${encodeURIComponent(offerId)}`, {
+      const res = await pfetch(`/api/v1/operator/offers/${encodeURIComponent(offerId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1607,7 +1681,7 @@
 
   window.decideOffer = async (oppId, offerId, action) => {
     try {
-      const res = await fetch(`/api/v1/operator/offers/${encodeURIComponent(offerId)}`, {
+      const res = await pfetch(`/api/v1/operator/offers/${encodeURIComponent(offerId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action })
@@ -1629,7 +1703,7 @@
         throw new Error("Message content cannot be empty.");
       }
 
-      const res = await fetch(`/api/v1/operator/outreach/draft`, {
+      const res = await pfetch(`/api/v1/operator/outreach/draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1654,7 +1728,7 @@
 
   window.authorizeOutreach = async (commId, opportunityId) => {
     try {
-      const res = await fetch(`/api/v1/operator/outreach/${encodeURIComponent(commId)}/authorize`, {
+      const res = await pfetch(`/api/v1/operator/outreach/${encodeURIComponent(commId)}/authorize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" }
       });
@@ -1669,7 +1743,7 @@
 
   window.sendOutreach = async (commId, opportunityId) => {
     try {
-      const res = await fetch(`/api/v1/operator/outreach/${encodeURIComponent(commId)}/send`, {
+      const res = await pfetch(`/api/v1/operator/outreach/${encodeURIComponent(commId)}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" }
       });
@@ -1688,34 +1762,130 @@
     }
   };
 
-  window.saveStageChange = (oppId) => {
-    // Stage is owned by the systems of record. The browser-local override this
-    // replaces silently outranked the server's stage in the list and in the
-    // Overview funnel counts, so two operators saw different totals for the
-    // same database. Recording a next action is the honest alternative.
-    const select = document.getElementById("detail-stage-select");
-    const target = select ? formatStage(select.value) : "another stage";
-    const title = `Review stage placement — proposed: ${target}`;
-    window.showCustomConfirm(
-      `PIPELINE has no stage-change endpoint, so the record cannot be moved from here.<br/><br/>Record a Next Action instead?<br/><br/><strong>"${title}"</strong>`,
-      "Stage Mutation Gated",
-      () => {
-        fetch("/api/v1/operator/next-actions", {
+  window.runCommitteeReview = async (oppId) => {
+    const box = document.getElementById("committee-review-result");
+    if (box) box.innerHTML = `<span class="muted">Running committee rules…</span>`;
+    try {
+      const res = await pfetch("/api/v1/investment-committee/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: oppId }),
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error || "committee_review_failed");
+      const r = body.review;
+      const color = r.decision === "approve" ? "var(--ok)" : r.decision === "kill" ? "#ff4444" : "var(--accent)";
+      const risks = (r.risks || []).map((x) => `<div style="font-size: 11px; opacity: 0.85;">• ${esc(x)}</div>`).join("");
+      if (box) box.innerHTML = `<strong style="color: ${color};">${esc(String(r.decision).toUpperCase())}</strong> <span class="muted">by ${esc(r.reviewedBy || "committee")}</span>${risks ? `<div style="margin-top: 4px;">${risks}</div>` : ""}`;
+      if (r.decision !== "approve") {
+        window.showCustomAlert(`Committee decision: <strong>${esc(String(r.decision).toUpperCase())}</strong><br/><br/>${esc(r.rationale || "")}<br/><br/>Revise the offer terms and re-run the review. Approval stays blocked until the review is approve.`, "Committee Review");
+      }
+    } catch (e) {
+      const msg = e.message === "active_offer_required" ? "No active offer to review — prepare an offer draft first."
+        : e.message === "underwriting_required" ? "No underwriting on file — record operator assumptions or wait for Victor analysis."
+        : e.message;
+      if (box) box.innerHTML = `<span style="color: #ff4444;">${esc(msg)}</span>`;
+    }
+  };
+
+  window.openNewOpportunityModal = () => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "custom-modal-backdrop";
+    const modal = document.createElement("div");
+    modal.className = "custom-modal";
+    modal.innerHTML = `
+      <div class="custom-modal-header">NEW OPPORTUNITY</div>
+      <div class="custom-modal-body">
+        <p class="muted" style="font-size: 12px; margin-top: 0;">Manual entry. The address is checked for duplicates before anything is written.</p>
+        <div class="form-grid-compact">
+          <div class="form-group-compact" style="grid-column: span 2;"><label>Property address *</label><input type="text" id="newopp-address" style="width:100%;" /></div>
+          <div class="form-group-compact"><label>City</label><input type="text" id="newopp-city" /></div>
+          <div class="form-group-compact"><label>State</label><input type="text" id="newopp-state" /></div>
+          <div class="form-group-compact"><label>ZIP</label><input type="text" id="newopp-zip" /></div>
+          <div class="form-group-compact"><label>APN</label><input type="text" id="newopp-apn" /></div>
+          <div class="form-group-compact"><label>Seller name</label><input type="text" id="newopp-sellername" /></div>
+          <div class="form-group-compact"><label>Seller phone</label><input type="text" id="newopp-sellerphone" /></div>
+          <div class="form-group-compact"><label>Seller email</label><input type="text" id="newopp-selleremail" /></div>
+          <div class="form-group-compact"><label>Asking price</label><input type="number" id="newopp-asking" /></div>
+          <div class="form-group-compact"><label>Classification</label><select id="newopp-classification">
+            <option value="unknown">Unknown</option><option value="retail_listing">Retail listing</option>
+            <option value="wholesale_target">Wholesale target</option><option value="investment_rehab">Investment rehab</option>
+            <option value="land_hold">Land hold</option><option value="disqualified">Disqualified</option>
+          </select></div>
+          <div class="form-group-compact" style="grid-column: span 2;"><label>Notes</label><input type="text" id="newopp-notes" style="width:100%;" /></div>
+        </div>
+        <div id="newopp-error" style="color:#ff4444; font-size:12px; margin-top:8px;"></div>
+      </div>
+      <div class="custom-modal-actions">
+        <button class="primary" id="newopp-save">Create Opportunity</button>
+        <button class="secondary" id="newopp-cancel">Cancel</button>
+      </div>
+    `;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    const close = () => document.body.removeChild(backdrop);
+    backdrop.querySelector("#newopp-cancel").addEventListener("click", close);
+    backdrop.querySelector("#newopp-save").addEventListener("click", async () => {
+      const v = (id) => (document.getElementById(id) || {}).value || "";
+      const err = backdrop.querySelector("#newopp-error");
+      const numOrNull = (id) => { const n = Number(v(id)); return v(id) === "" || !Number.isFinite(n) ? null : n; };
+      if (!v("newopp-address").trim()) { err.textContent = "Address is required."; return; }
+      err.textContent = "";
+      try {
+        const res = await pfetch("/api/v1/opportunities", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ opportunityId: oppId, title }),
-        })
-          .then((r) => r.json())
-          .then((b) => {
-            if (b.ok) {
-              window.showCustomAlert("Saved as a next action in PIPELINE. The stage itself is unchanged.", "Next Action Saved");
-            } else {
-              window.showCustomAlert(`Could not save the next action (${b.error || "unknown error"}).`, "Error Saving Next Action");
-            }
-          })
-          .catch(() => window.showCustomAlert("Could not reach PIPELINE to save the next action.", "Network Error"));
+          body: JSON.stringify({
+            address: v("newopp-address"), city: v("newopp-city"), state: v("newopp-state"), zip: v("newopp-zip"),
+            apn: v("newopp-apn"), sellerName: v("newopp-sellername"), sellerPhone: v("newopp-sellerphone"),
+            sellerEmail: v("newopp-selleremail"), askingPrice: numOrNull("newopp-asking"),
+            classification: v("newopp-classification"), notes: v("newopp-notes"),
+          }),
+        });
+        const body = await res.json();
+        if (body.duplicate && body.opportunityId) {
+          err.innerHTML = `A matching opportunity already exists (${esc(body.matchType || "duplicate")}). <a href="/opportunities/${esc(body.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(body.opportunityId)}')">Open it</a>`;
+          return;
+        }
+        if (!body.ok) {
+          throw new Error(body.error || "create_failed");
+        }
+        close();
+        navigate("/opportunities/" + encodeURIComponent(body.opportunityId));
+      } catch (e) {
+        err.textContent = "Could not create: " + e.message;
       }
-    );
+    });
+    const addr = backdrop.querySelector("#newopp-address");
+    if (addr) addr.focus();
+  };
+
+  window.saveStageChange = async (oppId) => {
+    const select = document.getElementById("detail-stage-select");
+    const target = select ? select.value : null;
+    if (!target) return;
+    const current = state.activeOpp ? state.activeOpp.stage : null;
+    if (target === current) return;
+    const closed = ["closed", "nurture", "disqualified", "lost", "archived"];
+    let reason = null;
+    if (closed.includes(current) && !closed.includes(target)) {
+      reason = window.prompt("Reopening a closed record — reason (required):");
+      if (!reason || !reason.trim()) { if (select) select.value = current; return; }
+    }
+    try {
+      const res = await pfetch(`/api/v1/opportunities/${encodeURIComponent(oppId)}/stage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: target, reason }),
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error || "stage_move_failed");
+      window.showCustomAlert(`Stage moved: ${esc(formatStage(current))} \u2192 ${esc(formatStage(target))}. Recorded in PIPELINE with an audit trail.`, "Stage Updated");
+      opportunityDetail(oppId);
+    } catch (e) {
+      window.showCustomAlert("Could not move stage: " + esc(e.message), "Stage Move Failed");
+      if (select && current) select.value = current;
+    }
   };
 
   window.toggleDetailTask = async (oppId, key, label, checked) => {
@@ -1853,7 +2023,7 @@
 
         let reply;
         try {
-          const res = await fetch("/api/v1/piper/ask", {
+          const res = await pfetch("/api/v1/piper/ask", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1868,6 +2038,7 @@
             state.piperRunId = body.data.runId;
             setPiperState(body.data.state, body.data.stateLabel);
             reply = renderPiperAnswer(body.data);
+            executeWorkspaceDirective(body.data.directive);
           } else {
             setPiperState("failed");
             reply = "I couldn't read PIPELINE state just now. Nothing was written.";
@@ -1947,7 +2118,7 @@
   window.piperCancel = async () => {
     if (!state.piperRunId) return;
     try {
-      const res = await fetch("/api/v1/piper/cancel", {
+      const res = await pfetch("/api/v1/piper/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ runId: state.piperRunId }),
@@ -1965,7 +2136,7 @@
   /** Approve or decline a proposed action. The only path to a Piper write. */
   window.piperDecide = async (toolCallId, approve) => {
     try {
-      const res = await fetch("/api/v1/piper/approve", {
+      const res = await pfetch("/api/v1/piper/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ toolCallId, approve }),
@@ -2023,7 +2194,7 @@
 
   window.piperConfirmAction = async (opportunityId, title) => {
     try {
-      const res = await fetch("/api/v1/operator/next-actions", {
+      const res = await pfetch("/api/v1/operator/next-actions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ opportunityId, title }),
@@ -2044,13 +2215,13 @@
 
   window.submitModifyOfferPrice = async (oppId, price) => {
     try {
-      const resOffers = await fetch(`/api/v1/operator/offers?opportunityId=${encodeURIComponent(oppId)}`);
+      const resOffers = await pfetch(`/api/v1/operator/offers?opportunityId=${encodeURIComponent(oppId)}`);
       const bodyOffers = await resOffers.json();
       if (!bodyOffers.ok || !bodyOffers.data.offers || !bodyOffers.data.offers.length) {
         throw new Error("No active offer found to modify.");
       }
       const offerId = bodyOffers.data.offers[0].id;
-      const res = await fetch(`/api/v1/operator/offers/${encodeURIComponent(offerId)}`, {
+      const res = await pfetch(`/api/v1/operator/offers/${encodeURIComponent(offerId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "modify", proposedPrice: price })
@@ -2071,7 +2242,7 @@
   };
   async function refreshPiperStatus() {
     try {
-      const res = await fetch("/api/v1/piper/status");
+      const res = await pfetch("/api/v1/piper/status");
       const body = await res.json();
       if (!body.ok) return;
       const p = body.data.provider;
@@ -2091,7 +2262,7 @@
     try {
       refreshPiperStatus();
       const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
-      const res = await fetch(`/api/v1/piper/brief?excludeFixtures=${!showFixtures}`);
+      const res = await pfetch(`/api/v1/piper/brief?excludeFixtures=${!showFixtures}`);
       const body = await res.json();
       if (!body.ok) return;
       const b = body.data;
@@ -2138,7 +2309,18 @@
     if (action === "analyze") query = "Explain the underwriting panel";
     else if (action === "verify") query = "Show provenance and classification";
     else if (action === "unresolved") query = "Which records are unresolved?";
+    else if (action === "attention") query = "What needs my attention?";
+    else if (action === "why") query = state.activeOppId ? "Show me why this deal needs attention" : "Show me why";
 
+    if (action === "underwriting") {
+      const id = state.activeOppId || (state.opportunities[0] && state.opportunities[0].id);
+      if (id) { navigate("/opportunities/" + encodeURIComponent(id)); }
+      setTimeout(() => {
+        const target = document.getElementById("detail-underwriting-section");
+        if (target) { target.classList.add("highlight-target"); target.scrollIntoView({ behavior: "smooth", block: "center" }); }
+      }, 300);
+      return;
+    }
     if (piperChatInput) {
       piperChatInput.value = query;
       piperChatForm.dispatchEvent(new Event("submit"));
@@ -2155,12 +2337,7 @@
       piperContextText.textContent = text;
       
       if (o && activeOppCard) {
-        const overrides = getOverrides(o.id);
-        const arvVal = overrides.arv || 250000;
-        const rehabVal = overrides.rehab || 50000;
-        const feeVal = overrides.fee || 5000;
-        const holdingVal = overrides.holding || 8000;
-        const mao = Math.max(0, Math.round(arvVal * 0.75 - rehabVal - feeVal - holdingVal));
+        const mao = o.underwriting && o.underwriting.mao != null ? o.underwriting.mao : null;
         
         activeOppCard.innerHTML = `
           <div class="active-deal-header">
@@ -2177,7 +2354,7 @@
             </div>
             <div class="metric-mini">
               <span class="lbl">MAO (75%)</span>
-              <span class="val">${money(mao)}</span>
+              <span class="val">${mao != null ? money(mao) : "—"}</span>
             </div>
           </div>
         `;
@@ -2243,8 +2420,42 @@
   (async () => {
     await refreshMode();
     initPiperWidget();
+    initOperatorAccess();
     render();
   })();
+
+  // Operator access entry: founder-operator secret, sessionStorage only.
+  function initOperatorAccess() {
+    const btn = document.getElementById("operator-access-btn");
+    if (!btn) return;
+    const paint = () => {
+      const has = window.hasOperatorSecret();
+      btn.textContent = has ? "Operator: unlocked" : "Operator: locked";
+      btn.setAttribute("aria-pressed", has ? "true" : "false");
+      btn.classList.toggle("unlocked", has);
+    };
+    btn.addEventListener("click", () => {
+      if (window.hasOperatorSecret()) {
+        if (confirm("Clear the operator secret for this tab?")) {
+          window.clearOperatorSecret();
+          paint();
+        }
+        return;
+      }
+      const secret = prompt(
+        "Enter the founder-operator secret.\nIt is kept in this tab only (sessionStorage) and never written to disk."
+      );
+      if (secret && secret.trim()) {
+        window.setOperatorSecret(secret.trim());
+        paint();
+      }
+    });
+    const origSet = window.setOperatorSecret;
+    window.setOperatorSecret = (s) => { origSet(s); paint(); };
+    const origClear = window.clearOperatorSecret;
+    window.clearOperatorSecret = () => { origClear(); paint(); };
+    paint();
+  }
   function buildOutreachHtml(o) {
     const contact = o.contact || { status: "MISSING", value: null, channel: null };
     const hasContact = contact.status !== "MISSING" && contact.value;

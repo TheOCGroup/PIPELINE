@@ -37,7 +37,7 @@ test("the fixture vocabulary is exactly the CHECK constraint", () => {
 test("a fresh seed produces classification history", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const app = createApp(testConfig(tempDb.dbPath, { isTest: false }));
+  const app = createApp(testConfig(tempDb.dbPath, { isTest: false, dataSource: "fixtures" }));
   t.after(() => app.close());
 
   const db = openPipelineDatabase(tempDb.dbPath);
@@ -53,7 +53,7 @@ test("a fresh seed produces classification history", async (t) => {
 test("every seeded classification satisfies the CHECK constraint", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const app = createApp(testConfig(tempDb.dbPath, { isTest: false }));
+  const app = createApp(testConfig(tempDb.dbPath, { isTest: false, dataSource: "fixtures" }));
   t.after(() => app.close());
 
   const db = openPipelineDatabase(tempDb.dbPath);
@@ -84,7 +84,7 @@ test("every seeded classification satisfies the CHECK constraint", async (t) => 
 test("seeded history agrees with the seeded current classification", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const app = createApp(testConfig(tempDb.dbPath, { isTest: false }));
+  const app = createApp(testConfig(tempDb.dbPath, { isTest: false, dataSource: "fixtures" }));
   t.after(() => app.close());
 
   const db = openPipelineDatabase(tempDb.dbPath);
@@ -128,7 +128,7 @@ test("no lineage value survives anywhere in classification-history data", async 
   // Seeded database.
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
-  const app = createApp(testConfig(tempDb.dbPath, { isTest: false }));
+  const app = createApp(testConfig(tempDb.dbPath, { isTest: false, dataSource: "fixtures" }));
   t.after(() => app.close());
   const db = openPipelineDatabase(tempDb.dbPath);
   t.after(() => db.close());
@@ -178,12 +178,12 @@ test("fixture history terminates at the fixture's current classification", () =>
   }
 });
 
-test("fixture and SQLite repositories expose the same classification shape", async (t) => {
+test("classification API shape is stable with fixtures, and empty DB returns empty lists", async (t) => {
   const tempDb = makeTempDb();
   t.after(() => tempDb.cleanup());
 
-  const sqliteApp = await startApp(createApp, testConfig(tempDb.dbPath, { dataSource: "empty", isTest: false }));
-  t.after(() => sqliteApp.app.server.close());
+  const emptyApp = await startApp(createApp, testConfig(tempDb.dbPath, { dataSource: "empty", isTest: false }));
+  t.after(() => emptyApp.app.server.close());
 
   const fixtureDb = makeTempDb();
   t.after(() => fixtureDb.cleanup());
@@ -192,25 +192,24 @@ test("fixture and SQLite repositories expose the same classification shape", asy
 
   const read = async (baseUrl) => (await (await fetch(`${baseUrl}/api/v1/classifications`)).json()).data;
 
-  const fromSqlite = await read(sqliteApp.baseUrl);
+  // An empty data source must honestly return no classifications — the old
+  // code seeded fixtures unconditionally, which masked this.
+  const fromEmpty = await read(emptyApp.baseUrl);
+  assert.deepEqual(fromEmpty.current, [], "empty data source: no current classifications");
+  assert.deepEqual(fromEmpty.history, [], "empty data source: no classification history");
+
   const fromFixtures = await read(fixtureApp.baseUrl);
+  assert.ok(fromFixtures.current.length > 0, "fixtures data source: current classifications exist");
+  assert.ok(fromFixtures.history.length > 0, "fixtures data source: history exists");
 
-  const currentKeys = (d) => Object.keys(d.current[0]).sort();
-  assert.deepEqual(currentKeys(fromFixtures), currentKeys(fromSqlite), "current rows have identical fields");
-
-  const historyKeys = (d) => Object.keys(d.history[0]).sort();
-  assert.deepEqual(historyKeys(fromFixtures), historyKeys(fromSqlite), "history rows have identical fields");
-
-  // And the shared field carries the same kind of value in both.
-  for (const source of [fromSqlite, fromFixtures]) {
-    for (const row of source.current) {
-      assert.ok(
-        ALLOWED.has(row.recordClassification),
-        `recordClassification "${row.recordClassification}" is a deal classification`
-      );
-    }
-    for (const row of source.history) {
-      assert.ok(ALLOWED.has(row.newClassification), `history newClassification "${row.newClassification}" is a deal classification`);
-    }
+  // Shape: every row carries a deal classification from the CHECK vocabulary.
+  for (const row of fromFixtures.current) {
+    assert.ok(ALLOWED.has(row.recordClassification), `recordClassification "${row.recordClassification}" is a deal classification`);
+  }
+  for (const row of fromFixtures.history) {
+    assert.ok(ALLOWED.has(row.newClassification), `history newClassification "${row.newClassification}" is a deal classification`);
+  }
+  for (const row of fromFixtures.current) {
+    assert.ok(row.opportunityId, "current rows carry an opportunity id");
   }
 });
