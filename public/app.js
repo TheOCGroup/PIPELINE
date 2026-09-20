@@ -2103,7 +2103,7 @@
       canvas.classList.remove("hidden");
       if (canvasTitle) {
         if (runState === "retrieving") canvasTitle.textContent = "Querying SQLite Context";
-        else if (runState === "generating") canvasTitle.textContent = "Vertex AI Stream Active";
+        else if (runState === "generating") canvasTitle.textContent = "Model Stream Active";
         else if (runState === "running_tool") canvasTitle.textContent = "Executing Database Mutator";
         else canvasTitle.textContent = "Piper Working";
       }
@@ -2246,13 +2246,25 @@
       const body = await res.json();
       if (!body.ok) return;
       const p = body.data.provider;
-      const el = document.getElementById("piper-provider");
-      if (el) el.textContent = p.connected ? `model ${p.model}` : "model none";
+      // Live badge, driven by /status: never a hard-coded model claim.
+      const pill = document.getElementById("piper-provider");
+      const pillText = document.getElementById("piper-provider-text");
+      if (pill && pillText) {
+        pill.classList.toggle("connected", !!p.connected);
+        pillText.textContent = p.connected && p.model
+          ? `Piper · ${p.model}`
+          : "Piper limited — no model";
+        pill.title = p.connected
+          ? `Piper intelligence: ${p.provider || "model"} (${p.model})`
+          : "No language model is connected. Piper answers from stored PIPELINE state only.";
+      }
       setPiperState(p.connected ? "idle" : "not_connected",
         p.connected ? "" : "No model provider is configured. Piper answers from stored PIPELINE state only.");
       const disc = document.getElementById("piper-disclosure");
       if (disc && !p.connected) {
         disc.textContent = "No language model is connected. Piper answers deterministically from stored PIPELINE state; actions are written only after you approve them.";
+      } else if (disc && p.connected) {
+        disc.textContent = "";
       }
     } catch { /* status is best-effort */ }
   }

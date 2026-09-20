@@ -103,8 +103,11 @@ export function loadConfig(env = process.env) {
   if (!Number.isInteger(piperTimeoutMs) || piperTimeoutMs < 1000 || piperTimeoutMs > 600000) {
     throw new Error("invalid PIPELINE_PIPER_TIMEOUT_MS: must be an integer between 1000 and 600000");
   }
-  if (piperProvider !== "none" && !piperModel) {
-    throw new Error("PIPELINE_PIPER_MODEL is required when PIPELINE_PIPER_PROVIDER is set");
+  // PIPELINE_PIPER_MODEL is optional for vertex-ai: it defaults to
+  // DEFAULT_PIPER_MODEL (see providers/vertexAiProvider.js) so the model can
+  // be changed without a code change. Other hosted providers still require it.
+  if ((piperProvider === "openai-compatible" || piperProvider === "anthropic") && !piperModel) {
+    throw new Error("PIPELINE_PIPER_MODEL is required for the openai-compatible and anthropic providers");
   }
   if (piperProvider === "openai-compatible" && !piperBaseUrl) {
     throw new Error("PIPELINE_PIPER_BASE_URL is required for the openai-compatible provider");

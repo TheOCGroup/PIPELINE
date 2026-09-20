@@ -28,17 +28,60 @@ import { TOOL_SCHEMAS, executeTool, isWriteTool, isKnownTool, describeToolCall }
 
 const MAX_TOOL_ITERATIONS = 4;
 const MAX_HISTORY_TURNS = 12;
+const MAX_RECENT_ENTITIES = 10;
 const now = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/**
+ * Bounded, explicit session context. Holds identifiers only — never CRM facts.
+ * Facts always come from tools at answer time; this only resolves who "he",
+ * "Robert", or "this deal" refer to within a thread.
+ */
+function blankThreadContext() {
+  return {
+    active_seller_id: null,
+    active_seller_name: null,
+    active_opportunity_id: null,
+    active_property_id: null,
+    recent_entities: [],
+    last_intent: null,
+    pending_confirmation: null,
+  };
+}
+
+function parseThreadContext(row) {
+  const ctx = blankThreadContext();
+  if (!row) return ctx;
+  try {
+    const parsed = JSON.parse(row.context_json || "null");
+    if (parsed && typeof parsed === "object") {
+      for (const k of Object.keys(ctx)) {
+        if (parsed[k] !== undefined) ctx[k] = parsed[k];
+      }
+      if (!Array.isArray(ctx.recent_entities)) ctx.recent_entities = [];
+      ctx.recent_entities = ctx.recent_entities.slice(0, MAX_RECENT_ENTITIES);
+    }
+  } catch { /* corrupt context degrades to blank, never crashes the turn */ }
+  return ctx;
+}
 
 const SYSTEM_PROMPT = `You are Piper, the head agent for OCG PIPELINE, a seller-opportunity pipeline.
 
 Rules you must follow:
 - Every factual claim must come from a tool result. Never state an address, price, stage, classification or count that a tool did not return.
 - If the tools do not contain the answer, say so plainly. Do not estimate or infer.
+- A fact that is not in a tool result is NOT RECORDED — say "not recorded" rather than filling it in.
+- Never infer seller motivation, commitments, objections, dates, offer responses, or contact attempts. If the records do not support it, it did not happen as far as you are concerned.
+- When find_seller reports ambiguous=true, ask the operator which seller they mean. Never guess between candidates.
+- The conversation context tells you which seller and opportunity "he", "she", "him", "Robert", "this", or "it" refer to. It holds identifiers only — every fact still comes from a tool call.
+- You do not write SQL. The listed tools are the only way to read or change PIPELINE data. Never describe a database operation outside them.
 - PIPELINE snapshots underwriting from Victor (Deal Scout); it never computes it. Deal Finder intake is Hunter's. You are not Hunter or Victor.
 - Provenance "unresolved" means the source could not be established. It is NOT a finding that a record is synthetic.
 - To change anything, call a write tool. It will be shown to the operator for approval; never claim an action is done before it is approved and executed.
 - Be concise and specific. Lead with the answer.`;
+
+// Exported for contract tests: grounding rules are part of Piper's safety
+// contract, not an implementation detail.
+export { SYSTEM_PROMPT };
 
 export class PiperRuntime {
   /**
@@ -67,11 +110,94 @@ export class PiperRuntime {
   ensureThread(threadId, { opportunityId = null } = {}) {
     if (threadId) {
       const existing = this.db.prepare("SELECT * FROM piper_threads WHERE id = ?").get(threadId);
-      if (existing) return existing;
+      if (existing) return { ...existing, context: parseThreadContext(existing) };
     }
     const id = threadId || randomUUID();
     this.db.prepare("INSERT INTO piper_threads (id, opportunity_id) VALUES (?, ?)").run(id, opportunityId);
-    return this.db.prepare("SELECT * FROM piper_threads WHERE id = ?").get(id);
+    const created = this.db.prepare("SELECT * FROM piper_threads WHERE id = ?").get(id);
+    return { ...created, context: parseThreadContext(created) };
+  }
+
+  /** Persist bounded session context for a thread. Identifiers only. */
+  #saveThreadContext(threadId, ctx) {
+    const bounded = { ...blankThreadContext(), ...ctx };
+    bounded.recent_entities = (bounded.recent_entities || []).slice(0, MAX_RECENT_ENTITIES);
+    this.db.prepare("UPDATE piper_threads SET context_json = ?, updated_at = ? WHERE id = ?")
+      .run(JSON.stringify(bounded), now(), threadId);
+    return bounded;
+  }
+
+  #rememberEntity(ctx, kind, id, label) {
+    if (!id) return;
+    ctx.recent_entities = [
+      { kind, id, label: label || id },
+      ...(ctx.recent_entities || []).filter((e) => !(e.kind === kind && e.id === id)),
+    ].slice(0, MAX_RECENT_ENTITIES);
+  }
+
+  /**
+   * Deterministic context update from a tool result — the ONLY way session
+   * context changes. Ambiguous or empty results never overwrite the context.
+   */
+  #updateContextFromTool(threadId, ctx, name, args, result) {
+    if (!result?.ok) return;
+    const data = result.data || {};
+    let changed = false;
+    const setSeller = (id, label) => {
+      if (id && ctx.active_seller_id !== id) {
+        ctx.active_seller_id = id;
+        ctx.active_seller_name = label || ctx.active_seller_name;
+        changed = true;
+      }
+      this.#rememberEntity(ctx, "seller", id, label);
+    };
+    const setOpportunity = (id) => {
+      if (id && ctx.active_opportunity_id !== id) {
+        ctx.active_opportunity_id = id;
+        changed = true;
+      }
+      if (id) this.#rememberEntity(ctx, "opportunity", id, null);
+    };
+
+    switch (name) {
+      case "find_seller": {
+        // Exactly one unambiguous candidate: the founder means this seller.
+        // Ambiguous or empty: leave the context untouched — never guess.
+        if (!data.ambiguous && data.candidates?.length === 1) {
+          const c = data.candidates[0];
+          setSeller(c.contactId, c.displayName);
+          if (c.opportunities?.length === 1) setOpportunity(c.opportunities[0].opportunityId);
+        }
+        break;
+      }
+      case "get_seller_summary":
+        if (data.seller?.contactId) setSeller(data.seller.contactId, data.seller.displayName);
+        break;
+      case "get_opportunity":
+        if (data.id) {
+          setOpportunity(data.id);
+          const propId = data.propertyRef || data.property?.externalPropertyId || null;
+          if (propId) { ctx.active_property_id = propId; changed = true; }
+        }
+        break;
+      case "find_opportunities":
+        if (data.matched === 1 && data.opportunities?.length === 1) setOpportunity(data.opportunities[0].id);
+        break;
+      case "get_outreach_state":
+      case "get_seller_timeline":
+      case "get_last_contact":
+      case "get_offer_history":
+        if (args.opportunityId) setOpportunity(args.opportunityId);
+        break;
+      case "prepare_call":
+        if (data.contact?.name) setSeller(data.contactId || null, data.contact.name);
+        if (data.opportunity?.opportunityId) setOpportunity(data.opportunity.opportunityId);
+        break;
+      default:
+        break;
+    }
+    if (name) { ctx.last_intent = name; changed = true; }
+    if (changed) this.#saveThreadContext(threadId, ctx);
   }
 
   #appendMessage(threadId, runId, role, content) {
@@ -140,6 +266,17 @@ export class PiperRuntime {
     const runId = randomUUID();
     const describe = this.provider.describe();
 
+    // Session context: identifiers only, persisted per thread. The on-screen
+    // record seeds the conversation subject when the thread has none; after
+    // that, tool results own it — the screen param never yanks the subject
+    // mid-conversation.
+    const threadCtx = thread.context;
+    if (activeOpportunityId && !threadCtx.active_opportunity_id) {
+      threadCtx.active_opportunity_id = activeOpportunityId;
+      this.#rememberEntity(threadCtx, "opportunity", activeOpportunityId, null);
+      this.#saveThreadContext(thread.id, threadCtx);
+    }
+
     this.db.prepare(`
       INSERT INTO piper_runs (id, thread_id, state, provider, model, question, active_opportunity_id)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -174,7 +311,7 @@ export class PiperRuntime {
       let state = this.#setState(runId, RUN_STATES.RETRIEVING, RUN_STATES.GENERATING);
 
       const messages = [
-        { role: "system", content: SYSTEM_PROMPT + this.#contextPreamble(snapshot, activeOpportunityId) },
+        { role: "system", content: SYSTEM_PROMPT + this.#contextPreamble(snapshot, activeOpportunityId, threadCtx) },
         ...this.getTranscript(thread.id).slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
         { role: "user", content: String(question || "") },
       ];
@@ -203,6 +340,8 @@ export class PiperRuntime {
           if (!isKnownTool(call.name)) continue;
           const result = await executeTool({ name: call.name, args: call.arguments, snapshot, operator: this.operator, actor });
           readResults.push({ name: call.name, result });
+          // Deterministic session-context update from the tool result.
+          this.#updateContextFromTool(thread.id, threadCtx, call.name, call.arguments, result);
           messages.push({ role: "assistant", content: `[tool ${call.name} requested]` });
           messages.push({ role: "user", content: `Tool ${call.name} returned:\n${JSON.stringify(result).slice(0, 6000)}` });
           this.#appendMessage(thread.id, runId, "tool", `${call.name} -> ${result.ok ? "ok" : result.error}`);
@@ -216,6 +355,8 @@ export class PiperRuntime {
               VALUES (?, ?, ?, ?, ?, 1, 'proposed')
             `).run(randomUUID(), runId, thread.id, call.name, JSON.stringify(call.arguments || {}));
           }
+          threadCtx.pending_confirmation = writes[0].name;
+          this.#saveThreadContext(thread.id, threadCtx);
           state = this.#setState(runId, state, RUN_STATES.AWAITING_APPROVAL);
           const text = answer || "I can do that — approve the action below and I'll write it.";
           this.#appendMessage(thread.id, runId, "assistant", text);
@@ -267,6 +408,7 @@ export class PiperRuntime {
       if (run.state === RUN_STATES.AWAITING_APPROVAL) {
         this.#setState(call.run_id, run.state, RUN_STATES.COMPLETE);
       }
+      this.#clearPendingConfirmation(call.thread_id);
       this.#appendMessage(call.thread_id, call.run_id, "assistant", "Declined. Nothing was written.");
       return { ok: true, status: "rejected", wrote: false };
     }
@@ -297,6 +439,7 @@ export class PiperRuntime {
       this.db.prepare("UPDATE piper_tool_calls SET status='executed', result_json=?, settled_at=? WHERE id=?")
         .run(JSON.stringify(result.data ?? {}), now(), toolCallId);
       this.#setState(call.run_id, RUN_STATES.RUNNING_TOOL, RUN_STATES.COMPLETE);
+      this.#clearPendingConfirmation(call.thread_id);
       this.#appendMessage(call.thread_id, call.run_id, "assistant", `Done — ${describeToolCall(call.tool_name, JSON.parse(call.arguments_json))}. Written to PIPELINE.`);
       return { ok: true, status: "executed", wrote: true, data: result.data };
     } catch (err) {
@@ -304,24 +447,57 @@ export class PiperRuntime {
       this.db.prepare("UPDATE piper_tool_calls SET status='failed', error_code=?, settled_at=? WHERE id=?")
         .run(code, now(), toolCallId);
       this.#setState(call.run_id, RUN_STATES.RUNNING_TOOL, RUN_STATES.FAILED, { errorCode: code });
+      this.#clearPendingConfirmation(call.thread_id);
       this.#appendMessage(call.thread_id, call.run_id, "assistant", `That action failed (${code}). Nothing was written.`);
       return { ok: false, error: code, wrote: false };
     }
   }
 
-  #contextPreamble(snapshot, activeOpportunityId) {
+  /** A decided approval is no longer pending — drop it from session context. */
+  #clearPendingConfirmation(threadId) {
+    const row = this.db.prepare("SELECT context_json FROM piper_threads WHERE id = ?").get(threadId);
+    if (!row?.context_json) return;
+    try {
+      const ctx = JSON.parse(row.context_json);
+      if (ctx && ctx.pending_confirmation) {
+        ctx.pending_confirmation = null;
+        this.#saveThreadContext(threadId, ctx);
+      }
+    } catch { /* ignore */ }
+  }
+
+  #contextPreamble(snapshot, activeOpportunityId, threadCtx = null) {
     const open = snapshot.opportunities.filter((o) => !o.closed);
     const active = activeOpportunityId
       ? snapshot.opportunities.find((o) => o.id === activeOpportunityId)
       : null;
 
-    return `\n\nCurrent PIPELINE state: ${snapshot.totals.opportunities} opportunities, ${open.length} active, ` +
+    let preamble = `\n\nCurrent PIPELINE state: ${snapshot.totals.opportunities} opportunities, ${open.length} active, ` +
       `${snapshot.totals.stalled} stalled, ${snapshot.totals.unresolvedProvenance} with unresolved provenance, ` +
       `${snapshot.totals.withoutUnderwriting} without Victor underwriting.` +
       (active
         ? `\nThe operator currently has ${active.id}${active.address ? ` (${active.address})` : ""} open on screen. ` +
           `Treat "this" or "it" as that opportunity unless they name another.`
         : "\nNo opportunity is open on screen.");
+
+    // Session context: identifiers only. Pronouns and bare names resolve here;
+    // every fact still comes from a tool call.
+    if (threadCtx && (threadCtx.active_seller_id || threadCtx.active_opportunity_id)) {
+      const sellerBit = threadCtx.active_seller_id
+        ? `the active seller is ${threadCtx.active_seller_name || threadCtx.active_seller_id} (contact ${threadCtx.active_seller_id})`
+        : "no seller is active";
+      const oppBit = threadCtx.active_opportunity_id
+        ? `the active opportunity is ${threadCtx.active_opportunity_id}`
+        : "no opportunity is active";
+      preamble += `\nConversation context (this thread): ${sellerBit}; ${oppBit}. ` +
+        `"He", "him", "she", "her", "the seller", or the seller's first name refer to the active seller; ` +
+        `"this deal" or "it" refer to the active opportunity — unless the operator names someone or something else, ` +
+        `in which case resolve the new entity with find_seller and update the context.`;
+      if (threadCtx.pending_confirmation) {
+        preamble += ` A ${threadCtx.pending_confirmation} action is still awaiting the operator's approval; do not re-propose it unprompted.`;
+      }
+    }
+    return preamble;
   }
 
   #result(runId, threadId, payload) {

@@ -23,6 +23,20 @@
 import { OpenAiCompatibleProvider } from "./openAiCompatibleProvider.js";
 import { GoogleAdcTokenSource } from "./googleAuth.js";
 
+/**
+ * Default Gemini model for Piper's conversational CRM work.
+ *
+ * A fast current Gemini tier (September 2026). Overridable at any time with
+ * PIPELINE_PIPER_MODEL — no code change, no redeploy of logic, just the env
+ * var. The model identifier is never hard-coded anywhere else.
+ *
+ * Live-deploy note: confirm the model id is served in the target GCP region on
+ * the first real Vertex call (`POST /api/v1/piper/probe`); if Vertex answers
+ * 404 for the model, set PIPELINE_PIPER_MODEL to the region's current fast
+ * Gemini id.
+ */
+export const DEFAULT_PIPER_MODEL = "google/gemini-3.6-flash";
+
 export function vertexBaseUrl({ project, location }) {
   if (!project) throw new Error("PIPELINE_PIPER_GCP_PROJECT is required for the vertex-ai provider");
   const loc = location || "global";
@@ -32,12 +46,14 @@ export function vertexBaseUrl({ project, location }) {
 
 export class VertexAiProvider {
   constructor({ project, location = "global", model, timeoutMs, env = process.env, tokenSource = null }) {
-    if (!model) throw new Error("PIPELINE_PIPER_MODEL is required for the vertex-ai provider");
+    // The model is optional: it defaults to DEFAULT_PIPER_MODEL so the model
+    // can be changed via PIPELINE_PIPER_MODEL without touching code.
+    const resolvedModel = model || DEFAULT_PIPER_MODEL;
 
     this.kind = "vertex-ai";
     this.project = project;
     this.location = location || "global";
-    this.model = model;
+    this.model = resolvedModel;
     this.connected = true;
 
     this.tokenSource = tokenSource || new GoogleAdcTokenSource({ env });
@@ -75,7 +91,7 @@ export class VertexAiProvider {
       return {
         ok: false,
         reason: "adc_not_found",
-        detail: "No Application Default Credentials found. Run: gcloud auth application-default login",
+        detail: "No Google credential found. Set GOOGLE_APPLICATION_CREDENTIALS_JSON (service-account JSON), set GOOGLE_APPLICATION_CREDENTIALS, or run: gcloud auth application-default login",
       };
     }
     return this.transport.probe({ signal });
@@ -89,7 +105,7 @@ export class VertexAiProvider {
       // token so the next attempt re-mints rather than replaying a dead one.
       if (err.code === "provider_unauthorized") {
         this.tokenSource.invalidate();
-        err.message = "Vertex AI rejected the credential. Re-run: gcloud auth application-default login";
+        err.message = "Vertex AI rejected the credential. Check GOOGLE_APPLICATION_CREDENTIALS_JSON / ADC, then retry.";
       }
       throw err;
     }
