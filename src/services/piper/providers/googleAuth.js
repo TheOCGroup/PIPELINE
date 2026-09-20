@@ -14,6 +14,12 @@
  *   authorized_user  what `gcloud auth application-default login` produces
  *   service_account  a key file pointed at by GOOGLE_APPLICATION_CREDENTIALS
  *
+ * On hosts where a key file cannot be baked into the image (e.g. Render), the
+ * same service-account JSON may be supplied inline via
+ * GOOGLE_APPLICATION_CREDENTIALS_JSON. The inline value takes precedence over
+ * every file path. It is parsed in memory only: never written to disk, never
+ * logged, and never included in an error message or describe() output.
+ *
  * Workload identity federation (external_account) and the GCE metadata server
  * are not handled; both fail with a message naming what to do instead, rather
  * than silently producing an unauthenticated request.
@@ -69,24 +75,40 @@ export class GoogleAdcTokenSource {
     this.inFlight = null;    // dedupes concurrent refreshes
   }
 
-  /** @returns {{path:string|null, type:string|null, available:boolean}} */
+  /** @returns {{path:string|null, source:string, type:string|null, available:boolean}} */
   describe() {
+    // Inline JSON wins; report only that a credential is present, never its
+    // contents.
+    const inline = readInlineCredentials(this.env);
+    if (inline.ok) {
+      return { path: null, source: "inline_json", type: inline.parsed.type || "unknown", available: true };
+    }
     const path = this.explicitPath || findAdcPath(this.env);
-    if (!path) return { path: null, type: null, available: false };
+    if (!path) return { path: null, source: "none", type: null, available: false };
     try {
       const parsed = JSON.parse(readFileSync(path, "utf8"));
-      return { path, type: parsed.type || "unknown", available: true };
+      return { path, source: this.explicitPath ? "explicit_path" : "adc_file", type: parsed.type || "unknown", available: true };
     } catch {
-      return { path, type: null, available: false };
+      return { path, source: "adc_file", type: null, available: false };
     }
   }
 
   #loadCredentials() {
+    const inline = readInlineCredentials(this.env);
+    if (inline.ok) return inline.parsed;
+    if (inline.present) {
+      // Present but unparseable: fail loudly rather than falling through to a
+      // different credential the operator did not intend.
+      throw new AuthError(
+        "adc_inline_unreadable",
+        "GOOGLE_APPLICATION_CREDENTIALS_JSON is set but is not valid service-account JSON."
+      );
+    }
     const path = this.explicitPath || findAdcPath(this.env);
     if (!path) {
       throw new AuthError(
         "adc_not_found",
-        "No Application Default Credentials found. Run: gcloud auth application-default login"
+        "No Application Default Credentials found. Set GOOGLE_APPLICATION_CREDENTIALS_JSON, set GOOGLE_APPLICATION_CREDENTIALS, or run: gcloud auth application-default login"
       );
     }
     let parsed;
@@ -197,3 +219,24 @@ export class GoogleAdcTokenSource {
 }
 
 export { CLOUD_PLATFORM_SCOPE };
+
+/**
+ * Reads an inline service-account JSON credential from the environment.
+ *
+ * @returns {{present:boolean, ok:boolean, parsed:object|null}}
+ *   present=false when the variable is unset/blank; ok=false when it is set
+ *   but not parseable JSON. The value itself is never returned in an error.
+ */
+export function readInlineCredentials(env = process.env) {
+  const raw = env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  if (!raw || !String(raw).trim()) return { present: false, ok: false, parsed: null };
+  try {
+    const parsed = JSON.parse(String(raw));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { present: true, ok: false, parsed: null };
+    }
+    return { present: true, ok: true, parsed };
+  } catch {
+    return { present: true, ok: false, parsed: null };
+  }
+}

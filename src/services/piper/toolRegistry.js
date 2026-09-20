@@ -17,6 +17,16 @@
  */
 
 import { buildBrief } from "../../domain/piper/briefModel.js";
+import {
+  findSellerCandidates,
+  resolveSeller,
+  sellerOpportunities,
+  sellerTimeline,
+  lastContact,
+  tasksDue,
+  searchPipeline,
+  prepareCallPlan,
+} from "./piperSellerData.js";
 
 const str = (v, max = 300) => (v === null || v === undefined ? null : String(v).trim().slice(0, max) || null);
 
@@ -175,7 +185,157 @@ export const TOOL_SCHEMAS = Object.freeze([
         required: ["opportunityId", "offerVersionId", "contentText"]
       }
     }
-  }
+  },
+  {
+    type: "function",
+    function: {
+      name: "find_seller",
+      description: "Resolve a seller by exact or partial name, property address fragment, and/or phone number. Returns candidates with match quality; sets ambiguous=true when more than one strong match exists — in that case ask the operator which seller they mean instead of guessing.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Seller name, exact or partial, e.g. \"Robert Chen\" or \"Robert\"." },
+          address: { type: "string", description: "Property address fragment, e.g. \"Maple\" or \"123 Main\"." },
+          phone: { type: "string", description: "Phone number; digits are compared." },
+          limit: { type: "number", description: "Default 10, maximum 25." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_seller_summary",
+      description: "A grounded summary of one seller: contact details and every opportunity tied to them with address, stage, and asking price. Resolve the seller with find_seller first, or pass the opportunity.",
+      parameters: {
+        type: "object",
+        properties: {
+          contactId: { type: "string" },
+          opportunityId: { type: "string", description: "Uses the primary seller of this opportunity when contactId is absent." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_seller_timeline",
+      description: "One unified chronological seller-activity timeline for an opportunity: lead intake, stage changes, interactions, communications, notes, offers, tasks, appointments, and Piper's executed actions. Answers \"what happened with this seller?\".",
+      parameters: {
+        type: "object",
+        properties: {
+          opportunityId: { type: "string" },
+          limit: { type: "number", description: "Default 60, maximum 200." },
+        },
+        required: ["opportunityId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_last_contact",
+      description: "When the seller was last contacted: the most recent interaction or communication, with channel, direction, and summary. Returns found:false when nothing is recorded.",
+      parameters: {
+        type: "object",
+        properties: { opportunityId: { type: "string" } },
+        required: ["opportunityId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_offer_history",
+      description: "Every offer and offer version for an opportunity, newest first, with prices, strategy, and status.",
+      parameters: {
+        type: "object",
+        properties: { opportunityId: { type: "string" } },
+        required: ["opportunityId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_tasks",
+      description: "Next actions / follow-ups. filter: open (default), due (open and due today or earlier — includes overdue), overdue (open and due before today), all. Answers \"who do I need to follow up with\" and \"who has gone cold\".",
+      parameters: {
+        type: "object",
+        properties: {
+          opportunityId: { type: "string", description: "Omit to search across all opportunities." },
+          filter: { type: "string", enum: ["open", "due", "overdue", "all"] },
+          limit: { type: "number", description: "Default 25, maximum 100." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_pipeline",
+      description: "Descriptive pipeline search: street fragment, seller name fragment, asking-price target (dollars; matched within 20%) or price band, stage. E.g. street \"Maple\" with askingPrice 180000 finds \"the guy on Maple who wanted 180\".",
+      parameters: {
+        type: "object",
+        properties: {
+          street: { type: "string" },
+          name: { type: "string" },
+          askingPrice: { type: "number", description: "Target asking price in dollars." },
+          minPrice: { type: "number" },
+          maxPrice: { type: "number" },
+          stage: { type: "string", description: "Canonical stage id." },
+          limit: { type: "number", description: "Default 10, maximum 50." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "prepare_call",
+      description: "Resolve the seller's phone number and assemble a call plan: contact, opportunity context, last contact, open tasks. This NEVER dials — it only prepares. Dialing arrives in Phase 3 as execute_call.",
+      parameters: {
+        type: "object",
+        properties: {
+          contactId: { type: "string" },
+          opportunityId: { type: "string" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "draft_sms",
+      description: "Propose an immutable SMS draft to the seller's recorded phone number. Requires operator approval; never sends. Sending is not wired.",
+      parameters: {
+        type: "object",
+        properties: {
+          opportunityId: { type: "string" },
+          offerVersionId: { type: "string", description: "Optional; when present it must be an approved version." },
+          contentText: { type: "string" },
+        },
+        required: ["opportunityId", "contentText"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "draft_email",
+      description: "Propose an immutable email draft to the seller's recorded email address. Requires operator approval; never sends. Sending is not wired.",
+      parameters: {
+        type: "object",
+        properties: {
+          opportunityId: { type: "string" },
+          offerVersionId: { type: "string", description: "Optional; when present it must be an approved version." },
+          subject: { type: "string" },
+          contentText: { type: "string" },
+        },
+        required: ["opportunityId", "contentText"],
+      },
+    },
+  },
 ]);
 
 const WRITE_TOOLS = new Set([
@@ -185,6 +345,8 @@ const WRITE_TOOLS = new Set([
   "prepare_offer",
   "modify_offer",
   "prepare_outreach_draft",
+  "draft_sms",
+  "draft_email",
 ]);
 
 export const isWriteTool = (name) => WRITE_TOOLS.has(name);
@@ -341,6 +503,109 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
       return { ok: true, data: { communication } };
     }
 
+    // --- Phase 1 seller tools ------------------------------------------------
+    // All reads execute immediately; they cannot mutate anything.
+
+    case "find_seller": {
+      const result = findSellerCandidates(operator.db, {
+        name: str(args.name, 200),
+        address: str(args.address, 200),
+        phone: str(args.phone, 60),
+        limit: args.limit,
+      });
+      if (result.error) return { ok: false, error: result.error, detail: "Pass a seller name, address fragment, or phone number." };
+      return { ok: true, data: result };
+    }
+
+    case "get_seller_summary": {
+      const seller = resolveSeller(operator.db, {
+        contactId: str(args.contactId, 200),
+        opportunityId: str(args.opportunityId, 200),
+      });
+      if (!seller) return { ok: false, error: "seller_not_found" };
+      return { ok: true, data: { seller, opportunities: sellerOpportunities(operator.db, seller.contactId) } };
+    }
+
+    case "get_seller_timeline": {
+      const opportunityId = str(args.opportunityId, 200);
+      if (!opportunityId) return { ok: false, error: "missing_opportunityId" };
+      const timeline = sellerTimeline(operator.db, operator, opportunityId, { limit: args.limit });
+      if (!timeline.found) return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
+      return { ok: true, data: timeline };
+    }
+
+    case "get_last_contact": {
+      const opportunityId = str(args.opportunityId, 200);
+      if (!opportunityId) return { ok: false, error: "missing_opportunityId" };
+      const exists = operator.db.prepare("SELECT 1 FROM seller_opportunities WHERE id = ?").get(opportunityId);
+      if (!exists) return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
+      return { ok: true, data: lastContact(operator.db, opportunityId) };
+    }
+
+    case "get_offer_history": {
+      const opportunityId = str(args.opportunityId, 200);
+      if (!opportunityId) return { ok: false, error: "missing_opportunityId" };
+      const exists = operator.db.prepare("SELECT 1 FROM seller_opportunities WHERE id = ?").get(opportunityId);
+      if (!exists) return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
+      return { ok: true, data: { opportunityId, offers: operator.listOffers(opportunityId) } };
+    }
+
+    case "get_tasks": {
+      return { ok: true, data: tasksDue(operator.db, operator, {
+        opportunityId: str(args.opportunityId, 200),
+        filter: str(args.filter, 20),
+        limit: args.limit,
+      }) };
+    }
+
+    case "search_pipeline": {
+      const result = searchPipeline(operator.db, {
+        street: str(args.street, 200),
+        name: str(args.name, 200),
+        askingPrice: args.askingPrice,
+        minPrice: args.minPrice,
+        maxPrice: args.maxPrice,
+        stage: str(args.stage, 60),
+        limit: args.limit,
+      });
+      if (result.error) return { ok: false, error: result.error, detail: "Pass a street, name, price, or stage to search on." };
+      return { ok: true, data: result };
+    }
+
+    case "prepare_call": {
+      const plan = prepareCallPlan(operator.db, operator, {
+        contactId: str(args.contactId, 200),
+        opportunityId: str(args.opportunityId, 200),
+      });
+      if (!plan.ok) return { ok: false, error: plan.error, detail: plan.detail };
+      return { ok: true, data: plan };
+    }
+
+    // --- Phase 1 draft tools (write: approval-gated, never send) --------------
+
+    case "draft_sms": {
+      const draft = operator.createChannelDraft({
+        opportunityId: str(args.opportunityId, 200),
+        channel: "sms",
+        offerVersionId: str(args.offerVersionId, 200),
+        contentText: str(args.contentText, 4000),
+        actor,
+      });
+      return { ok: true, data: { communication: draft, sends: false } };
+    }
+
+    case "draft_email": {
+      const draft = operator.createChannelDraft({
+        opportunityId: str(args.opportunityId, 200),
+        channel: "email",
+        offerVersionId: str(args.offerVersionId, 200),
+        subject: str(args.subject, 300),
+        contentText: str(args.contentText, 12000),
+        actor,
+      });
+      return { ok: true, data: { communication: draft, sends: false } };
+    }
+
     default:
       return { ok: false, error: "unknown_tool", detail: `Piper has no tool named ${name}.` };
   }
@@ -361,6 +626,26 @@ export function describeToolCall(name, args = {}) {
       return `Create a new version of offer ${args.offerId}${args.proposedPrice !== undefined ? ` at ${args.proposedPrice}` : ""}`;
     case "prepare_outreach_draft":
       return `Create an immutable outreach draft for ${args.opportunityId} tied to approved offer version ${args.offerVersionId}. This does not authorize or send it.`;
+    case "find_seller":
+      return `Find seller matching ${[args.name && `name "${args.name}"`, args.address && `address "${args.address}"`, args.phone && `phone "${args.phone}"`].filter(Boolean).join(", ") || "?"}`;
+    case "get_seller_summary":
+      return `Summarize seller ${args.contactId || args.opportunityId}`;
+    case "get_seller_timeline":
+      return `Show the seller activity timeline for ${args.opportunityId}`;
+    case "get_last_contact":
+      return `Show the last recorded contact for ${args.opportunityId}`;
+    case "get_offer_history":
+      return `Show the offer history for ${args.opportunityId}`;
+    case "get_tasks":
+      return `List ${args.filter || "open"} next actions${args.opportunityId ? ` for ${args.opportunityId}` : ""}`;
+    case "search_pipeline":
+      return `Search the pipeline${args.street ? ` near "${args.street}"` : ""}${args.name ? ` for "${args.name}"` : ""}`;
+    case "prepare_call":
+      return `Prepare a call plan for ${args.contactId || args.opportunityId} (does not dial)`;
+    case "draft_sms":
+      return `Draft an SMS for ${args.opportunityId}. This does not send it.`;
+    case "draft_email":
+      return `Draft an email for ${args.opportunityId}. This does not send it.`;
     default:
       return `${name}(${Object.keys(args).join(", ")})`;
   }

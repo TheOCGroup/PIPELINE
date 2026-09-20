@@ -10,11 +10,16 @@
  * Configure with:
  *   PIPELINE_PIPER_PROVIDER   none | openai-compatible | anthropic | vertex-ai
  *   PIPELINE_PIPER_BASE_URL   e.g. http://127.0.0.1:11434/v1  (Ollama, LM Studio)
- *   PIPELINE_PIPER_MODEL      e.g. qwen2.5:14b-instruct
+ *   PIPELINE_PIPER_MODEL      e.g. qwen2.5:14b-instruct (optional for vertex-ai:
+ *                             defaults to DEFAULT_PIPER_MODEL — currently
+ *                             google/gemini-3.6-flash — and is changed via env,
+ *                             never code)
  *   PIPELINE_PIPER_API_KEY    required for hosted providers, omit for local
  *
  * vertex-ai authenticates from Application Default Credentials instead of an
  * API key, and takes PIPELINE_PIPER_GCP_PROJECT and PIPELINE_PIPER_GCP_LOCATION.
+ * Where a key file cannot be baked into the host, the same service-account
+ * JSON may be supplied inline via GOOGLE_APPLICATION_CREDENTIALS_JSON.
  * No Google token is ever stored in .env.
  *
  * Tool-calling reliability is the binding requirement for a local model, not

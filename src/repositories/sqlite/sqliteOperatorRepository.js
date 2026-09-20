@@ -555,6 +555,76 @@ export class SqliteOperatorRepository {
     return this.getCommunication(commId);
   }
 
+  /**
+   * Create an immutable seller outreach draft on an explicit channel.
+   *
+   * Phase 1 — Piper draft_sms / draft_email. Same safety as
+   * createOutreachDraft (approved offer version when linked, immutable draft +
+   * 'drafted' event), but the channel is chosen explicitly and the recipient
+   * value must exist for that channel: a phone number for sms, an email
+   * address for email. Drafts never send; sending stays unwired.
+   */
+  createChannelDraft({ opportunityId, channel, offerVersionId = null, subject = null, contentText, templateVersion = null, actor }) {
+    if (!["sms", "email"].includes(channel)) {
+      throw new Error("unsupported_channel");
+    }
+    const participant = this.db.prepare(`
+      SELECT * FROM seller_opportunity_participants
+      WHERE opportunity_id = ? AND is_primary = 1
+    `).get(opportunityId);
+    const contact = participant
+      ? this.db.prepare("SELECT * FROM pipeline_contacts WHERE id = ?").get(participant.ocg_one_person_id)
+      : null;
+    if (!contact) throw new Error("recipient_contact_required");
+    const value = channel === "sms" ? contact.phone : contact.email;
+    if (!value) {
+      throw new Error(channel === "sms" ? "recipient_phone_required" : "recipient_email_required");
+    }
+
+    if (offerVersionId) {
+      const ver = this.db.prepare(`
+        SELECT * FROM seller_offer_versions WHERE id = ? AND version_status = 'approved'
+      `).get(offerVersionId);
+      if (!ver) {
+        throw new Error("approved_offer_required");
+      }
+    }
+
+    if (!contentText || !String(contentText).trim()) {
+      throw new Error("missing_contentText");
+    }
+
+    const commId = randomUUID();
+    const ts = now();
+    this.db.prepare("BEGIN TRANSACTION").run();
+    try {
+      this.db.prepare(`
+        INSERT INTO seller_communications (
+          id, opportunity_id, offer_version_id, recipient_person_id, recipient_value_snapshot,
+          recipient_channel, recipient_verification_status, recipient_source_type, recipient_source_id,
+          direction, subject, content_text, template_version, created_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'outbound', ?, ?, ?, ?, ?)
+      `).run(
+        commId, opportunityId, offerVersionId, contact.id, value,
+        channel, String(participant.verification_status || "SOURCE_SUPPLIED").toUpperCase(),
+        participant.source_id ? "deal_scout_handoff" : "manual_entry", participant.source_id || null,
+        subject, contentText, templateVersion, actor, ts
+      );
+
+      this.db.prepare(`
+        INSERT INTO seller_communication_events (id, communication_id, event_type, actor_id, occurred_at)
+        VALUES (?, ?, 'drafted', ?, ?)
+      `).run(randomUUID(), commId, actor, ts);
+
+      this.db.prepare("COMMIT").run();
+    } catch (err) {
+      this.db.prepare("ROLLBACK").run();
+      throw err;
+    }
+
+    return this.getCommunication(commId);
+  }
+
   authorizeOutreach(commId, actor) {
     this._addCommunicationEvent(commId, "authorized", actor);
     return this.getCommunication(commId);

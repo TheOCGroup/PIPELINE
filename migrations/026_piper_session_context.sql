@@ -1,0 +1,22 @@
+-- Migration 026: Piper session context
+-- System: PIPELINE
+-- Status: EXECUTABLE MIGRATION
+--
+-- Phase 1 (Piper intelligence): bounded, explicit conversational context per
+-- thread so the founder never repeats a seller's name.
+--
+-- context_json holds IDs only — never CRM facts:
+--   {
+--     "active_seller_id": "contact id or null",
+--     "active_seller_name": "display name for pronoun resolution",
+--     "active_opportunity_id": "opportunity id or null",
+--     "active_property_id": "external property id or null",
+--     "recent_entities": [ { "kind": "seller|opportunity", "id": "...", "label": "..." } ],
+--     "last_intent": "tool name or null",
+--     "pending_confirmation": "tool name awaiting approval or null"
+--   }
+--
+-- Facts always come from tools at answer time; the context only tells Piper
+-- which records "he", "she", "him", "Robert", or "this deal" refer to.
+
+ALTER TABLE piper_threads ADD COLUMN context_json TEXT;
