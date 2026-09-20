@@ -99,10 +99,26 @@ export class SqliteOpportunityRepository {
         ref.limitations AS ref_limitations,
         ref.evidence_summary_json AS ref_evidence_summary_json,
         ref.analyzed_at AS ref_analyzed_at
+      -- One row per opportunity: sources and underwriting refs can each hold
+      -- multiple rows per opportunity (re-submissions, revised analyses), so a
+      -- plain LEFT JOIN fans out into duplicate list rows. Pin each join to one
+      -- deterministic row: the earliest source (original lead provenance) and
+      -- the latest underwriting ref (revised analyses supersede earlier ones).
+      -- record_classifications is 1:1 by PK.
       FROM seller_opportunities o
-      LEFT JOIN seller_opportunity_sources src ON src.opportunity_id = o.id
+      LEFT JOIN seller_opportunity_sources src ON src.id = (
+        SELECT s.id FROM seller_opportunity_sources s
+        WHERE s.opportunity_id = o.id
+        ORDER BY s.conversion_timestamp ASC, s.rowid ASC
+        LIMIT 1
+      )
       LEFT JOIN record_classifications c ON c.opportunity_id = o.id
-      LEFT JOIN opportunity_underwriting_refs ref ON ref.opportunity_id = o.id
+      LEFT JOIN opportunity_underwriting_refs ref ON ref.id = (
+        SELECT r.id FROM opportunity_underwriting_refs r
+        WHERE r.opportunity_id = o.id
+        ORDER BY r.created_at DESC, r.rowid DESC
+        LIMIT 1
+      )
     `).all();
 
     return rows.map(r => {

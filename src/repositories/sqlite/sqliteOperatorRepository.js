@@ -14,6 +14,25 @@ import { randomUUID } from "node:crypto";
 
 const now = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
+// Offer strategy vocabulary — mirrors the CHECK constraint on
+// seller_offer_versions.strategy_type (migrations 005/025). Validate here so
+// an invalid value fails closed with a 400 instead of surfacing as a 500
+// from the SQLite CHECK violation.
+const VALID_STRATEGIES = new Set([
+  "cash_purchase",
+  "assignment",
+  "novation",
+  "seller_finance",
+  "subject_to",
+  "lease_option",
+  "listing_referral",
+  "no_offer",
+]);
+
+function assertValidStrategy(strategyType) {
+  if (!VALID_STRATEGIES.has(strategyType)) throw new Error("invalid_strategyType");
+}
+
 export class SqliteOperatorRepository {
   constructor(db, config = {}) {
     this.db = db;
@@ -186,6 +205,7 @@ export class SqliteOperatorRepository {
     if (earnestMoney === undefined || earnestMoney === null) throw new Error("earnestMoney is required");
     if (inspectionDays === undefined || inspectionDays === null) throw new Error("inspectionDays is required");
     if (closingDays === undefined || closingDays === null) throw new Error("closingDays is required");
+    assertValidStrategy(strategyType);
 
     const opp = this.db.prepare("SELECT * FROM seller_opportunities WHERE id = ?").get(opportunityId);
     if (!opp) throw new Error("opportunity_not_found");
@@ -279,6 +299,7 @@ export class SqliteOperatorRepository {
       if (!uw) throw new Error("underwriting_not_found");
 
       const strategy = strategyType !== undefined ? strategyType : currentVer.strategy_type;
+      if (strategyType !== undefined) assertValidStrategy(strategyType);
       const price = proposedPrice !== undefined ? proposedPrice : currentVer.purchase_price;
       const em = earnestMoney !== undefined ? earnestMoney : currentVer.earnest_money;
       const insp = inspectionDays !== undefined ? inspectionDays : currentVer.inspection_days;
