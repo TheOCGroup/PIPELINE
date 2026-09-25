@@ -2476,3 +2476,143 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   display: flex;
   gap: 8px;
 }
+
+/* ============================================================
+   PIPELINE CONTINUATION (2026-09-25) — CRM polish additions
+   Masked operator login · unified seller timeline · dashboard
+   simplification · voice-prep shell. Existing OCG visual system.
+   ============================================================ */
+
+/* Masked operator login dialog fields */
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9ca3af;
+  margin: 0 0 6px;
+}
+.text-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f3f4f6;
+  outline: none;
+}
+.text-input:focus {
+  border-color: rgba(0, 240, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.15);
+}
+.field-error {
+  margin-top: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f87171;
+}
+
+/* Unified seller timeline */
+.timeline-date-divider {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9ca3af;
+  margin: 14px 0 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.timeline-date-divider:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.timeline-event {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 0;
+}
+.timeline-icon {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.18);
+}
+.timeline-event-body { min-width: 0; flex: 1; }
+.timeline-summary {
+  font-size: 13px;
+  color: #e5e7eb;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.timeline-meta {
+  font-size: 11.5px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+.timeline-kind {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #67e8f9;
+  margin-right: 6px;
+}
+
+/* Dashboard simplification — quick actions row */
+.dashboard-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+}
+.dashboard-actions .primary {
+  font-size: 12.5px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.dashboard-actions .ghost {
+  font-size: 12.5px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e5e7eb;
+}
+
+/* Voice-prep shell (P7) — visibly inactive until a future update wires it */
+.piper-voice-btn {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.piper-voice-note {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+/* Provider pill — honest limited state */
+.provider-pill.limited {
+  opacity: 0.75;
+}
+
+@media (max-width: 480px) {
+  .custom-modal { padding: 18px; }
+  .timeline-event { padding: 7px 0; }
+  .dashboard-actions .primary, .dashboard-actions .ghost { flex: 1 1 auto; text-align: center; }
+}

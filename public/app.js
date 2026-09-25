@@ -104,6 +104,20 @@
     navigate(path);
   };
 
+  // Dashboard quick action: bring the Piper drawer into view and focus it.
+  window.scrollToPiper = () => {
+    const widget = document.getElementById("piper-widget");
+    if (widget && widget.classList.contains("collapsed")) {
+      widget.classList.remove("collapsed");
+      document.body.classList.remove("has-collapsed-piper");
+      try { localStorage.setItem("piper_collapsed", "false"); } catch { /* noop */ }
+    }
+    const drawer = document.getElementById("piper-drawer");
+    if (drawer) drawer.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const input = document.getElementById("piper-chat-input");
+    if (input) input.focus({ preventScroll: true });
+  };
+
   // Custom Modals
   window.showCustomConfirm = (message, title, onConfirm, onCancel) => {
     const backdrop = document.createElement("div");
@@ -313,14 +327,14 @@
   ];
 
   async function operatorGet(resource, oppId) {
-    const res = await ppfetch(`/api/v1/operator/${resource}?opportunityId=${encodeURIComponent(oppId)}`);
+    const res = await pfetch(`/api/v1/operator/${resource}?opportunityId=${encodeURIComponent(oppId)}`);
     const body = await res.json();
     if (!body.ok) throw new Error(body.error || "operator_read_failed");
     return body.data;
   }
 
   async function operatorPost(resource, payload) {
-    const res = await ppfetch(`/api/v1/operator/${resource}`, {
+    const res = await pfetch(`/api/v1/operator/${resource}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -371,7 +385,6 @@
       state.systemStatus = data;
       appVersion.textContent = "v" + data.version;
       demoBanner.hidden = !(data.demo === true);
-      footerMode.textContent = `data source: ${data.dataSource} · integration: ${data.integration}`;
     } catch { /* status is best-effort */ }
   }
 
@@ -471,9 +484,12 @@
         <div class="narrative-text">
           "${esc(b?.headline || "Pipeline Operational")}. ${narrativeText}"
         </div>
-        <div class="narrative-meta">
-          System mode: <span class="mode-tag">${esc(s.dataSource)}</span> · Handoff keys: <span class="mode-tag">${esc(s.handoff)}</span>
-        </div>
+      </div>
+
+      <!-- 1b. Quick actions: the two things a founder reaches for first -->
+      <div class="dashboard-actions">
+        <button class="primary" onclick="window.openNewOpportunityModal()">＋ New Opportunity</button>
+        <button class="ghost" onclick="window.scrollToPiper()">Ask Piper</button>
       </div>
 
       <!-- 2. Asymmetric Columns -->
@@ -521,32 +537,6 @@
 
         <!-- Sidebar Column -->
         <div class="bridge-side-col">
-          <div class="bridge-panel telemetry-panel-compact">
-            <h2 class="bridge-section-header">KPI Telemetry</h2>
-            <div class="telemetry-grid">
-              <div class="telemetry-item">
-                <span class="telemetry-label">Total Listings</span>
-                <span class="telemetry-value">${esc(state.opportunities.length)}</span>
-              </div>
-              <div class="telemetry-item">
-                <span class="telemetry-label">Original Prov</span>
-                <span class="telemetry-value">${esc(d.originalProvenance)}</span>
-              </div>
-              <div class="telemetry-item">
-                <span class="telemetry-label">Recovered Prov</span>
-                <span class="telemetry-value">${esc(d.recoveredProvenance)}</span>
-              </div>
-              <div class="telemetry-item">
-                <span class="telemetry-label">Unresolved Prov</span>
-                <span class="telemetry-value">${esc(d.unresolvedProvenance)}</span>
-              </div>
-              <div class="telemetry-item">
-                <span class="telemetry-label">Stale Listings</span>
-                <span class="telemetry-value warning-val">${esc(d.staleOpportunities)}</span>
-              </div>
-            </div>
-          </div>
-
           <div class="bridge-panel">
             <h2 class="bridge-section-header">Active Opportunities</h2>
             <div class="active-deals-list">
@@ -1381,19 +1371,10 @@
             </dl>
           </div>
 
-          <!-- Historical timeline / Offers -->
+          <!-- Historical timeline / Offers: unified seller timeline -->
           <div class="bridge-panel">
-            <h2 class="bridge-section-header">Stage History</h2>
-            ${o.stageTimeline.length ? `
-              <div class="timeline-compact">
-                ${o.stageTimeline.map(s => `
-                  <div class="timeline-row">
-                    <span class="timeline-time">${esc((s.at || "").slice(0, 10))}</span>
-                    <span class="timeline-desc"><strong>${esc(formatStage(s.stage))}</strong> by ${esc(s.changedBy)}</span>
-                  </div>
-                `).join("")}
-              </div>
-            ` : `<div class="empty-state">No events.</div>`}
+            <h2 class="bridge-section-header">Seller Timeline</h2>
+            <div id="detail-timeline"><div class="state">Loading timeline…</div></div>
           </div>
         </div>
       </div>
@@ -1402,6 +1383,62 @@
     renderChecklist(o.id);
     renderNotes(o.id);
     renderNextActions(o.id);
+    renderTimeline(o.id);
+  }
+
+  /** Unified seller timeline: every recorded event for the seller, newest first. */
+  const TIMELINE_LABELS = {
+    lead_created: "Lead",
+    stage_change: "Stage",
+    note: "Note",
+    follow_up: "Follow-up",
+    offer: "Offer",
+    checklist: "Checklist",
+    call: "Call",
+    text: "Text",
+    email: "Email",
+    interaction: "Activity",
+    communication: "Draft",
+    piper: "Piper",
+  };
+  const TIMELINE_ICONS = {
+    lead_created: "✦", stage_change: "⇄", note: "✎", follow_up: "⏰",
+    offer: "◈", checklist: "✓", call: "☎", text: "✉",
+    email: "✉", interaction: "•", communication: "✉", piper: "⦿",
+  };
+  async function renderTimeline(oppId) {
+    const host = document.getElementById("detail-timeline");
+    if (!host) return;
+    try {
+      const { timeline } = await operatorGet("timeline", oppId);
+      const events = timeline.events || [];
+      if (!events.length) {
+        host.innerHTML = `<div class="empty-state">No events recorded yet.</div>`;
+        return;
+      }
+      let lastDay = "";
+      const rows = [];
+      for (const e of events) {
+        const day = String(e.at || "").slice(0, 10);
+        if (day && day !== lastDay) {
+          lastDay = day;
+          rows.push(`<div class="timeline-date-divider">${esc(day)}</div>`);
+        }
+        rows.push(`
+          <div class="timeline-event">
+            <span class="timeline-icon" aria-hidden="true">${esc(TIMELINE_ICONS[e.type] || "•")}</span>
+            <div class="timeline-event-body">
+              <div class="timeline-summary">
+                <span class="timeline-kind">${esc(TIMELINE_LABELS[e.type] || e.type)}</span>${esc(e.summary)}
+              </div>
+              <div class="timeline-meta">${esc((e.at || "").replace("T", " ").slice(0, 16))}${e.actor ? ` · ${esc(e.actor)}` : ""}</div>
+            </div>
+          </div>`);
+      }
+      host.innerHTML = rows.join("");
+    } catch {
+      host.innerHTML = `<div class="state error">Could not load the timeline from PIPELINE.</div>`;
+    }
   }
 
   /** Server-backed next actions for the open opportunity. */
@@ -2000,12 +2037,12 @@
       });
     }
 
-    if (piperChatForm) {
-      piperChatForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const text = piperChatInput.value.trim();
-        if (!text) return;
-        piperChatInput.value = "";
+    // Shared Piper conversation contract (P2 voice prep): text input and the
+    // future voice path both submit through this one function, so the
+    // conversation state, interrupts, and rendering stay identical.
+    async function submitPiperText(rawText) {
+      const text = (rawText || "").trim();
+      if (!text) return;
 
         // Interrupt current work if busy
         const busyStates = ["retrieving", "generating", "running_tool", "awaiting_approval"];
@@ -2051,8 +2088,54 @@
         state.piperMessages = state.piperMessages.filter((m) => !m.pending);
         state.piperMessages.push({ sender: "bot", text: reply });
         renderPiperHistory();
+    }
+
+    if (piperChatForm) {
+      piperChatForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = piperChatInput.value;
+        piperChatInput.value = "";
+        await submitPiperText(text);
       });
     }
+
+    // ---- Voice-prep shell (P2 directive, P7 detail) ----
+    // The microphone UI exists so the layout is settled, but voice input is
+    // NOT wired: no speech service is provisioned, no media is captured, and
+    // no claim is made that voice works. The state machine below models the
+    // future flow (idle -> requesting -> listening -> transcribing ->
+    // submitting -> idle) and stays parked in `unavailable` until a founder
+    // approves a provider. Transcripts, when they exist, will enter through
+    // submitPiperText — the same contract as typed input — so text and voice
+    // share one conversation state.
+    const PiperVoice = {
+      enabled: false, // no speech provider; founder has not approved one
+      state: "unavailable",
+      setState(next) {
+        this.state = next;
+        const btn = document.getElementById("piper-voice-btn");
+        if (btn) {
+          btn.dataset.voiceState = next;
+          btn.title = next === "unavailable"
+            ? "Voice input arrives in a future update — no speech service is connected."
+            : `Voice: ${next}`;
+        }
+        const note = document.getElementById("piper-voice-note");
+        if (note) note.textContent = next === "unavailable" ? "Voice input is not available yet." : "";
+      },
+      // Future entry point: a transcript from any speech service lands here.
+      async submitTranscript(transcript) {
+        if (!this.enabled) return;
+        this.setState("submitting");
+        await submitPiperText(transcript);
+        this.setState("idle");
+      },
+    };
+    window.PiperVoice = PiperVoice;
+    // Expose the shared contract for the future voice path.
+    window.submitPiperText = submitPiperText;
+    // Park the shell in `unavailable`: honest label, no capture, no claim.
+    PiperVoice.setState("unavailable");
   }
 
   /**
@@ -2246,7 +2329,7 @@
       const body = await res.json();
       if (!body.ok) return;
       const p = body.data.provider;
-      // Live badge, driven by /status: never a hard-coded model claim.
+      // Live badges, driven by /status: never a hard-coded model claim.
       const pill = document.getElementById("piper-provider");
       const pillText = document.getElementById("piper-provider-text");
       if (pill && pillText) {
@@ -2257,6 +2340,22 @@
         pill.title = p.connected
           ? `Piper intelligence: ${p.provider || "model"} (${p.model})`
           : "No language model is connected. Piper answers from stored PIPELINE state only.";
+      }
+      const sidePill = document.getElementById("sidebar-active-provider");
+      if (sidePill) {
+        sidePill.classList.toggle("limited", !p.connected);
+        sidePill.textContent = p.connected && p.model
+          ? `Piper · ${p.model}`
+          : "Piper limited";
+        sidePill.title = p.connected
+          ? `Piper intelligence: ${p.provider || "model"} (${p.model})`
+          : "No language model is connected. Piper answers from stored PIPELINE state only.";
+      }
+      const footerMode = document.getElementById("footer-mode");
+      if (footerMode) {
+        footerMode.textContent = p.connected && p.model
+          ? `Piper intelligence: ${p.model}`
+          : "Piper limited — no model";
       }
       setPiperState(p.connected ? "idle" : "not_connected",
         p.connected ? "" : "No model provider is configured. Piper answers from stored PIPELINE state only.");
@@ -2434,6 +2533,10 @@
     initPiperWidget();
     initOperatorAccess();
     render();
+    // Keep every provider claim honest: sidebar pill, footer, and Piper
+    // drawer all come from /api/v1/piper/status. Best-effort; the static
+    // defaults already state "limited".
+    refreshPiperStatus();
   })();
 
   // Operator access entry: founder-operator secret, sessionStorage only.
@@ -2454,19 +2557,100 @@
         }
         return;
       }
-      const secret = prompt(
-        "Enter the founder-operator secret.\nIt is kept in this tab only (sessionStorage) and never written to disk."
-      );
-      if (secret && secret.trim()) {
-        window.setOperatorSecret(secret.trim());
-        paint();
-      }
+      openOperatorLoginDialog();
     });
     const origSet = window.setOperatorSecret;
     window.setOperatorSecret = (s) => { origSet(s); paint(); };
     const origClear = window.clearOperatorSecret;
     window.clearOperatorSecret = () => { origClear(); paint(); };
     paint();
+  }
+
+  // Masked operator login (P2 hardening). Replaces the unmasked
+  // window.prompt() flow. The secret is typed into a password field (never
+  // displayed), never written to logs, and never persisted by this dialog —
+  // on success it is handed to the existing sessionStorage mechanism
+  // (window.setOperatorSecret), preserving current authorization behavior.
+  // The candidate is validated against a live authenticated endpoint before
+  // it is accepted, so a wrong secret produces an honest failure message.
+  function openOperatorLoginDialog() {
+    if (document.getElementById("operator-login-backdrop")) return;
+    const backdrop = document.createElement("div");
+    backdrop.className = "custom-modal-backdrop";
+    backdrop.id = "operator-login-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "custom-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-labelledby", "operator-login-title");
+    modal.innerHTML = `
+      <div class="custom-modal-header" id="operator-login-title">OPERATOR ACCESS</div>
+      <div class="custom-modal-body">
+        <p class="muted" style="margin-top:0">Enter the founder-operator secret. It stays in this tab only and is never written to disk or logs.</p>
+        <label class="field-label" for="operator-login-secret">Operator secret</label>
+        <input type="password" id="operator-login-secret" class="text-input" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" />
+        <div class="field-error" id="operator-login-error" role="alert" hidden></div>
+      </div>
+      <div class="custom-modal-actions">
+        <button class="primary" id="operator-login-submit">Unlock</button>
+        <button class="secondary" id="operator-login-cancel">Cancel</button>
+      </div>
+    `;
+
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    const input = modal.querySelector("#operator-login-secret");
+    const errBox = modal.querySelector("#operator-login-error");
+    const submitBtn = modal.querySelector("#operator-login-submit");
+
+    const close = () => {
+      input.value = "";
+      if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+      const btn = document.getElementById("operator-access-btn");
+      if (btn) btn.focus();
+    };
+    const fail = (msg) => {
+      errBox.textContent = msg;
+      errBox.hidden = false;
+      input.value = "";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Unlock";
+      input.focus();
+    };
+    const submit = async () => {
+      const candidate = input.value;
+      if (!candidate.trim()) { fail("Enter the operator secret to continue."); return; }
+      errBox.hidden = true;
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Verifying…";
+      try {
+        // A live authenticated probe: 401/403 means the secret was rejected.
+        // Any other response proves the bearer was accepted (auth runs first).
+        const res = await fetch("/api/v1/piper/status", {
+          headers: { Authorization: "Bearer " + candidate.trim() },
+        });
+        if (res.status === 401 || res.status === 403) {
+          fail("Secret not accepted. Check the value and try again.");
+          return;
+        }
+        if (!res.ok) { fail("Could not verify the secret right now. Try again."); return; }
+        window.setOperatorSecret(candidate.trim());
+        close();
+      } catch {
+        fail("Could not reach PIPELINE. Check the connection and try again.");
+      }
+    };
+
+    modal.querySelector("#operator-login-cancel").addEventListener("click", close);
+    backdrop.addEventListener("mousedown", (e) => { if (e.target === backdrop) close(); });
+    submitBtn.addEventListener("click", submit);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); submit(); }
+      else if (e.key === "Escape") { e.preventDefault(); close(); }
+    });
+    input.focus();
   }
   function buildOutreachHtml(o) {
     const contact = o.contact || { status: "MISSING", value: null, channel: null };

@@ -1,12 +1,13 @@
 /** Operator state endpoints — /api/v1/operator/* */
 import { sendJson } from "../response.js";
+import { buildSellerTimeline } from "../../services/sellerTimelineService.js";
 const MAX_TEXT=4000;
 async function readJson(req){const chunks=[];for await(const chunk of req)chunks.push(Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk));const raw=Buffer.concat(chunks).toString("utf8");if(!raw.trim())return{};return JSON.parse(raw);}
 const actorOf=req=>req.operatorAuth?.actor||req.pipelineSession?.userId||req.pipelineSession?.subject||"local-operator";
 function text(value,field,{required=true,max=MAX_TEXT}={}){const v=value===null||value===undefined?"":String(value).trim();if(!v&&required)throw new BadRequest(`missing_${field}`);if(v.length>max)throw new BadRequest(`${field}_too_long`);return v||null;}
 class BadRequest extends Error{constructor(code){super(code);this.code=code;}}
 export async function handleOperatorRoutes(req,res,ctx,url,segments){
- const [,resource,id]=segments;const known=["next-actions","notes","checklist","interactions","offers","outreach","transactions","transaction-tasks","acquisition-handoffs","dispositions","underwriting"];
+ const [,resource,id]=segments;const known=["next-actions","notes","checklist","interactions","offers","outreach","transactions","transaction-tasks","acquisition-handoffs","dispositions","underwriting","timeline"];
  if(!known.includes(resource)){sendJson(res,404,{ok:false,error:"not_found"});return true;}
  const isWrite=req.method==="POST";if(!isWrite&&req.method!=="GET"&&req.method!=="HEAD"){sendJson(res,405,{ok:false,error:"method_not_allowed"},{Allow:"GET, HEAD, POST"});return true;}
  if(isWrite&&ctx.config.readOnly===true){sendJson(res,503,{ok:false,error:"read_only"});return true;}
@@ -25,6 +26,7 @@ export async function handleOperatorRoutes(req,res,ctx,url,segments){
    case"acquisition-handoffs":if(!opportunityId)throw new BadRequest("missing_opportunityId");if(!ctx.services.transactions)throw new Error("transaction_workflow_unavailable");return ok(res,{handoffs:ctx.services.transactions.listHandoffs(opportunityId)});
    case"dispositions":if(!opportunityId)throw new BadRequest("missing_opportunityId");if(!ctx.services.dispositions)throw new Error("disposition_workflow_unavailable");return ok(res,{plans:ctx.services.dispositions.list(opportunityId)});
    case"underwriting":if(!opportunityId)throw new BadRequest("missing_opportunityId");return ok(res,{assumptions:repo.getUnderwritingAssumptions(opportunityId)});
+   case"timeline":if(!opportunityId)throw new BadRequest("missing_opportunityId");try{return ok(res,{timeline:await buildSellerTimeline(ctx,opportunityId)});}catch(err){if(err&&err.code==="opportunity_not_found"){sendJson(res,404,{ok:false,error:err.code});return true;}throw err;}
   }}
   const body=await readJson(req);
   switch(resource){
