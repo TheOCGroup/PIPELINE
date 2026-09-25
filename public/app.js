@@ -290,7 +290,7 @@
   }
 
   window.setOperatorSecret = (secret) => {
-    try { sessionStorage.setItem("pipeline_operator_secret", String(secret || "").trim()); }
+    try { sessionStorage.setItem("pipeline_operator_secret", String(secret || "")); }
     catch { /* storage unavailable */ }
     operatorAuthBannerShown = false;
     render();
@@ -2573,6 +2573,8 @@
   // (window.setOperatorSecret), preserving current authorization behavior.
   // The candidate is validated against a live authenticated endpoint before
   // it is accepted, so a wrong secret produces an honest failure message.
+  // The exact entered value is submitted and stored (no trimming), matching
+  // the server's exact-match operator-secret contract.
   function openOperatorLoginDialog() {
     if (document.getElementById("operator-login-backdrop")) return;
     const backdrop = document.createElement("div");
@@ -2621,7 +2623,7 @@
     };
     const submit = async () => {
       const candidate = input.value;
-      if (!candidate.trim()) { fail("Enter the operator secret to continue."); return; }
+      if (!candidate.length) { fail("Enter the operator secret to continue."); return; }
       errBox.hidden = true;
       submitBtn.disabled = true;
       submitBtn.textContent = "Verifying…";
@@ -2629,14 +2631,14 @@
         // A live authenticated probe: 401/403 means the secret was rejected.
         // Any other response proves the bearer was accepted (auth runs first).
         const res = await fetch("/api/v1/piper/status", {
-          headers: { Authorization: "Bearer " + candidate.trim() },
+          headers: { Authorization: "Bearer " + candidate },
         });
         if (res.status === 401 || res.status === 403) {
           fail("Secret not accepted. Check the value and try again.");
           return;
         }
         if (!res.ok) { fail("Could not verify the secret right now. Try again."); return; }
-        window.setOperatorSecret(candidate.trim());
+        window.setOperatorSecret(candidate);
         close();
       } catch {
         fail("Could not reach PIPELINE. Check the connection and try again.");
