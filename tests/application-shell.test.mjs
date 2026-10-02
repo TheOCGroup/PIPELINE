@@ -38,20 +38,35 @@ test("static PIPELINE page loads as the Piper-first founder shell", async (t) =>
   assert.equal(res.status, 200);
   const html = await res.text();
   assert.match(html, /OCG PIPELINE/);
+  assert.match(html, /Acquisitions powered by Piper/);
   assert.match(html, /Piper/);
   assert.match(html, /Piper limited/);
   // Founder nav is Home / Pipeline / People / Tasks — nothing else.
-  assert.match(html, /id="nav-home"/);
-  assert.match(html, /id="nav-pipeline"/);
-  assert.match(html, /id="nav-people"/);
-  assert.match(html, /id="nav-tasks"/);
-  assert.doesNotMatch(html, /id="nav-system"/);
-  assert.doesNotMatch(html, /id="nav-provenance"/);
-  // The command-hierarchy banner is out of the founder path.
+  assert.match(html, /data-fpnav="home"/);
+  assert.match(html, /data-fpnav="pipeline"/);
+  assert.match(html, /data-fpnav="people"/);
+  assert.match(html, /data-fpnav="tasks"/);
+  assert.doesNotMatch(html, /Work Room/);
+  // No console chrome in the founder shell.
+  assert.doesNotMatch(html, /PIPELINE \/ Seller Operations/);
   assert.doesNotMatch(html, /OCG OS Director/);
+  assert.doesNotMatch(html, /id="operator-access-btn"/);
+  assert.doesNotMatch(html, /Operator: locked/);
+  assert.doesNotMatch(html, /class="admin-link"/);
+  assert.doesNotMatch(html, /ocg-os-work-room\.js/);
+  assert.doesNotMatch(html, /ocg-os-command\.js/);
+  assert.doesNotMatch(html, /ocg-os-deal-story\.js/);
+  assert.doesNotMatch(html, /ocg-os-hierarchy-lock\.js/);
+  // Clean unlock gate before the experience loads.
+  assert.match(html, /id="fp-unlock"/);
+  assert.match(html, /id="fp-unlock-form"/);
+  // Piper conversation is an overlay, hidden by default — never a rail.
+  assert.match(html, /id="piper-drawer" class="piper-drawer" hidden/);
+  assert.match(html, /id="piper-close-btn"/);
+  // No technical provider/model language on the founder screen.
+  assert.doesNotMatch(html, /No language model is connected/);
+  assert.doesNotMatch(html, /deterministic/i);
   assert.match(html, /piper-simple\.css/);
-  assert.match(html, /ocg-os-command\.js/);
-  assert.match(html, /ocg-os-deal-story\.js/);
 });
 
 test("OCG OS command-center assets are served with real content and governed data sources", async (t) => {

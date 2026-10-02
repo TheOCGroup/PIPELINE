@@ -3,47 +3,76 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>OCG OS — Seller Pipeline Workspace</title>
+    <title>OCG Pipeline — Acquisitions powered by Piper</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
-    <link rel="stylesheet" href="/reactor-runtime-fixes.css" />
-    <link rel="stylesheet" href="/reactor-tone-lock.css" />
-    <link rel="stylesheet" href="/ocg-os-command.css" />
     <link rel="stylesheet" href="/piper-simple.css" />
   </head>
-  <body>
+  <body class="fp">
     <a class="skip-link" href="#main">Skip to content</a>
-    <nav class="nav" aria-label="Primary">
-      <div class="brand"><div class="brand-header"><div class="brand-orb" aria-hidden="true"></div><div><div class="brand-name">OCG OS</div><div class="brand-sub">PIPELINE / Seller Operations</div></div></div></div>
-      <div class="nav-links">
-        <a href="/" data-nav id="nav-home"><span class="nav-icon">◈</span><span>Home</span></a>
-        <a href="/opportunities" data-nav id="nav-pipeline"><span class="nav-icon">▤</span><span>Pipeline</span></a>
-        <a href="/people" data-nav id="nav-people"><span class="nav-icon">○</span><span>People</span></a>
-        <a href="/tasks" data-nav id="nav-tasks"><span class="nav-icon">✓</span><span>Tasks</span></a>
+
+    <!-- Clean unlock gate: shown before the founder experience loads. -->
+    <div id="fp-unlock" class="fp-unlock">
+      <div class="fp-unlock-card">
+        <div class="fp-unlock-orb" aria-hidden="true"></div>
+        <div class="fp-unlock-brand">OCG PIPELINE</div>
+        <div class="fp-unlock-sub">Acquisitions powered by Piper</div>
+        <form id="fp-unlock-form" class="fp-unlock-form">
+          <label class="fp-field-label" for="fp-unlock-secret">Operator secret</label>
+          <input type="password" id="fp-unlock-secret" class="fp-text-input" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" />
+          <div class="fp-field-error" id="fp-unlock-error" role="alert" hidden></div>
+          <button type="submit" class="fp-primary-btn" id="fp-unlock-submit">Unlock</button>
+        </form>
+        <p class="fp-unlock-note">The secret stays in this tab only. It is never written to disk or logs.</p>
       </div>
-      <div class="sidebar-telemetry"><div id="demo-banner" class="demo-banner" role="status" hidden>DEMO FIXTURES</div><div class="sidebar-meta-row"><span id="sidebar-active-provider" class="provider-pill limited" title="Piper answers from Pipeline data with its built-in tools. No language model is connected.">Piper limited</span></div><div class="operator-access" id="operator-access"><button id="operator-access-btn" class="operator-access-btn" type="button" aria-label="Operator access">Operator: locked</button></div></div>
-    </nav>
-    <main id="main" tabindex="-1">
-      <div id="view" aria-live="polite"><p class="muted">Loading workspace...</p></div>
-    </main>
-    <aside id="piper-widget" class="piper-widget" aria-label="Piper Seller Pipeline Workspace">
-      <button id="piper-toggle" class="piper-toggle" aria-label="Expand Piper Seller Pipeline Workspace"><span class="piper-orb-mini"></span><span class="piper-toggle-text">Piper</span></button>
-      <div id="piper-drawer" class="piper-drawer">
-        <div class="piper-header"><div class="piper-status"><span class="status-dot"><span class="status-orb"></span><span class="status-ring"></span></span><div class="piper-title-group"><div class="piper-title-row"><span class="piper-name">Piper</span><span class="piper-limited-tag">limited</span></div><div class="piper-subtext">Your acquisition assistant</div></div></div><div class="piper-header-actions"><button type="button" id="piper-stop" class="piper-stop" hidden onclick="window.piperCancel()" title="Interrupt Piper">■ Stop</button><div class="workspace-mode-toggles"><button type="button" id="piper-collapse-btn" class="piper-tool-btn" title="Collapse Piper">›</button></div></div></div>
-        <div id="piper-context-bar" class="piper-context-bar"><div class="context-indicator"><span id="piper-context-text">Piper is ready</span></div><div id="piper-active-deal-card" class="piper-active-deal-card hidden"></div></div>
-        <div id="piper-chat-history" class="piper-chat-history"></div>
-        <div class="quick-actions-bar" id="piper-quick-actions"><button type="button" onclick="window.triggerPiperQuickAction('attention')" class="quick-action-btn pulse-glow">What needs attention?</button><button type="button" onclick="window.triggerPiperQuickAction('changed')" class="quick-action-btn">What changed today?</button><button type="button" onclick="window.triggerPiperQuickAction('forgetting')" class="quick-action-btn">What am I forgetting?</button></div>
-        <div class="piper-input-container"><form id="piper-chat-form" class="piper-chat-form"><div class="input-wrapper"><input type="text" id="piper-chat-input" placeholder="Command Piper: e.g. 'What needs my attention?', 'Show me why', 'Go to underwriting'..." required autocomplete="off" /><button type="button" id="piper-voice-btn" class="piper-send-btn piper-voice-btn" disabled aria-disabled="true" title="Voice input arrives in a future update — no speech service is connected."><span class="send-icon" aria-hidden="true">◉</span></button><button type="submit" class="piper-send-btn" title="Execute instruction"><span class="send-icon">▲</span></button></div></form><div class="piper-input-footer"><p id="piper-state-note" class="piper-state-note"></p><p id="piper-voice-note" class="piper-voice-note"></p><p id="piper-disclosure" class="piper-disclosure">Piper leads the seller pipeline inside OCG OS. Facts come from PIPELINE state; governed writes still require the applicable approval policy.</p></div></div>
-      </div>
-    </aside>
-    <footer class="footer"><span>OCG Pipeline</span><span><a href="/admin" data-nav class="admin-link">Admin</a></span></footer>
-    <div style="display: none;" aria-hidden="true">OCG PIPELINE — canonical seller-operations subsystem inside OCG OS</div>
+    </div>
+
+    <!-- Founder experience shell. No console chrome, no hierarchy, no telemetry. -->
+    <div id="fp-shell" class="fp-shell" hidden>
+      <header class="fp-header">
+        <div class="fp-brand">
+          <div class="fp-brand-name">OCG PIPELINE</div>
+          <div class="fp-brand-sub">Acquisitions powered by Piper</div>
+        </div>
+        <nav class="fp-nav" aria-label="Primary">
+          <a href="/" data-nav data-fpnav="home">Home</a>
+          <a href="/opportunities" data-nav data-fpnav="pipeline">Pipeline</a>
+          <a href="/people" data-nav data-fpnav="people">People</a>
+          <a href="/tasks" data-nav data-fpnav="tasks">Tasks</a>
+        </nav>
+        <div class="fp-status">
+          <span id="demo-banner" class="fp-chip fp-chip-demo" role="status" hidden>DEMO</span>
+          <span class="fp-chip" title="Piper is working from your Pipeline records with reduced capabilities.">Piper limited</span>
+        </div>
+      </header>
+
+      <main id="main" tabindex="-1">
+        <div id="view" aria-live="polite"></div>
+      </main>
+
+      <nav class="fp-tabbar" aria-label="Primary">
+        <a href="/" data-nav data-fpnav="home"><span class="fp-tab-ico" aria-hidden="true">◈</span><span>Home</span></a>
+        <a href="/opportunities" data-nav data-fpnav="pipeline"><span class="fp-tab-ico" aria-hidden="true">▤</span><span>Pipeline</span></a>
+        <a href="/people" data-nav data-fpnav="people"><span class="fp-tab-ico" aria-hidden="true">○</span><span>People</span></a>
+        <a href="/tasks" data-nav data-fpnav="tasks"><span class="fp-tab-ico" aria-hidden="true">✓</span><span>Tasks</span></a>
+      </nav>
+
+      <!-- Piper conversation: an overlay, never a permanent rail. -->
+      <aside id="piper-widget" class="piper-widget" aria-label="Piper">
+        <button id="piper-toggle" class="piper-toggle" aria-label="Talk to Piper"><span class="piper-orb-mini"></span><span class="piper-toggle-text">Piper</span></button>
+        <div id="piper-drawer" class="piper-drawer" hidden>
+          <div class="piper-header"><div class="piper-status"><span class="status-dot"><span class="status-orb"></span><span class="status-ring"></span></span><div class="piper-title-group"><div class="piper-title-row"><span class="piper-name">Piper</span><span class="piper-limited-tag">limited</span></div><div class="piper-subtext">Your acquisition assistant</div></div></div><div class="piper-header-actions"><button type="button" id="piper-stop" class="piper-stop" hidden onclick="window.piperCancel()" title="Interrupt Piper">■ Stop</button><button type="button" id="piper-close-btn" class="piper-tool-btn" title="Close Piper">✕</button></div></div>
+          <div id="piper-context-bar" class="piper-context-bar"><div class="context-indicator"><span id="piper-context-text">Piper is ready</span></div><div id="piper-active-deal-card" class="piper-active-deal-card hidden"></div></div>
+          <div id="piper-chat-history" class="piper-chat-history"></div>
+          <div class="quick-actions-bar" id="piper-quick-actions"><button type="button" onclick="window.triggerPiperQuickAction('attention')" class="quick-action-btn pulse-glow">What needs attention?</button><button type="button" onclick="window.triggerPiperQuickAction('changed')" class="quick-action-btn">What changed today?</button><button type="button" onclick="window.triggerPiperQuickAction('forgetting')" class="quick-action-btn">What am I forgetting?</button></div>
+          <div class="piper-input-container"><form id="piper-chat-form" class="piper-chat-form"><div class="input-wrapper"><input type="text" id="piper-chat-input" placeholder="Ask Piper…" required autocomplete="off" /><button type="submit" class="piper-send-btn" title="Ask Piper"><span class="send-icon">▲</span></button></div></form><div class="piper-input-footer"><p id="piper-state-note" class="piper-state-note"></p><p id="piper-disclosure" class="piper-disclosure">Piper works from your Pipeline records.</p></div></div>
+        </div>
+      </aside>
+    </div>
+
+    <span id="app-version" hidden></span>
     <script src="/app.js"></script>
-    <script src="/ocg-os-command.js"></script>
-    <script src="/ocg-os-deal-story.js"></script>
-    <script src="/ocg-os-work-room.js"></script>
-    <script src="/ocg-os-hierarchy-lock.js"></script>
   </body>
 </html>

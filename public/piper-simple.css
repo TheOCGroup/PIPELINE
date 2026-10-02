@@ -489,3 +489,265 @@
   .fstage { padding: 10px 4px; min-height: 68px; }
   .fstage-count { font-size: 19px; }
 }
+
+/* ================================================================
+   FOUNDER SHELL (fp-) — Piper is the product, not a sidebar.
+   Overrides the old console grid; presentation only.
+   ================================================================ */
+body.fp {
+  display: block;
+  min-height: 100vh;
+  background: #070a12;
+  background-image:
+    radial-gradient(900px 480px at 50% -8%, rgba(47,123,255,0.10), transparent 62%),
+    radial-gradient(700px 420px at 85% 110%, rgba(0,229,255,0.05), transparent 60%);
+  color: #eef1f6;
+}
+/* Neutralize the old console grid + rail body classes */
+body.fp.has-collapsed-piper, body.fp.has-expanded-piper { grid-template-columns: none; }
+
+/* ---------- Unlock gate ---------- */
+.fp-unlock {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.fp-unlock-card {
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.fp-unlock-orb {
+  width: 72px; height: 72px; border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255,255,255,0.85), transparent 42%),
+    radial-gradient(circle at 50% 55%, #4d9fff 0%, #2f7bff 46%, #0b2a6b 100%);
+  box-shadow: 0 0 60px rgba(47,123,255,0.45), 0 0 140px rgba(47,123,255,0.18);
+  animation: fp-orb-breathe 5s ease-in-out infinite;
+  margin-bottom: 14px;
+}
+@keyframes fp-orb-breathe {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 60px rgba(47,123,255,0.45), 0 0 140px rgba(47,123,255,0.18); }
+  50% { transform: scale(1.045); box-shadow: 0 0 80px rgba(47,123,255,0.6), 0 0 170px rgba(47,123,255,0.24); }
+}
+.fp-unlock-brand { font-family: Outfit, Inter, sans-serif; font-size: 20px; font-weight: 800; letter-spacing: 0.14em; }
+.fp-unlock-sub { color: #9aa3b2; font-size: 14px; margin-bottom: 18px; }
+.fp-unlock-form { width: 100%; display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.fp-field-label { font-size: 13px; color: #9aa3b2; }
+.fp-text-input {
+  font-size: 17px; padding: 15px 16px; border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05);
+  color: #fff; min-height: 56px; width: 100%; box-sizing: border-box;
+}
+.fp-field-error { font-size: 13px; color: #ff8f8f; }
+.fp-primary-btn {
+  min-height: 56px; border-radius: 14px; border: 0; cursor: pointer;
+  background: #2f7bff; color: #fff; font-size: 17px; font-weight: 700;
+}
+.fp-primary-btn:disabled { opacity: 0.6; }
+.fp-unlock-note { font-size: 12px; color: #6b7280; margin-top: 8px; }
+
+/* ---------- Shell layout ---------- */
+.fp-shell { min-height: 100vh; display: flex; flex-direction: column; }
+.fp-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 18px 28px 14px;
+  max-width: 1120px; width: 100%; margin: 0 auto; box-sizing: border-box;
+}
+.fp-brand-name { font-family: Outfit, Inter, sans-serif; font-size: 19px; font-weight: 800; letter-spacing: 0.12em; }
+.fp-brand-sub { font-size: 12.5px; color: #9aa3b2; margin-top: 1px; }
+.fp-nav { display: flex; gap: 4px; }
+.fp-nav a {
+  font-size: 15px; font-weight: 600; color: #c6cdd8; text-decoration: none;
+  padding: 12px 16px; border-radius: 12px; min-height: 48px;
+  display: inline-flex; align-items: center;
+}
+.fp-nav a:hover { color: #fff; background: rgba(255,255,255,0.05); }
+.fp-nav a[aria-current="page"] { color: #fff; background: rgba(47,123,255,0.16); }
+.fp-status { display: flex; gap: 8px; align-items: center; }
+.fp-chip {
+  font-size: 11px; font-weight: 700; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14); color: #9aa3b2; white-space: nowrap;
+}
+.fp-chip-demo { border-color: rgba(255,184,61,0.4); color: #ffcf7a; }
+
+.fp-shell main { flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; padding: 8px 28px 120px; box-sizing: border-box; }
+#view { animation: none; }
+
+/* Bottom tab bar — mobile only */
+.fp-tabbar {
+  display: none;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+  background: rgba(10,14,22,0.92);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding: 6px 8px calc(8px + env(safe-area-inset-bottom));
+}
+.fp-tabbar a {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: 11px; font-weight: 600; color: #9aa3b2; text-decoration: none;
+  padding: 10px 4px; border-radius: 10px; min-height: 56px; justify-content: center;
+}
+.fp-tabbar a[aria-current="page"] { color: #fff; }
+.fp-tab-ico { font-size: 18px; }
+
+/* ---------- Piper hero (Home) ---------- */
+.fp-hero {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 40px 16px 8px;
+}
+.fp-hero-orb {
+  width: 92px; height: 92px; border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255,255,255,0.9), transparent 44%),
+    radial-gradient(circle at 50% 55%, #5aa9ff 0%, #2f7bff 48%, #0a2560 100%);
+  box-shadow: 0 0 70px rgba(47,123,255,0.5), 0 0 160px rgba(47,123,255,0.2);
+  animation: fp-orb-breathe 5s ease-in-out infinite;
+  margin-bottom: 22px;
+}
+.fp-hero-greet {
+  font-family: Outfit, Inter, sans-serif;
+  font-size: clamp(30px, 5vw, 44px);
+  font-weight: 700; letter-spacing: -0.02em; margin: 0 0 26px; color: #fff;
+}
+.fp-hero-ask { width: 100%; max-width: 640px; }
+.fp-ask-row {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 22px; padding: 8px 8px 8px 22px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.fp-ask-row:focus-within {
+  border-color: rgba(47,123,255,0.65);
+  box-shadow: 0 0 0 4px rgba(47,123,255,0.15);
+}
+.fp-ask-row input {
+  flex: 1; border: 0; background: transparent; color: #fff;
+  font-size: 18px; padding: 14px 0; outline: none; min-width: 0;
+}
+.fp-ask-row input::placeholder { color: #7d8595; }
+.fp-mic-btn, .fp-ask-btn {
+  width: 52px; height: 52px; border-radius: 16px; border: 0; cursor: pointer;
+  display: grid; place-items: center; font-size: 19px; flex-shrink: 0;
+}
+.fp-mic-btn { background: transparent; color: #7d8595; }
+.fp-mic-btn:disabled { cursor: default; opacity: 0.55; }
+.fp-ask-btn { background: #2f7bff; color: #fff; }
+.fp-suggest { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 16px; }
+.fp-suggest button {
+  font-size: 14px; padding: 11px 18px; border-radius: 999px; min-height: 46px;
+  border: 1px solid rgba(255,255,255,0.12); background: transparent;
+  color: #c6cdd8; cursor: pointer;
+}
+.fp-suggest button:hover { border-color: rgba(47,123,255,0.5); color: #fff; }
+
+/* ---------- Founder sections ---------- */
+.fp-section { margin-top: 34px; }
+.fp-section-title {
+  font-family: Outfit, Inter, sans-serif;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.16em;
+  color: #8b93a3; margin: 0 0 14px; text-transform: uppercase;
+}
+.fp-card {
+  background: rgba(255,255,255,0.028);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 20px; padding: 8px;
+}
+.fp-empty {
+  padding: 26px 20px; text-align: center; color: #9aa3b2; font-size: 15px;
+}
+/* Today rows reuse .today-* but roomier */
+.fp-card .today-row-main { padding: 16px 14px; }
+.fp-card .today-count { font-size: 24px; }
+/* Stage strip: calm, readable */
+.fp-card .fstage-strip { gap: 10px; }
+.fp-card .fstage { border-color: rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); }
+.fp-card .fstage:hover { border-color: rgba(47,123,255,0.45); }
+/* Quick actions */
+.fp-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.fp-action {
+  min-height: 64px; border-radius: 16px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.035);
+  color: #eef1f6; font-size: 15px; font-weight: 600; padding: 12px 8px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.fp-action:hover { border-color: rgba(47,123,255,0.5); }
+.fp-action.primary { background: #2f7bff; border-color: #2f7bff; color: #fff; }
+
+/* ---------- Piper overlay (never a permanent rail) ---------- */
+body.fp .piper-widget {
+  position: fixed !important; top: auto !important; left: auto !important;
+  bottom: 26px !important; right: 26px !important;
+  width: auto !important; height: auto !important;
+  grid-area: auto !important; z-index: 1000 !important; margin: 0 !important;
+}
+body.fp .piper-toggle { display: grid !important; }
+body.fp .piper-drawer {
+  position: fixed !important; top: 0 !important; right: 0 !important;
+  bottom: 0 !important; left: auto !important;
+  width: 444px !important; max-width: 94vw !important; height: auto !important;
+  border-left: 1px solid rgba(255,255,255,0.1) !important;
+  box-shadow: -30px 0 80px rgba(2,6,23,0.55) !important;
+  animation: slidein 0.3s cubic-bezier(0.22,1,0.36,1) !important;
+}
+body.fp .piper-drawer.hidden { display: none !important; }
+body.fp .piper-widget.collapsed .piper-drawer { overflow: visible; }
+body.fp #piper-collapse-btn { display: none !important; }
+/* Backdrop when the Piper overlay is open */
+.fp-piper-backdrop {
+  position: fixed; inset: 0; z-index: 990;
+  background: rgba(3,5,10,0.55);
+  backdrop-filter: blur(2px);
+}
+
+/* Old console remnants must never show in the founder shell */
+body.fp .nav, body.fp .sidebar-telemetry, body.fp .footer,
+body.fp .ocg-command-context, body.fp .ocg-command-center, body.fp .ocg-deal-story {
+  display: none !important;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 860px) {
+  .fp-nav { display: none; }
+  .fp-tabbar { display: flex; }
+  .fp-header { padding: 16px 18px 10px; }
+  .fp-shell main { padding: 4px 18px 130px; }
+  .fp-hero { padding: 28px 8px 4px; }
+  .fp-actions { grid-template-columns: 1fr 1fr; }
+  body.fp .piper-widget { bottom: 92px !important; right: 18px !important; }
+  body.fp .piper-drawer { width: 100% !important; max-width: 100vw !important; }
+}
+@media (min-width: 861px) {
+  .fp-tabbar { display: none !important; }
+}
+
+/* Subtle compact loading indicator (replaces giant skeleton panels) */
+.fp-loading {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 60px 20px; color: #9aa3b2; font-size: 15px;
+}
+.fp-loading-orb {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.9), transparent 45%),
+    radial-gradient(circle at 50% 55%, #5aa9ff 0%, #2f7bff 55%, #0a2560 100%);
+  box-shadow: 0 0 24px rgba(47,123,255,0.55);
+  animation: fp-orb-breathe 1.6s ease-in-out infinite;
+}
+
+/* The hidden attribute must always win over display declarations above. */
+.fp-unlock[hidden], #fp-shell[hidden], [hidden] { display: none !important; }
+
+/* Mobile header: keep brand + chips on one clean row */
+@media (max-width: 860px) {
+  .fp-header { gap: 10px; align-items: center; }
+  .fp-brand-name { font-size: 16px; }
+  .fp-brand-sub { font-size: 11px; white-space: nowrap; }
+  .fp-chip { font-size: 10px; padding: 5px 10px; }
+}

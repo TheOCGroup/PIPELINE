@@ -239,59 +239,7 @@
   // Helper: Badges
   const badge = (cls, val) => `<span class="badge b-${esc(val)}">${esc(val)}</span>`;
   const loading = () => {
-    const path = location.pathname;
-    const isDetail = path.match(/^\/opportunities\/([^/]+)$/);
-    
-    let skeletonHtml = '';
-    if (path === "/" || path === "/index.html") {
-      skeletonHtml = `
-        <div class="skeleton-narrative-panel skeleton-pulse"></div>
-        <div class="skeleton-bridge-grid" style="margin-top: 20px;">
-          <div class="skeleton-main-col">
-            <div class="skeleton-panel skeleton-pulse" style="height: 300px; margin-bottom: 20px;"></div>
-            <div class="skeleton-panel skeleton-pulse" style="height: 250px;"></div>
-          </div>
-          <div class="skeleton-side-col">
-            <div class="skeleton-panel skeleton-pulse" style="height: 200px; margin-bottom: 20px;"></div>
-            <div class="skeleton-panel skeleton-pulse" style="height: 350px;"></div>
-          </div>
-        </div>
-      `;
-    } else if (path === "/opportunities") {
-      skeletonHtml = `
-        <div class="skeleton-header skeleton-pulse" style="height: 60px; margin-bottom: 20px; width: 300px;"></div>
-        <div class="skeleton-filters skeleton-pulse" style="height: 50px; margin-bottom: 20px;"></div>
-        <div class="skeleton-board">
-          <div class="skeleton-column skeleton-pulse"></div>
-          <div class="skeleton-column skeleton-pulse"></div>
-          <div class="skeleton-column skeleton-pulse"></div>
-          <div class="skeleton-column skeleton-pulse"></div>
-          <div class="skeleton-column skeleton-pulse"></div>
-          <div class="skeleton-column skeleton-pulse"></div>
-        </div>
-      `;
-    } else if (isDetail) {
-      skeletonHtml = `
-        <div class="skeleton-hero skeleton-pulse" style="height: 120px; margin-bottom: 20px;"></div>
-        <div class="skeleton-strip skeleton-pulse" style="height: 60px; margin-bottom: 20px;"></div>
-        <div class="skeleton-deal-room-grid">
-          <div class="skeleton-room-main">
-            <div class="skeleton-panel skeleton-pulse" style="height: 200px; margin-bottom: 20px;"></div>
-            <div class="skeleton-panel skeleton-pulse" style="height: 250px; margin-bottom: 20px;"></div>
-          </div>
-          <div class="skeleton-room-side">
-            <div class="skeleton-panel skeleton-pulse" style="height: 300px; margin-bottom: 20px;"></div>
-            <div class="skeleton-panel skeleton-pulse" style="height: 200px; margin-bottom: 20px;"></div>
-          </div>
-        </div>
-      `;
-    } else {
-      skeletonHtml = `
-        <div class="skeleton-header skeleton-pulse" style="height: 50px; margin-bottom: 20px; width: 250px;"></div>
-        <div class="skeleton-panel skeleton-pulse" style="height: 400px;"></div>
-      `;
-    }
-    view.innerHTML = `<div class="skeleton-container">${skeletonHtml}</div>`;
+    view.innerHTML = `<div class="fp-loading" role="status" aria-label="Loading"><span class="fp-loading-orb" aria-hidden="true"></span><span>Loading\u2026</span></div>`;
   };
   const errorState = (msg) => { view.innerHTML = `<div class="state error">${esc(msg)}</div>`; };
   const empty = (msg) => `<div class="state">${esc(msg)}</div>`;
@@ -462,7 +410,7 @@
     updatePiperContext();
     const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
     const [briefRes, oppsRes] = await Promise.all([
-      api(`/api/v1/piper/brief?excludeFixtures=${!showFixtures}`).catch(() => ({ ok: true, data: { headline: "Pipeline active", sections: [] } })),
+      api(`/api/v1/piper/brief?excludeFixtures=${!showFixtures}`).catch(() => ({ ok: true, data: { sections: [] } })),
       api("/api/v1/opportunities?pageSize=100").catch(() => ({ ok: true, data: [] })),
     ]);
     const b = briefRes.data || {};
@@ -520,63 +468,63 @@
         <span class="fstage-label">${esc(s.label)}</span>
       </button>`).join("");
 
+    // PIPER-FIRST Home: hero owns the first viewport. No dashboard chrome.
     view.innerHTML = `
-      <div class="ph-home">
-        <header class="ph-header">
-          <div>
-            <div class="ph-title">OCG PIPELINE</div>
-            <div class="ph-sub">${esc(b.headline || "Your acquisitions, through Piper.")}</div>
+      <div class="fp-hero">
+        <div class="fp-hero-orb" aria-hidden="true"></div>
+        <h1 class="fp-hero-greet">What do you need, Genaro?</h1>
+        <form class="fp-hero-ask" id="fp-ask-form">
+          <div class="fp-ask-row">
+            <input id="fp-ask-input" type="text" autocomplete="off"
+              placeholder="Ask Piper anything about your sellers or deals…" aria-label="Ask Piper" />
+            <button type="button" class="fp-mic-btn" disabled
+              title="Voice input is not connected yet." aria-label="Voice input (not available yet)">◉</button>
+            <button type="submit" class="fp-ask-btn" aria-label="Ask Piper">▲</button>
           </div>
-          <span class="ph-limited" title="Piper is answering from Pipeline data with its built-in tools. No language model is connected.">Piper limited</span>
-        </header>
-
-        <form class="ph-ask" id="ph-ask-form">
-          <input id="ph-ask-input" type="text" autocomplete="off"
-            placeholder="Ask Piper anything about your sellers or deals…" aria-label="Ask Piper" />
-          <button type="submit" class="ph-ask-btn" aria-label="Ask Piper">▲</button>
         </form>
-        <div class="ph-hints">
-          <button class="ph-hint" data-hint="Who do I need to call today?">Who do I need to call today?</button>
-          <button class="ph-hint" data-hint="What deals need my attention?">What deals need attention?</button>
-          <button class="ph-hint" data-hint="What changed today?">What changed today?</button>
+        <div class="fp-suggest">
+          <button type="button" data-hint="Who needs my attention?">Who needs my attention?</button>
+          <button type="button" data-hint="What changed today?">What changed today?</button>
+          <button type="button" data-hint="What am I forgetting?">What am I forgetting?</button>
         </div>
-
-        <section class="ph-panel" aria-label="Today">
-          <h2 class="ph-panel-title">Today</h2>
-          ${todayRows || `<div class="empty-state">Nothing needs attention. All quiet.</div>`}
-        </section>
-
-        <section class="ph-panel" aria-label="Pipeline">
-          <h2 class="ph-panel-title">Pipeline</h2>
-          <div class="fstage-strip">${stageStrip}</div>
-        </section>
-
-        <section class="ph-actions" aria-label="Quick actions">
-          <button class="ph-action primary" onclick="window.openNewOpportunityModal()">＋ New Seller</button>
-          <button class="ph-action" onclick="window.focusPiperHome()">Ask Piper</button>
-          <button class="ph-action" onclick="window.routeTo(event, '/opportunities?focus=search')">Search</button>
-          <button class="ph-action" onclick="window.routeTo(event, '/tasks')">Today&apos;s Follow-Ups</button>
-        </section>
       </div>
+
+      <section class="fp-section" aria-label="Today">
+        <h2 class="fp-section-title">Today</h2>
+        <div class="fp-card">${todayRows || `<div class="fp-empty">Nothing needs your attention right now.</div>`}</div>
+      </section>
+
+      <section class="fp-section" aria-label="Pipeline">
+        <h2 class="fp-section-title">Pipeline</h2>
+        <div class="fp-card" style="padding:14px"><div class="fstage-strip">${stageStrip}</div></div>
+      </section>
+
+      <section class="fp-section" aria-label="Quick actions">
+        <div class="fp-actions">
+          <button type="button" class="fp-action primary" onclick="window.openNewOpportunityModal()">＋ New Seller</button>
+          <button type="button" class="fp-action" id="fp-ask-piper-btn">Ask Piper</button>
+          <button type="button" class="fp-action" onclick="window.routeTo(event, '/opportunities?focus=search')">Search</button>
+          <button type="button" class="fp-action" onclick="window.routeTo(event, '/tasks')">Today&apos;s Follow-Ups</button>
+        </div>
+      </section>
     `;
 
-    // Wire central Piper input -> the one shared Piper conversation.
-    const form = document.getElementById("ph-ask-form");
-    const input = document.getElementById("ph-ask-input");
-    window.focusPiperHome = () => { if (input) input.focus(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+    // Hero input -> Piper overlay conversation (the shared Piper flow).
+    const form = document.getElementById("fp-ask-form");
+    const input = document.getElementById("fp-ask-input");
+    const askPiper = async (text) => {
+      const t = (text || "").trim();
+      if (!t) { if (input) input.focus(); return; }
+      if (input) input.value = "";
+      openPiperDrawer();
+      await window.submitPiperText(t);
+    };
     if (form && input) {
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const text = input.value;
-        input.value = "";
-        openPiperDrawer();
-        await window.submitPiperText(text);
-      });
-      view.querySelectorAll("[data-hint]").forEach((btn) => btn.addEventListener("click", async () => {
-        openPiperDrawer();
-        await window.submitPiperText(btn.getAttribute("data-hint"));
-      }));
+      form.addEventListener("submit", (e) => { e.preventDefault(); askPiper(input.value); });
+      const askBtn = document.getElementById("fp-ask-piper-btn");
+      if (askBtn) askBtn.addEventListener("click", () => { openPiperDrawer(); });
     }
+    view.querySelectorAll("[data-hint]").forEach((btn) => btn.addEventListener("click", () => askPiper(btn.getAttribute("data-hint"))));
     // Today rows: expand inline, or hand the section to Piper.
     view.querySelectorAll("[data-today-toggle]").forEach((btn) => btn.addEventListener("click", () => {
       const i = btn.getAttribute("data-today-toggle");
@@ -591,12 +539,54 @@
     }));
   }
 
-  // Opens the persistent Piper drawer if it is closed.
+
+  // Opens the Piper overlay conversation if it is closed.
   function openPiperDrawer() {
     const drawer = document.getElementById("piper-drawer");
     if (drawer && drawer.classList.contains("hidden")) {
       document.getElementById("piper-toggle").click();
     }
+  }
+
+  // Founder shell: Piper is an overlay, never a permanent rail.
+  // Manages the backdrop, the close button, and Escape; neutralizes any
+  // persisted rail state from the old console layout.
+  function initFpDrawer() {
+    const drawer = document.getElementById("piper-drawer");
+    const toggle = document.getElementById("piper-toggle");
+    const closeBtn = document.getElementById("piper-close-btn");
+    const widget = document.getElementById("piper-widget");
+    document.body.classList.remove("has-collapsed-piper", "has-expanded-piper");
+    if (widget) widget.classList.remove("collapsed", "expanded");
+    // The drawer toggle is class-based: normalize the initial hidden
+    // attribute into the hidden class so open/close stays consistent.
+    if (drawer) {
+      drawer.removeAttribute("hidden");
+      drawer.classList.add("hidden");
+    }
+    const syncBackdrop = () => {
+      const open = drawer && !drawer.classList.contains("hidden");
+      let bd = document.querySelector(".fp-piper-backdrop");
+      if (open && !bd) {
+        bd = document.createElement("div");
+        bd.className = "fp-piper-backdrop";
+        bd.addEventListener("click", () => { if (toggle) toggle.click(); });
+        document.body.appendChild(bd);
+      } else if (!open && bd) {
+        bd.remove();
+      }
+    };
+    if (toggle) toggle.addEventListener("click", () => setTimeout(syncBackdrop, 0));
+    if (closeBtn) closeBtn.addEventListener("click", () => {
+      if (drawer) drawer.classList.add("hidden");
+      syncBackdrop();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && drawer && !drawer.classList.contains("hidden")) {
+        drawer.classList.add("hidden");
+        syncBackdrop();
+      }
+    });
   }
 
 
@@ -916,15 +906,15 @@
       `;
     };
 
-    // Show authoritative Victor underwriting if available
+    // Show authoritative underwriting if available
     let victorHtml = "";
     if (o.underwriting) {
       if (o.underwriting.status === "insufficient_evidence" || o.underwriting.arv === null || o.underwriting.arv === undefined) {
         victorHtml = `
           <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <h2 style="margin:0; font-size: 16px;">Victor / Deal Scout — Underwriting</h2>
-              <span class="badge" style="background: rgba(255, 68, 68, 0.1); color: #ff4444; border-color: #ff4444;">Victor</span>
+              <h2 style="margin:0; font-size: 16px;">Underwriting</h2>
+              
             </div>
             <div style="margin-bottom: 16px;">
               <strong style="color: #ff4444; display: block; font-size: 14px; margin-bottom: 4px;">INSUFFICIENT COMPARABLE EVIDENCE</strong>
@@ -977,8 +967,8 @@
         victorHtml = `
           <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <h2 style="margin:0; font-size: 16px;">Victor / Deal Scout — Underwriting</h2>
-              <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Victor</span>
+              <h2 style="margin:0; font-size: 16px;">Underwriting</h2>
+              
             </div>
             <dl class="kv" style="font-size: 13px; margin-bottom: 12px;">
               <dt>ARV Target</dt><dd>${money(arv)}</dd>
@@ -997,7 +987,7 @@
       }
     }
           let offersHtml = "";
-    // Offers need deal math: Victor underwriting or founder-recorded assumptions.
+    // Offers need deal math: recorded underwriting or founder-recorded assumptions.
     const dealMath = o.underwriting || (assumptions && assumptions.mao != null
       ? { status: "completed", mao: assumptions.mao, arv: assumptions.arv, rehab: assumptions.rehab,
           evidence: { comps: [] }, operatorAssumption: true }
@@ -1012,7 +1002,7 @@
           recText = "Hold. Insufficient comparable sales evidence is available for this property. Do not prepare an offer at this time.";
           recActionHtml = `<div style="color: #ff4444; font-weight: 600; font-size: 13px; margin-top: 8px;">HOLD / INSUFFICIENT EVIDENCE</div>`;
         } else if (dealMath.operatorAssumption) {
-          recText = `Operator assumptions recorded (not Victor underwriting). MAO ${money(dealMath.mao)} is a working estimate — verify before presenting.`;
+          recText = `Operator assumptions recorded (not formal underwriting). MAO ${money(dealMath.mao)} is a working estimate — verify before presenting.`;
         } else {
           const compsCount = dealMath.evidence?.comps?.length;
           const compLabel = compsCount !== undefined ? `${compsCount} comps` : "Comparable count unavailable";
@@ -1025,7 +1015,7 @@
               <div id="prepare-offer-form" style="display: none; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px; margin-top: 12px; width: 100%;">
                 <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase;">Prepare Offer terms</h4>
                 <div style="font-size: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
-                  <div><strong>${dealMath.operatorAssumption ? "Operator Assumptions (working MAO)" : "Victor Analysis (Victor MAO)"}:</strong> ${money(dealMath.mao)}</div>
+                  <div><strong>${dealMath.operatorAssumption ? "Operator Assumptions (working MAO)" : "Recorded Analysis (recorded MAO)"}:</strong> ${money(dealMath.mao)}</div>
                   <div><strong>Piper Recommended Opening Price:</strong> ${money(Math.round(dealMath.mao))}</div>
                   <div class="muted" style="margin-top: 4px;">(Recommendation is based on Cash Purchase under standard 75% rule pricing guidelines)</div>
                 </div>
@@ -1197,7 +1187,7 @@
               <dt>Internal Notes</dt><dd style="font-style: italic; opacity: 0.8;">${esc(activeVer.internalNotes || "—")}</dd>
             </dl>
             <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; font-size: 12px; margin-top: 12px;">
-              <div style="font-weight: 600; margin-bottom: 4px; opacity: 0.8;">Victor Underwriting Snapshot</div>
+              <div style="font-weight: 600; margin-bottom: 4px; opacity: 0.8;">Underwriting Snapshot</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
                 <span>ARV: ${money(activeVer.underwritingArvSnapshot)}</span>
                 <span>Rehab: ${money(activeVer.underwritingRehabSnapshot)}</span>
@@ -1213,7 +1203,8 @@
       }
     }
 
-    const outreachHtml = buildOutreachHtml(o);
+    // Outreach panel was retired from the founder view; keep the slot empty.
+    const outreachHtml = "";
 
     let heroImgUrl = "";
     let heroImgBadge = "";
@@ -1346,7 +1337,7 @@
         <div class="ph-panel"><h2 class="ph-panel-title">Follow-ups</h2><div id="detail-next-actions">Loading…</div></div>
         <div class="ph-panel">
           <h2 class="ph-panel-title">Working numbers</h2>
-          <p class="muted" style="font-size:12px">Your working estimates (not Victor underwriting). Verify before presenting an offer.</p>
+          <p class="muted" style="font-size:12px">Your working estimates. Verify before presenting an offer.</p>
           <div class="form-grid-compact">
             <div class="form-group-compact"><label>ARV Target</label><input type="number" id="detail-arv" value="${arvVal}" oninput="window.recalcMao()" /></div>
             <div class="form-group-compact"><label>Est Rehab</label><input type="number" id="detail-rehab" value="${rehabVal}" oninput="window.recalcMao()" /></div>
@@ -1774,7 +1765,7 @@
     };
     try {
       await operatorPost("underwriting", payload);
-      window.showCustomAlert("Saved to PIPELINE. These are your working estimates — not Victor underwriting.", "Assumptions Saved");
+      window.showCustomAlert("Saved to PIPELINE. These are your working estimates.", "Assumptions Saved");
       opportunityDetail(oppId);
     } catch (e) {
       window.showCustomAlert("Could not save assumptions: " + esc(e.message), "Save Failed");
@@ -1970,7 +1961,7 @@
       }
     } catch (e) {
       const msg = e.message === "active_offer_required" ? "No active offer to review — prepare an offer draft first."
-        : e.message === "underwriting_required" ? "No underwriting on file — record operator assumptions or wait for Victor analysis."
+        : e.message === "underwriting_required" ? "No underwriting on file — record your working assumptions."
         : e.message;
       if (box) box.innerHTML = `<span style="color: #ff4444;">${esc(msg)}</span>`;
     }
@@ -2480,41 +2471,29 @@
       const body = await res.json();
       if (!body.ok) return;
       const p = body.data.provider;
-      // Live badges, driven by /status: never a hard-coded model claim.
+      // Founder-facing language stays non-technical: "Piper limited" only.
+      // Elements below may not exist in the founder shell; all null-safe.
       const pill = document.getElementById("piper-provider");
       const pillText = document.getElementById("piper-provider-text");
       if (pill && pillText) {
         pill.classList.toggle("connected", !!p.connected);
-        pillText.textContent = p.connected && p.model
-          ? `Piper · ${p.model}`
-          : "Piper limited — no model";
-        pill.title = p.connected
-          ? `Piper intelligence: ${p.provider || "model"} (${p.model})`
-          : "No language model is connected. Piper answers from stored PIPELINE state only.";
+        pillText.textContent = "Piper limited";
+        pill.title = "Piper is working from your Pipeline records with reduced capabilities.";
       }
       const sidePill = document.getElementById("sidebar-active-provider");
       if (sidePill) {
         sidePill.classList.toggle("limited", !p.connected);
-        sidePill.textContent = p.connected && p.model
-          ? `Piper · ${p.model}`
-          : "Piper limited";
-        sidePill.title = p.connected
-          ? `Piper intelligence: ${p.provider || "model"} (${p.model})`
-          : "No language model is connected. Piper answers from stored PIPELINE state only.";
+        sidePill.textContent = "Piper limited";
+        sidePill.title = "Piper is working from your Pipeline records with reduced capabilities.";
       }
       const footerMode = document.getElementById("footer-mode");
       if (footerMode) {
-        footerMode.textContent = p.connected && p.model
-          ? `Piper intelligence: ${p.model}`
-          : "Piper limited — no model";
+        footerMode.textContent = "Piper limited";
       }
-      setPiperState(p.connected ? "idle" : "not_connected",
-        p.connected ? "" : "No model provider is configured. Piper answers from stored PIPELINE state only.");
+      setPiperState("idle", "");
       const disc = document.getElementById("piper-disclosure");
-      if (disc && !p.connected) {
-        disc.textContent = "No language model is connected. Piper answers deterministically from stored PIPELINE state; actions are written only after you approve them.";
-      } else if (disc && p.connected) {
-        disc.textContent = "";
+      if (disc) {
+        disc.textContent = "Piper works from your Pipeline records.";
       }
     } catch { /* status is best-effort */ }
   }
@@ -2601,10 +2580,6 @@
               <span class="lbl">Stage</span>
               <span class="val stage-badge">${esc(founderStageLabel(toFounderStage(o.stage)))}</span>
             </div>
-            <div class="metric-mini">
-              <span class="lbl">MAO (75%)</span>
-              <span class="val">${mao != null ? money(mao) : "—"}</span>
-            </div>
           </div>
         `;
         activeOppCard.classList.remove("hidden");
@@ -2638,9 +2613,11 @@
 
   // ---- router ----
   function render() {
+    // Founder gate: the experience never renders without the operator secret.
+    if (!window.hasOperatorSecret()) { showUnlock(); return; }
     const path = location.pathname;
     document.querySelectorAll("[data-nav]").forEach((a) => {
-      if (a.closest(".nav")) a.setAttribute("aria-current", a.getAttribute("href") === path ? "page" : "false");
+      if (a.closest(".fp-nav, .fp-tabbar")) a.setAttribute("aria-current", a.getAttribute("href") === path ? "page" : "false");
     });
     const detail = path.match(/^\/opportunities\/([^/]+)$/);
     let p;
@@ -2672,263 +2649,76 @@
   (async () => {
     await refreshMode();
     initPiperWidget();
-    initOperatorAccess();
-    render();
-    // Keep every provider claim honest: sidebar pill, footer, and Piper
-    // drawer all come from /api/v1/piper/status. Best-effort; the static
-    // defaults already state "limited".
-    refreshPiperStatus();
+    initFpDrawer();
+    if (window.hasOperatorSecret()) enterApp();
+    else showUnlock();
   })();
 
-  // Operator access entry: founder-operator secret, sessionStorage only.
-  function initOperatorAccess() {
-    const btn = document.getElementById("operator-access-btn");
-    if (!btn) return;
-    const paint = () => {
-      const has = window.hasOperatorSecret();
-      btn.textContent = has ? "Operator: unlocked" : "Operator: locked";
-      btn.setAttribute("aria-pressed", has ? "true" : "false");
-      btn.classList.toggle("unlocked", has);
-    };
-    btn.addEventListener("click", () => {
-      if (window.hasOperatorSecret()) {
-        if (confirm("Clear the operator secret for this tab?")) {
-          window.clearOperatorSecret();
-          paint();
-        }
-        return;
-      }
-      openOperatorLoginDialog();
-    });
-    const origSet = window.setOperatorSecret;
-    window.setOperatorSecret = (s) => { origSet(s); paint(); };
-    const origClear = window.clearOperatorSecret;
-    window.clearOperatorSecret = () => { origClear(); paint(); };
-    paint();
-  }
-
-  // Masked operator login (P2 hardening). Replaces the unmasked
-  // window.prompt() flow. The secret is typed into a password field (never
-  // displayed), never written to logs, and never persisted by this dialog —
-  // on success it is handed to the existing sessionStorage mechanism
-  // (window.setOperatorSecret), preserving current authorization behavior.
-  // The candidate is validated against a live authenticated endpoint before
-  // it is accepted, so a wrong secret produces an honest failure message.
-  // The exact entered value is submitted and stored (no trimming), matching
-  // the server's exact-match operator-secret contract.
-  function openOperatorLoginDialog() {
-    if (document.getElementById("operator-login-backdrop")) return;
-    const backdrop = document.createElement("div");
-    backdrop.className = "custom-modal-backdrop";
-    backdrop.id = "operator-login-backdrop";
-
-    const modal = document.createElement("div");
-    modal.className = "custom-modal";
-    modal.setAttribute("role", "dialog");
-    modal.setAttribute("aria-modal", "true");
-    modal.setAttribute("aria-labelledby", "operator-login-title");
-    modal.innerHTML = `
-      <div class="custom-modal-header" id="operator-login-title">OPERATOR ACCESS</div>
-      <div class="custom-modal-body">
-        <p class="muted" style="margin-top:0">Enter the founder-operator secret. It stays in this tab only and is never written to disk or logs.</p>
-        <label class="field-label" for="operator-login-secret">Operator secret</label>
-        <input type="password" id="operator-login-secret" class="text-input" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" />
-        <div class="field-error" id="operator-login-error" role="alert" hidden></div>
-      </div>
-      <div class="custom-modal-actions">
-        <button class="primary" id="operator-login-submit">Unlock</button>
-        <button class="secondary" id="operator-login-cancel">Cancel</button>
-      </div>
-    `;
-
-    backdrop.appendChild(modal);
-    document.body.appendChild(backdrop);
-
-    const input = modal.querySelector("#operator-login-secret");
-    const errBox = modal.querySelector("#operator-login-error");
-    const submitBtn = modal.querySelector("#operator-login-submit");
-
-    const close = () => {
-      input.value = "";
-      if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
-      const btn = document.getElementById("operator-access-btn");
-      if (btn) btn.focus();
-    };
-    const fail = (msg) => {
-      errBox.textContent = msg;
-      errBox.hidden = false;
-      input.value = "";
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Unlock";
-      input.focus();
-    };
-    const submit = async () => {
-      const candidate = input.value;
-      if (!candidate.length) { fail("Enter the operator secret to continue."); return; }
-      errBox.hidden = true;
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Verifying…";
-      try {
-        // A live authenticated probe: 401/403 means the secret was rejected.
-        // Any other response proves the bearer was accepted (auth runs first).
-        const res = await fetch("/api/v1/piper/status", {
-          headers: { Authorization: "Bearer " + candidate },
-        });
-        if (res.status === 401 || res.status === 403) {
-          fail("Secret not accepted. Check the value and try again.");
+  // Founder unlock gate: a clean full-screen unlock before the experience
+  // loads. After unlock, no auth control remains in the founder UI.
+  // The secret stays in sessionStorage only, validated against a live
+  // authenticated endpoint before it is accepted.
+  function showUnlock() {
+    const shell = document.getElementById("fp-shell");
+    const u = document.getElementById("fp-unlock");
+    if (shell) shell.hidden = true;
+    if (!u) return;
+    u.hidden = false;
+    const form = document.getElementById("fp-unlock-form");
+    if (form && !form.dataset.wired) {
+      form.dataset.wired = "true";
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const input = document.getElementById("fp-unlock-secret");
+        const errBox = document.getElementById("fp-unlock-error");
+        const submitBtn = document.getElementById("fp-unlock-submit");
+        const candidate = input.value;
+        if (!candidate.length) {
+          errBox.textContent = "Enter the operator secret to continue.";
+          errBox.hidden = false;
           return;
         }
-        if (!res.ok) { fail("Could not verify the secret right now. Try again."); return; }
-        window.setOperatorSecret(candidate);
-        close();
-      } catch {
-        fail("Could not reach PIPELINE. Check the connection and try again.");
-      }
-    };
-
-    modal.querySelector("#operator-login-cancel").addEventListener("click", close);
-    backdrop.addEventListener("mousedown", (e) => { if (e.target === backdrop) close(); });
-    submitBtn.addEventListener("click", submit);
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); submit(); }
-      else if (e.key === "Escape") { e.preventDefault(); close(); }
-    });
-    input.focus();
-  }
-  function buildOutreachHtml(o) {
-    const contact = o.contact || { status: "MISSING", value: null, channel: null };
-    const hasContact = contact.status !== "MISSING" && contact.value;
-    
-    // Get active approved offer version
-    const hasApprovedOffer = o.offers && o.offers.length > 0 && o.offers[0].status === "approved";
-    const activeOffer = o.offers && o.offers.length > 0 ? o.offers[0] : null;
-    const activeVer = activeOffer ? activeOffer.versions.find(v => v.id === activeOffer.activeVersionId) : null;
-    const isApproved = activeVer && activeVer.versionStatus === "approved";
-
-    let contactStatusColor = "#ff4444";
-    if (contact.status === "VERIFIED") contactStatusColor = "var(--ok)";
-    else if (contact.status === "SOURCE_SUPPLIED") contactStatusColor = "var(--accent)";
-
-    let contactCard = `
-      <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; font-size: 12px; margin-bottom: 12px;">
-        <div style="font-weight:600; margin-bottom: 4px; display: flex; justify-content: space-between;">
-          <span>Recipient Contact Card</span>
-          <span style="color: ${contactStatusColor}; font-weight: 700;">${esc(contact.status)}</span>
-        </div>
-        ${hasContact ? `
-          <div style="display: grid; grid-template-columns: 80px 1fr; gap: 4px; font-size: 11px;">
-            <span class="muted">Name:</span><span>${esc(contact.displayName || "N/A")}</span>
-            <span class="muted">Channel:</span><span>${esc(contact.channel || "N/A")}</span>
-            <span class="muted">Value:</span><span>${esc(contact.value || "N/A")}</span>
-            <span class="muted">Person ID:</span><span>${esc(contact.personId || "N/A")}</span>
-          </div>
-        ` : `
-          <div style="color: #ff4444; font-size: 11px;">⚠️ No verified or source-supplied contact details available for this seller.</div>
-        `}
-      </div>
-    `;
-
-    let actionHtml = "";
-    if (!isApproved) {
-      actionHtml = `<div class="muted" style="font-size: 11px;">Prepare and approve an offer version before drafting outreach.</div>`;
-    } else if (!hasContact) {
-      actionHtml = `<div class="muted" style="font-size: 11px; color: #ff4444;">Drafting and sending outreach is blocked because seller contact information is missing.</div>`;
-    } else {
-      // We have contact + approved offer.
-      // Check if there is an active draft.
-      const activeDraft = o.communications ? o.communications.find(c => ["drafted", "authorized", "send_attempted"].includes(c.status)) : null;
-
-      if (activeDraft) {
-        let statusColor = "var(--accent)";
-        if (activeDraft.status === "authorized") statusColor = "var(--ok)";
-        
-        let buttonsHtml = "";
-        if (activeDraft.status === "drafted") {
-          buttonsHtml = `
-            <button class="primary" style="background: var(--ok); color: #000; font-size: 11px; padding: 4px 8px;" onclick="window.authorizeOutreach('${esc(activeDraft.id)}', '${esc(o.id)}')">Authorize Outreach</button>
-          `;
-        } else if (activeDraft.status === "authorized") {
-          buttonsHtml = `
-            <button class="primary" style="background: var(--accent); color: #000; font-size: 11px; padding: 4px 8px;" onclick="window.sendOutreach('${esc(activeDraft.id)}', '${esc(o.id)}')">Send Outreach</button>
-          `;
+        errBox.hidden = true;
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Unlocking…";
+        try {
+          // A live authenticated probe: 401/403 means the secret was rejected.
+          const res = await fetch("/api/v1/piper/status", {
+            headers: { Authorization: "Bearer " + candidate },
+          });
+          if (res.status === 401 || res.status === 403) {
+            throw new Error("Secret not accepted. Check the value and try again.");
+          }
+          if (!res.ok) throw new Error("Could not verify the secret right now. Try again.");
+          input.value = "";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Unlock";
+          window.setOperatorSecret(candidate); // triggers render()
+          enterApp();
+        } catch (err) {
+          errBox.textContent = err.message || "Could not unlock. Try again.";
+          errBox.hidden = false;
+          input.value = "";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Unlock";
+          input.focus();
         }
-
-        actionHtml = `
-          <div style="background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.03); padding: 8px; border-radius: 4px;">
-            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px;">
-              <strong>ACTIVE OUTREACH PIPELINE</strong>
-              <span style="color: ${statusColor}; font-weight:700;">${activeDraft.status.toUpperCase()}</span>
-            </div>
-            <div style="font-size: 11px; border: 1px solid rgba(255,255,255,0.05); padding: 6px; background:#111; color:#fff; border-radius:4px; font-family: var(--mono); white-space: pre-wrap; margin-bottom: 8px;">${esc(activeDraft.contentText)}</div>
-            <div style="display:flex; gap:8px;">
-              ${buttonsHtml}
-            </div>
-          </div>
-        `;
-      } else {
-        // Let operator create a draft outreach.
-        const defaultText = `Hello ${contact.displayName || "Owner"},\n\nWe would like to make an offer of ${money(activeVer.purchasePrice)} for your property at ${o.property.address || "Wichita Property"} with ${activeVer.inspectionDays} inspection days and ${activeVer.closingDays} closing days.\n\nBest regards,\nOperator`;
-
-        actionHtml = `
-          <div id="create-outreach-form">
-            <div class="form-group-compact" style="margin-bottom: 8px;">
-              <label>Subject</label>
-              <input type="text" id="outreach-subject" value="Offer for ${o.property.address || "Wichita Property"}" style="width:100%; background:#111; color:#fff; border:1px solid #333; padding:4px;" />
-            </div>
-            <div class="form-group-compact" style="margin-bottom: 8px;">
-              <label>Outreach Message</label>
-              <textarea id="outreach-content" style="width:100%; height:80px; background:#111; color:#fff; border:1px solid #333; padding:4px; font-family: var(--mono); font-size:11px;">${esc(defaultText)}</textarea>
-            </div>
-            <button class="primary" style="background: var(--ok); color: #000; font-size: 11px; padding: 4px 8px;" onclick="window.createOutreachDraft('${esc(o.id)}', '${esc(activeVer.id)}', '${esc(contact.personId)}', '${esc(contact.value)}', '${esc(contact.channel)}')">Create Outreach Draft</button>
-          </div>
-        `;
-      }
+      });
     }
-
-    // History timeline
-    let historyHtml = "";
-    if (o.communications && o.communications.length > 0) {
-      historyHtml = `
-        <div style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
-          <h4 style="margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8;">Outreach Audit History</h4>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            ${o.communications.map(c => {
-              let statusColor = "var(--accent)";
-              if (c.status === "failed") statusColor = "#ff4444";
-              else if (c.status === "sent" || c.status === "delivered") statusColor = "var(--ok)";
-
-              const latestEvent = c.events[c.events.length - 1];
-              const outcomeText = latestEvent?.outcome ? ` - Outcome: ${latestEvent.outcome}` : "";
-
-              return `
-                <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); padding: 8px; border-radius: 4px; font-size: 11px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <strong>${c.direction.toUpperCase()} (${esc(c.recipientChannel.toUpperCase())})</strong>
-                    <span style="color: ${statusColor}; font-weight:700;">${c.status.toUpperCase()}</span>
-                  </div>
-                  <div style="font-style: italic; margin-bottom: 4px; color: #fff;">"${esc(c.contentText)}"</div>
-                  <div class="muted" style="font-size: 9px; display: flex; justify-content: space-between;">
-                    <span>Ref: ${esc(c.id.slice(0, 8))}...${outcomeText}</span>
-                    <span>${esc(new Date(c.createdAt).toLocaleString())}</span>
-                  </div>
-                </div>
-              `;
-            }).join("")}
-          </div>
-        </div>
-      `;
-    }
-
-    return `
-      <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <h2 style="margin:0; font-size: 16px;">Seller Outreach & Audit Gate</h2>
-          <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Outreach</span>
-        </div>
-        ${contactCard}
-        ${actionHtml}
-        ${historyHtml}
-      </div>
-    `;
+    setTimeout(() => {
+      const i = document.getElementById("fp-unlock-secret");
+      if (i && !u.hidden) i.focus();
+    }, 60);
   }
+
+  function enterApp() {
+    const u = document.getElementById("fp-unlock");
+    const shell = document.getElementById("fp-shell");
+    if (u) u.hidden = true;
+    if (shell) shell.hidden = false;
+    render();
+    // Keep the status chip honest: best-effort; the static default is "limited".
+    refreshPiperStatus();
+  }
+
 })();

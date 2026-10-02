@@ -50,7 +50,10 @@ test('real OCG OS job is visible through governed Work Room lifecycle and persis
  assert.equal(body.data.tasks[0].id,id);
 
  const shell=await (await fetch(`${baseUrl}/`)).text();
- assert.match(shell,/ocg-os-work-room\.js/);
+ // Founder shell must not surface Work Room / agent-floor concepts.
+ assert.doesNotMatch(shell,/ocg-os-work-room\.js/);
+ assert.doesNotMatch(shell,/OCG OS/);
+ // The backend capability and static asset remain intact.
  const asset=await fetch(`${baseUrl}/ocg-os-work-room.js`);
  assert.equal(asset.status,200);
  assert.match(asset.headers.get('content-type')||'',/application\/javascript/);
