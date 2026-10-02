@@ -30,21 +30,28 @@ test("/version returns 0.1.0 and identifies as OCG PIPELINE, not OCG ONE", async
   assert.equal(body.schemaVersion, "1");
 });
 
-test("static PIPELINE page loads inside the OCG OS shell without losing subsystem identity", async (t) => {
+test("static PIPELINE page loads as the Piper-first founder shell", async (t) => {
   const db = makeTempDb();
   const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath));
   t.after(() => { app.close(); db.cleanup(); });
   const res = await fetch(`${baseUrl}/`);
   assert.equal(res.status, 200);
   const html = await res.text();
-  assert.match(html, /OCG OS/);
   assert.match(html, /OCG PIPELINE/);
-  assert.match(html, /PIPELINE \/ Seller Operations/);
-  assert.match(html, /OCG OS Director/);
   assert.match(html, /Piper/);
+  assert.match(html, /Piper limited/);
+  // Founder nav is Home / Pipeline / People / Tasks — nothing else.
+  assert.match(html, /id="nav-home"/);
+  assert.match(html, /id="nav-pipeline"/);
+  assert.match(html, /id="nav-people"/);
+  assert.match(html, /id="nav-tasks"/);
+  assert.doesNotMatch(html, /id="nav-system"/);
+  assert.doesNotMatch(html, /id="nav-provenance"/);
+  // The command-hierarchy banner is out of the founder path.
+  assert.doesNotMatch(html, /OCG OS Director/);
+  assert.match(html, /piper-simple\.css/);
   assert.match(html, /ocg-os-command\.js/);
   assert.match(html, /ocg-os-deal-story\.js/);
-  assert.match(html, /Overview/);
 });
 
 test("OCG OS command-center assets are served with real content and governed data sources", async (t) => {
@@ -89,6 +96,19 @@ test("OCG OS command-center assets are served with real content and governed dat
   assert.match(cssText, /\.ocg-deal-story/);
   assert.match(cssText, /\.ocg-story-stage/);
   assert.doesNotMatch(cssText, /<!doctype html>/i);
+});
+
+test("Piper-first stylesheet is served as CSS, not the SPA fallback", async (t) => {
+  const db = makeTempDb();
+  const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath));
+  t.after(() => { app.close(); db.cleanup(); });
+
+  const css = await fetch(`${baseUrl}/piper-simple.css`);
+  assert.equal(css.status, 200);
+  assert.match(css.headers.get("content-type") || "", /text\/css/);
+  const cssText = await css.text();
+  assert.doesNotMatch(cssText, /<!doctype html>/i);
+  assert.match(cssText, /\.ph-/);
 });
 
 test("unknown API routes return a deterministic 404 with no internals", async (t) => {

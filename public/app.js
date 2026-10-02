@@ -199,6 +199,40 @@
   };
   const formatStage = (s) => stageLabels[s] || String(s || "any").replace(/_/g, " ");
 
+  // ---- Founder-stage mapping layer (PIPER-FIRST simplification) ----
+  // The backend keeps its detailed stage model; the founder sees 8 buckets.
+  // Canonical mapping lives in src/founderStages.mjs — keep this copy in sync.
+  const FOUNDER_STAGES = [
+    { key: "new", label: "New" },
+    { key: "contacted", label: "Contacted" },
+    { key: "appointment", label: "Appointment" },
+    { key: "offer", label: "Offer" },
+    { key: "negotiating", label: "Negotiating" },
+    { key: "under_contract", label: "Under Contract" },
+    { key: "closed", label: "Closed" },
+    { key: "dead", label: "Dead" },
+  ];
+  const STAGE_TO_FOUNDER = {
+    new_lead: "new", needs_review: "new",
+    attempting_contact: "contacted", contacted: "contacted", qualified: "contacted",
+    appointment_scheduled: "appointment", property_review: "appointment",
+    strategy_development: "offer", offer_preparation: "offer",
+    offer_approval_required: "offer", offer_presented: "offer",
+    negotiating: "negotiating",
+    under_contract: "under_contract", due_diligence: "under_contract",
+    closing_scheduled: "under_contract",
+    closed: "closed",
+    nurture: "dead", disqualified: "dead", lost: "dead", archived: "dead",
+  };
+  const FOUNDER_STAGE_DEFAULTS = {
+    new: "new_lead", contacted: "attempting_contact",
+    appointment: "appointment_scheduled", offer: "offer_preparation",
+    negotiating: "negotiating", under_contract: "under_contract",
+    closed: "closed", dead: "disqualified",
+  };
+  const toFounderStage = (s) => STAGE_TO_FOUNDER[s] || "new";
+  const founderStageLabel = (k) => (FOUNDER_STAGES.find((x) => x.key === k) || {}).label || String(k || "new");
+
   // Helper: Money Formatter
   const money = (val) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(val || 0);
 
@@ -419,420 +453,414 @@
     });
   }
 
+  // ============ PIPER-FIRST HOME ============
+  // One screen: Piper input, Today briefing, 8-stage pipeline, 4 quick actions.
   async function overview() {
     loading();
     state.activeOppId = null;
+    state.activeOpp = null;
     updatePiperContext();
     const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
-    const [dq, sys, opps, briefRes] = await Promise.all([
-      api("/api/v1/data-quality"),
-      api("/api/v1/system/status"),
-      api("/api/v1/opportunities?pageSize=100"),
-      api(`/api/v1/piper/brief?excludeFixtures=${!showFixtures}`).catch(() => ({ ok: true, data: { headline: "Pipeline active", sections: [] } }))
+    const [briefRes, oppsRes] = await Promise.all([
+      api(`/api/v1/piper/brief?excludeFixtures=${!showFixtures}`).catch(() => ({ ok: true, data: { headline: "Pipeline active", sections: [] } })),
+      api("/api/v1/opportunities?pageSize=100").catch(() => ({ ok: true, data: [] })),
     ]);
-    const d = dq.data, s = sys.data, b = briefRes.data;
-    
-    const fixtureIds = new Set(opps.data.filter(o => o.isFixture).map(o => o.id));
-    state.opportunities = showFixtures ? opps.data : opps.data.filter(o => !o.isFixture);
+    const b = briefRes.data || {};
+    const opps = (oppsRes.data || []).filter((o) => showFixtures || !o.isFixture);
+    state.opportunities = opps;
 
-    const stageCounts = {};
-    state.opportunities.forEach(o => {
-      const actualStage = o.stage || "new_lead";
-      stageCounts[actualStage] = (stageCounts[actualStage] || 0) + 1;
-    });
+    const fixtureIds = new Set((oppsRes.data || []).filter((o) => o.isFixture).map((o) => o.id));
+    let sections = (b.sections || []).map((sec) => ({
+      ...sec,
+      items: (sec.items || []).filter((item) => !item.opportunityId || !fixtureIds.has(item.opportunityId)),
+    })).filter((sec) => (sec.items || []).length > 0);
 
-    let filteredSections = b.sections || [];
-    if (!showFixtures) {
-      filteredSections = filteredSections.map(sec => ({
-        ...sec,
-        items: sec.items.filter(item => !item.opportunityId || !fixtureIds.has(item.opportunityId))
-      })).filter(sec => sec.items.length > 0);
-    }
-
-    let narrativeParts = [];
-    if (filteredSections) {
-      for (const sec of filteredSections) {
-        const count = sec.items.length;
-        if (count > 0) {
-          const t = sec.title;
-          if (t === "Needs You") {
-            narrativeParts.push(`${count} require(s) operator attention`);
-          } else if (t === "Risk") {
-            narrativeParts.push(`${count} flagged as risk`);
-          } else if (t === "Stalled") {
-            narrativeParts.push(`${count} stalled`);
-          } else if (t === "Changed") {
-            narrativeParts.push(`${count} updated recently`);
-          } else if (t === "New") {
-            narrativeParts.push(`${count} new arrival(s)`);
-          } else if (t === "Next Actions") {
-            narrativeParts.push(`${count} pending action(s)`);
-          } else {
-            narrativeParts.push(`${count} in ${esc(t.toLowerCase())}`);
-          }
-        }
-      }
-    }
-    const narrativeText = narrativeParts.length 
-      ? `Currently, ${narrativeParts.join(", ")}.` 
-      : "All systems nominal.";
-
-    view.innerHTML = `
-      <!-- 1. Top Piper Operating Statement -->
-      <div class="operating-narrative-panel">
-        <div class="narrative-badge">✦ PIPER HEAD AGENT BRIEF</div>
-        <div class="narrative-text">
-          "${esc(b?.headline || "Pipeline Operational")}. ${narrativeText}"
-        </div>
-      </div>
-
-      <!-- 1b. Quick actions: the two things a founder reaches for first -->
-      <div class="dashboard-actions">
-        <button class="primary" onclick="window.openNewOpportunityModal()">＋ New Opportunity</button>
-        <button class="ghost" onclick="window.scrollToPiper()">Ask Piper</button>
-      </div>
-
-      <!-- 2. Asymmetric Columns -->
-      <div class="bridge-grid">
-        <!-- Main Column -->
-        <div class="bridge-main-col">
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Needs Attention / Priority Queue</h2>
-            <div class="priority-list">
-              ${filteredSections && filteredSections.length ? filteredSections.map(sec => `
-                <div class="priority-group">
-                  <div class="priority-group-title">${esc(sec.title)}</div>
-                  ${sec.items.map(item => `
-                    <div class="priority-row">
-                      <div class="priority-row-left">
-                        <a class="deal-link" href="/opportunities/${esc(item.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(item.opportunityId)}')">
-                          ${esc(item.address || item.opportunityId)}
-                        </a>
-                        <div class="priority-meta-row">
-                          ${(item.reasons || []).map(r => `<span class="reason-tag">${esc(r)}</span>`).join("")}
-                        </div>
-                      </div>
-                      <div class="priority-row-right">
-                        <span class="status-indicator-pill">needs review</span>
-                      </div>
-                    </div>
-                  `).join("")}
-                </div>
-              `).join("") : `<div class="empty-state">No listings require attention. All systems nominal.</div>`}
-            </div>
-          </div>
-
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Pipeline Pulse</h2>
-            <div class="funnel-stage-container">
-              ${Object.keys(stageCounts).map(stage => `
-                <div class="funnel-stage-item">
-                  <span class="funnel-stage-name">${esc(formatStage(stage))}</span>
-                  <span class="funnel-stage-val">${stageCounts[stage]}</span>
-                </div>
-              `).join("")}
-            </div>
-          </div>
-        </div>
-
-        <!-- Sidebar Column -->
-        <div class="bridge-side-col">
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Active Opportunities</h2>
-            <div class="active-deals-list">
-              ${[...state.opportunities]
-                .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-                .slice(0, 5)
-                .map(opp => `
-                  <div class="active-deal-row">
-                    <a class="active-deal-title" href="/opportunities/${esc(opp.id)}" onclick="window.routeTo(event, '/opportunities/${esc(opp.id)}')">
-                      ${esc(opp.address)}
-                    </a>
-                    <div class="active-deal-meta">
-                      <span class="stage-tag">${esc(formatStage(opp.stage))}</span>
-                      <span class="date-tag">${esc(opp.updatedAt.slice(0, 10))}</span>
-                    </div>
-                  </div>
-                `).join("")}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-  const card = (n, l) => `<div class="card"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`;
-
-  const KANBAN_COLUMNS = [
-    { key: "intake", title: "Intake", stages: ["new_lead", "needs_review"], defaultStage: "new_lead" },
-    { key: "qualifying", title: "Qualifying", stages: ["attempting_contact", "contacted", "qualified", "appointment_scheduled"], defaultStage: "attempting_contact" },
-    { key: "evaluation", title: "Evaluation", stages: ["property_review", "strategy_development"], defaultStage: "property_review" },
-    { key: "negotiation", title: "Negotiation", stages: ["offer_preparation", "offer_approval_required", "offer_presented", "negotiating"], defaultStage: "offer_preparation" },
-    { key: "contracting", title: "Contracting", stages: ["under_contract", "due_diligence", "closing_scheduled"], defaultStage: "under_contract" },
-    { key: "settle", title: "Archived & Settle", stages: ["closed", "nurture", "disqualified", "lost", "archived"], defaultStage: "closed" }
-  ];
-
-  function getColumnKey(stage) {
-    const col = KANBAN_COLUMNS.find(c => c.stages.includes(stage));
-    return col ? col.key : "intake";
-  }
-
-  function renderKanbanBoard(opps) {
-    const groups = {};
-    KANBAN_COLUMNS.forEach(c => { groups[c.key] = []; });
-    opps.forEach(o => {
-      const colKey = getColumnKey(o.stage);
-      groups[colKey].push(o);
-    });
-
-    const columnsHtml = KANBAN_COLUMNS.map(col => {
-      const cards = groups[col.key];
-      const cardsHtml = cards.map(o => {
-        let underwritingLabel = "";
-        let underwritingClass = "underwriting-unavailable";
-        if (o.underwriting && o.underwriting.mao != null) {
-          underwritingLabel = `Victor MAO: ${money(o.underwriting.mao)}`;
-          underwritingClass = "underwriting-victor";
-        } else if (o.underwriting && (o.underwriting.status === "insufficient_evidence" || o.underwriting.arv == null)) {
-          underwritingLabel = "Underwriting: Insufficient Evidence";
-          underwritingClass = "underwriting-unavailable";
-        } else {
-          underwritingLabel = "Underwriting: unavailable";
-        }
-
-        const isHighPriority = o.provenanceState === "unresolved" || o.status === "stalled";
-        const priorityClass = isHighPriority ? "board-card-priority-high" : "";
-
+    // Founder-friendly Today rows, in a stable order.
+    const ROW_ORDER = ["Needs You", "Next Actions", "Risk", "Stalled", "Changed", "New"];
+    const ROW_LABEL = {
+      "Needs You": (n) => `${n} seller${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} attention`,
+      "Next Actions": (n) => `${n} follow-up${n === 1 ? "" : "s"}`,
+      "Risk": (n) => `${n} at risk`,
+      "Stalled": (n) => `${n} stalled`,
+      "Changed": (n) => `${n} updated recently`,
+      "New": (n) => `${n} new`,
+    };
+    const todayRows = sections
+      .slice()
+      .sort((a, c) => ROW_ORDER.indexOf(a.title) - ROW_ORDER.indexOf(c.title))
+      .map((sec, i) => {
+        const n = sec.items.length;
+        const label = (ROW_LABEL[sec.title] || ((m) => `${m} in ${sec.title.toLowerCase()}`))(n);
+        const items = sec.items.slice(0, 8).map((item) => `
+          <a class="today-item-link" href="/opportunities/${esc(item.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(item.opportunityId)}')">
+            ${esc(item.address || item.opportunityId)}
+            <span class="today-item-reasons">${esc((item.reasons || []).slice(0, 2).join(" · "))}</span>
+          </a>`).join("");
+        const more = sec.items.length > 8 ? `<div class="muted" style="font-size:12px">+ ${sec.items.length - 8} more</div>` : "";
         return `
-          <div class="board-card ${priorityClass}" draggable="true" data-opp-id="${esc(o.id)}" data-stage="${esc(o.stage)}">
-            <div class="board-card-header">
-              <span class="board-card-id"><a href="/opportunities/${esc(o.id)}" onclick="window.routeTo(event, '/opportunities/${esc(o.id)}')">${esc(o.id)}</a></span>
-              <span class="board-card-badge prov-${esc(o.provenanceState)}">${esc(o.provenanceState)}</span>
+          <div class="today-row" data-today-row="${i}">
+            <button class="today-row-main" data-today-toggle="${i}" aria-expanded="false">
+              <span class="today-count">${n}</span>
+              <span class="today-label">${esc(label)}</span>
+              <span class="today-chevron" aria-hidden="true">›</span>
+            </button>
+            <div class="today-row-detail" id="today-detail-${i}" hidden>
+              <div class="today-item-list">${items}${more}</div>
+              <button class="linklike" data-today-ask="${esc(sec.title)}">Ask Piper to summarize</button>
             </div>
-            
-            <div class="board-card-body">
-              <span class="board-card-address">${esc(o.property.address)}</span>
-              <div class="board-card-sub">Seller: ${esc(o.sellerDisplayName)}</div>
-            </div>
-
-            <div class="board-card-footer">
-              <span class="board-card-underwriting ${underwritingClass}">${esc(underwritingLabel)}</span>
-              <span class="board-card-stage-pill">${esc(formatStage(o.stage))}</span>
-            </div>
-          </div>
-        `;
+          </div>`;
       }).join("");
 
-      return `
-        <div class="board-column" data-col-key="${esc(col.key)}">
-          <div class="column-header">
-            <span class="column-title">${esc(col.title)}</span>
-            <span class="column-count">${cards.length}</span>
+    const counts = {};
+    FOUNDER_STAGES.forEach((s) => { counts[s.key] = 0; });
+    opps.forEach((o) => { counts[toFounderStage(o.stage)] += 1; });
+    const stageStrip = FOUNDER_STAGES.map((s) => `
+      <button class="fstage" data-fstage="${s.key}" onclick="window.routeTo(event, '/opportunities?fstage=${s.key}')">
+        <span class="fstage-count">${counts[s.key]}</span>
+        <span class="fstage-label">${esc(s.label)}</span>
+      </button>`).join("");
+
+    view.innerHTML = `
+      <div class="ph-home">
+        <header class="ph-header">
+          <div>
+            <div class="ph-title">OCG PIPELINE</div>
+            <div class="ph-sub">${esc(b.headline || "Your acquisitions, through Piper.")}</div>
           </div>
-          <div class="column-cards">
-            ${cardsHtml || `<div class="muted" style="text-align: center; padding: 20px; font-size: 11px;">Drag here</div>`}
-          </div>
+          <span class="ph-limited" title="Piper is answering from Pipeline data with its built-in tools. No language model is connected.">Piper limited</span>
+        </header>
+
+        <form class="ph-ask" id="ph-ask-form">
+          <input id="ph-ask-input" type="text" autocomplete="off"
+            placeholder="Ask Piper anything about your sellers or deals…" aria-label="Ask Piper" />
+          <button type="submit" class="ph-ask-btn" aria-label="Ask Piper">▲</button>
+        </form>
+        <div class="ph-hints">
+          <button class="ph-hint" data-hint="Who do I need to call today?">Who do I need to call today?</button>
+          <button class="ph-hint" data-hint="What deals need my attention?">What deals need attention?</button>
+          <button class="ph-hint" data-hint="What changed today?">What changed today?</button>
         </div>
-      `;
-    }).join("");
 
-    return `<div class="board-container">${columnsHtml}</div>`;
+        <section class="ph-panel" aria-label="Today">
+          <h2 class="ph-panel-title">Today</h2>
+          ${todayRows || `<div class="empty-state">Nothing needs attention. All quiet.</div>`}
+        </section>
+
+        <section class="ph-panel" aria-label="Pipeline">
+          <h2 class="ph-panel-title">Pipeline</h2>
+          <div class="fstage-strip">${stageStrip}</div>
+        </section>
+
+        <section class="ph-actions" aria-label="Quick actions">
+          <button class="ph-action primary" onclick="window.openNewOpportunityModal()">＋ New Seller</button>
+          <button class="ph-action" onclick="window.focusPiperHome()">Ask Piper</button>
+          <button class="ph-action" onclick="window.routeTo(event, '/opportunities?focus=search')">Search</button>
+          <button class="ph-action" onclick="window.routeTo(event, '/tasks')">Today&apos;s Follow-Ups</button>
+        </section>
+      </div>
+    `;
+
+    // Wire central Piper input -> the one shared Piper conversation.
+    const form = document.getElementById("ph-ask-form");
+    const input = document.getElementById("ph-ask-input");
+    window.focusPiperHome = () => { if (input) input.focus(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+    if (form && input) {
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = input.value;
+        input.value = "";
+        openPiperDrawer();
+        await window.submitPiperText(text);
+      });
+      view.querySelectorAll("[data-hint]").forEach((btn) => btn.addEventListener("click", async () => {
+        openPiperDrawer();
+        await window.submitPiperText(btn.getAttribute("data-hint"));
+      }));
+    }
+    // Today rows: expand inline, or hand the section to Piper.
+    view.querySelectorAll("[data-today-toggle]").forEach((btn) => btn.addEventListener("click", () => {
+      const i = btn.getAttribute("data-today-toggle");
+      const detail = document.getElementById("today-detail-" + i);
+      const open = detail.hidden;
+      detail.hidden = !open;
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    }));
+    view.querySelectorAll("[data-today-ask]").forEach((btn) => btn.addEventListener("click", async () => {
+      openPiperDrawer();
+      await window.submitPiperText("Summarize: " + btn.getAttribute("data-today-ask"));
+    }));
   }
 
-  function wireKanbanDragAndDrop() {
-    const cards = view.querySelectorAll(".board-card");
-    const columns = view.querySelectorAll(".board-column");
-
-    cards.forEach(card => {
-      card.addEventListener("dragstart", (e) => {
-        card.classList.add("dragging");
-        e.dataTransfer.setData("text/plain", card.dataset.oppId);
-      });
-      card.addEventListener("dragend", () => {
-        card.classList.remove("dragging");
-      });
-    });
-
-    columns.forEach(col => {
-      col.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        col.classList.add("drag-over");
-      });
-      col.addEventListener("dragleave", () => {
-        col.classList.remove("drag-over");
-      });
-      col.addEventListener("drop", async (e) => {
-        e.preventDefault();
-        col.classList.remove("drag-over");
-        const oppId = e.dataTransfer.getData("text/plain");
-        if (!oppId) return;
-
-        const card = view.querySelector(`.board-card[data-opp-id="${oppId}"]`);
-        if (!card) return;
-
-        const originalStage = card.dataset.stage;
-        const colKey = col.dataset.colKey;
-        const targetCol = KANBAN_COLUMNS.find(c => c.key === colKey);
-        if (!targetCol) return;
-
-        const targetStage = targetCol.defaultStage;
-        if (originalStage === targetStage) return;
-
-        const currentStageLabel = formatStage(originalStage);
-        const proposedStageLabel = formatStage(targetStage);
-        
-        const title = `Proposed stage change: ${currentStageLabel} → ${proposedStageLabel} [AWAITING APPROVAL]`;
-        
-        window.showCustomConfirm(
-          `PIPELINE has no stage-change endpoint, so the record cannot be moved from here.<br/><br/>Record a proposed stage change as a Next Action instead?<br/><br/><strong>"${title}"</strong>`,
-          "Proposed Stage Change Approval",
-          async () => {
-            try {
-              const res = await pfetch("/api/v1/operator/next-actions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ opportunityId: oppId, title }),
-              });
-              const body = await res.json();
-              if (body.ok) {
-                window.showCustomAlert(`Stage change proposed: ${currentStageLabel} → ${proposedStageLabel}. Persisted as a Next Action waiting for approval.`, "Proposal Recorded");
-                opportunities();
-              } else {
-                window.showCustomAlert(`Could not save next action: ${body.error}`, "Error Recording Proposal");
-              }
-            } catch {
-              window.showCustomAlert("Could not reach PIPELINE.", "Network Error");
-            }
-          }
-        );
-      });
-    });
+  // Opens the persistent Piper drawer if it is closed.
+  function openPiperDrawer() {
+    const drawer = document.getElementById("piper-drawer");
+    if (drawer && drawer.classList.contains("hidden")) {
+      document.getElementById("piper-toggle").click();
+    }
   }
 
-  window.setViewMode = (mode) => {
-    localStorage.setItem("pipeline_view_mode", mode);
-    opportunities();
-  };
 
-  window.toggleFixtures = (checked) => {
-    localStorage.setItem("pipeline_show_fixtures", checked ? "true" : "false");
-    opportunities();
-  };
-
+  // ============ PIPELINE (founder view) ============
+  // Compact 8-stage visualization. No dense kanban, no data tables on mobile.
   async function opportunities() {
     loading();
     state.activeOppId = null;
+    state.activeOpp = null;
     updatePiperContext();
     const params = new URLSearchParams(location.search);
-    const qs = new URLSearchParams();
-    for (const k of ["stage", "provenanceState", "classification", "status", "page", "pageSize", "q"]) if (params.get(k)) qs.set(k, params.get(k));
-    const currentView = localStorage.getItem("pipeline_view_mode") || "board";
-    if (currentView === "board" && !qs.has("pageSize")) {
-      qs.set("pageSize", "100");
-    }
-    let body;
-    try { body = await api("/api/v1/opportunities?" + qs.toString()); }
-    catch (e) { return errorState("Could not load opportunities: " + e.message); }
-    
+    const fstage = params.get("fstage") || "";
+    const q = (params.get("q") || "").trim();
+    const focusSearch = params.get("focus") === "search";
     const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
-    state.opportunities = showFixtures ? body.data : body.data.filter(o => !o.isFixture);
-    const pg = body.meta.pagination;
-    const currentTotal = state.opportunities.length;
-    
-    let viewHtml = `
-      <div class="view-header-row">
-        <div>
-          <h1>Opportunities</h1>
-          <p class="sub">${currentTotal} record(s) active${!showFixtures && body.data.some(o => o.isFixture) ? " (demo fixtures hidden)" : ""}</p>
-        </div>
-        <div class="toggle-group" style="display:flex; align-items:center; gap:16px;">
-          <button class="primary" onclick="window.openNewOpportunityModal()" style="font-size: 12px; padding: 6px 12px;">＋ New Opportunity</button>
-          <label class="switch-label" style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; user-select:none;">
-            <input type="checkbox" id="show-fixtures-checkbox" ${showFixtures ? 'checked' : ''} onchange="window.toggleFixtures(this.checked)">
-            <span class="muted" style="font-weight: 500;">Show Demo Fixtures</span>
-          </label>
-          <button class="toggle-btn ${currentView === 'board' ? 'active' : ''}" onclick="window.setViewMode('board')">Board</button>
-          <button class="toggle-btn ${currentView === 'table' ? 'active' : ''}" onclick="window.setViewMode('table')">Table</button>
-        </div>
+
+    let body;
+    try { body = await api("/api/v1/opportunities?pageSize=100"); }
+    catch (e) { return errorState("Could not load the pipeline: " + e.message); }
+    let opps = (body.data || []).filter((o) => showFixtures || !o.isFixture);
+    if (q) {
+      const needle = q.toLowerCase();
+      opps = opps.filter((o) => [o.sellerDisplayName, o.property && o.property.address, o.id]
+        .some((h) => h && String(h).toLowerCase().includes(needle)));
+    }
+    const inStage = fstage && FOUNDER_STAGES.some((s) => s.key === fstage)
+      ? opps.filter((o) => toFounderStage(o.stage) === fstage) : opps;
+    state.opportunities = opps;
+
+    const counts = {};
+    FOUNDER_STAGES.forEach((s) => { counts[s.key] = 0; });
+    opps.forEach((o) => { counts[toFounderStage(o.stage)] += 1; });
+
+    const chips = FOUNDER_STAGES.map((s) => `
+      <button class="fchip ${fstage === s.key ? "active" : ""}"
+        onclick="window.routeTo(event, '/opportunities${q ? "?q=" + encodeURIComponent(q) + "&" : "?"}fstage=${s.key}')">
+        ${esc(s.label)} · ${counts[s.key]}
+      </button>`).join("");
+
+    const groups = FOUNDER_STAGES.map((s) => {
+      const members = inStage.filter((o) => toFounderStage(o.stage) === s.key)
+        .sort((a, b) => String(b.lastActivity || "").localeCompare(String(a.lastActivity || "")));
+      if (!members.length) return "";
+      const cards = members.map((o) => `
+        <a class="pcard" href="/opportunities/${esc(o.id)}" onclick="window.routeTo(event, '/opportunities/${esc(o.id)}')">
+          <span class="pcard-name">${esc(o.sellerDisplayName || "Unknown seller")}</span>
+          <span class="pcard-prop">${esc((o.property && o.property.address) || "No property recorded")}</span>
+          <span class="pcard-meta">${esc(founderStageLabel(toFounderStage(o.stage)))}${o.lastActivity ? " · " + esc(String(o.lastActivity).slice(0, 10)) : ""}</span>
+        </a>`).join("");
+      return `
+        <section class="pgroup" aria-label="${esc(s.label)}">
+          <h3 class="pgroup-title">${esc(s.label)} <span class="pgroup-count">${members.length}</span></h3>
+          <div class="pgroup-cards">${cards}</div>
+        </section>`;
+    }).join("");
+
+    view.innerHTML = `
+      <div class="ph-pipeline">
+        <header class="ph-header">
+          <div>
+            <div class="ph-title">Pipeline</div>
+            <div class="ph-sub">${opps.length} seller${opps.length === 1 ? "" : "s"}${fstage ? " · " + esc(founderStageLabel(fstage)) : ""}${q ? ` · “${esc(q)}”` : ""}</div>
+          </div>
+          <button class="ph-action primary" onclick="window.openNewOpportunityModal()">＋ New Seller</button>
+        </header>
+        <form class="ph-search" id="ph-search-form">
+          <input id="ph-search-input" type="search" placeholder="Search sellers, properties…" value="${esc(q)}" aria-label="Search pipeline" />
+          ${q || fstage ? `<button type="button" class="linklike" onclick="window.routeTo(event, '/opportunities')">Clear</button>` : ""}
+        </form>
+        <div class="fchip-row">${chips}</div>
+        ${groups || `<div class="empty-state">No sellers match.</div>`}
       </div>
-      ${filterBar(params)}
     `;
-    
-    if (state.opportunities.length === 0) {
-      viewHtml += empty("No opportunities match these filters.");
-    } else if (currentView === "table") {
-      viewHtml += `
-        <div class="table-wrap"><table>
-          <thead><tr>
-            <th>ID</th><th>Seller</th><th>Property</th><th>Stage</th><th>Provenance</th><th>Classification</th><th>Status</th><th>Operator</th><th>Last activity</th>
-          </tr></thead>
-          <tbody>${state.opportunities.map(oppRow).join("")}</tbody>
-        </table></div>
-        <div class="pager">
-          <button class="secondary" ${pg.page <= 1 ? "disabled" : ""} data-page="${pg.page - 1}">Prev</button>
-          <span class="muted">Page ${pg.page} / ${pg.totalPages}</span>
-          <button class="secondary" ${pg.page >= pg.totalPages ? "disabled" : ""} data-page="${pg.page + 1}">Next</button>
-        </div>
-      `;
-    } else {
-      viewHtml += renderKanbanBoard(state.opportunities);
-    }
-    
-    view.innerHTML = viewHtml;
 
-    view.querySelectorAll(".pager [data-page]").forEach((b) => b.addEventListener("click", () => {
-      const p = new URLSearchParams(location.search); p.set("page", b.dataset.page); navigate("/opportunities?" + p.toString());
-    }));
-    wireFilters();
-    if (currentView === "board") {
-      wireKanbanDragAndDrop();
-      view.querySelectorAll(".board-card").forEach(bindTiltEffect);
-    }
-  }
-  const oppRow = (o) => `<tr>
-      <td><a href="/opportunities/${esc(o.id)}" data-nav>${esc(o.id)}</a></td>
-      <td>${esc(o.sellerDisplayName)}</td>
-      <td>${o.propertyRef ? esc(o.propertyRef) : '<span class="muted">— missing —</span>'}</td>
-      <td>${esc(formatStage(o.stage))}</td>
-      <td>${badge("prov", o.provenanceState)}</td>
-      <td>${badge("cls", o.classification)}</td>
-      <td>${badge("st", o.status)}</td>
-      <td>${esc(o.assignedOperator)}</td>
-      <td>${esc((o.lastActivity || "").slice(0, 10))}</td></tr>`;
-
-  function filterBar(params) {
-    const opt = (val, cur) => `<option value="${esc(val)}" ${cur === val ? "selected" : ""}>${esc(formatStage(val))}</option>`;
-    const sel = (name, values) => `<label>${name}<select data-filter="${name}">${["", ...values].map((v) => opt(v, params.get(name) || "")).join("")}</select></label>`;
-    return `<div class="filters">
-      ${sel("stage", ["new_lead", "needs_review", "attempting_contact", "contacted", "qualified", "appointment_scheduled", "property_review", "strategy_development", "offer_preparation", "offer_approval_required", "offer_presented", "negotiating", "under_contract", "due_diligence", "closing_scheduled", "closed", "nurture", "disqualified", "lost", "archived"])}
-      ${sel("provenanceState", ["original", "recovered", "unresolved"])}
-      ${sel("classification", ["retail_listing", "wholesale_target", "investment_rehab", "land_hold", "disqualified", "unknown"])}
-      ${sel("status", ["active", "closed"])}
-      <label>Search<input type="search" data-search placeholder="Address, seller, ID…" value="${esc(params.get("q") || "")}" style="min-width: 180px;" /></label>
-      <label>&nbsp;<button class="secondary" data-clear>Clear</button></label>
-    </div>`;
-  }
-  function wireFilters() {
-    view.querySelectorAll("[data-filter]").forEach((s) => s.addEventListener("change", () => {
-      const p = new URLSearchParams(location.search); const v = s.value;
-      v ? p.set(s.dataset.filter, v) : p.delete(s.dataset.filter); p.delete("page");
-      navigate("/opportunities?" + p.toString());
-    }));
-    const search = view.querySelector("[data-search]");
-    if (search) {
+    const form = document.getElementById("ph-search-form");
+    const input = document.getElementById("ph-search-input");
+    if (focusSearch && input) input.focus();
+    if (form && input) {
       let t = null;
-      search.addEventListener("input", () => {
+      input.addEventListener("input", () => {
         clearTimeout(t);
         t = setTimeout(() => {
-          const p = new URLSearchParams(location.search);
-          const v = search.value.trim();
-          v ? p.set("q", v) : p.delete("q"); p.delete("page");
-          navigate("/opportunities?" + p.toString());
+          const v = input.value.trim();
+          const p = new URLSearchParams();
+          if (v) p.set("q", v);
+          if (fstage) p.set("fstage", fstage);
+          navigate("/opportunities" + (p.toString() ? "?" + p.toString() : ""));
         }, 450);
       });
-      search.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+      form.addEventListener("submit", (e) => e.preventDefault());
     }
-    const clr = view.querySelector("[data-clear]"); if (clr) clr.addEventListener("click", () => navigate("/opportunities"));
   }
+
+  // ============ PEOPLE ============
+  // Simple seller directory derived from live opportunities.
+  async function people() {
+    loading();
+    state.activeOppId = null;
+    state.activeOpp = null;
+    updatePiperContext();
+    const params = new URLSearchParams(location.search);
+    const q = (params.get("q") || "").trim().toLowerCase();
+    let body;
+    try { body = await api("/api/v1/opportunities?pageSize=100"); }
+    catch (e) { return errorState("Could not load sellers: " + e.message); }
+    const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
+    let opps = (body.data || []).filter((o) => showFixtures || !o.isFixture);
+    if (q) {
+      opps = opps.filter((o) => [o.sellerDisplayName, o.property && o.property.address]
+        .some((h) => h && String(h).toLowerCase().includes(q)));
+    }
+    opps.sort((a, b) => String(a.sellerDisplayName || "").localeCompare(String(b.sellerDisplayName || "")));
+    const rows = opps.map((o) => {
+      const phone = o.contact && o.contact.channel !== "email" ? o.contact.value : null;
+      return `
+      <a class="person-row" href="/opportunities/${esc(o.id)}" onclick="window.routeTo(event, '/opportunities/${esc(o.id)}')">
+        <span class="person-name">${esc(o.sellerDisplayName || "Unknown seller")}</span>
+        <span class="person-prop">${esc((o.property && o.property.address) || "No property recorded")}</span>
+        <span class="person-meta">
+          <span class="fstage-tag">${esc(founderStageLabel(toFounderStage(o.stage)))}</span>
+          ${phone ? `<span class="person-phone">${esc(phone)}</span>` : ""}
+        </span>
+      </a>`;
+    }).join("");
+
+    view.innerHTML = `
+      <div class="ph-people">
+        <header class="ph-header">
+          <div>
+            <div class="ph-title">People</div>
+            <div class="ph-sub">${opps.length} seller${opps.length === 1 ? "" : "s"}</div>
+          </div>
+        </header>
+        <form class="ph-search" id="ph-people-search" onsubmit="return false;">
+          <input id="ph-people-input" type="search" placeholder="Search sellers…" value="${esc(params.get("q") || "")}" aria-label="Search sellers" />
+        </form>
+        <div class="person-list">${rows || `<div class="empty-state">No sellers found.</div>`}</div>
+      </div>
+    `;
+    const input = document.getElementById("ph-people-input");
+    if (input) {
+      let t = null;
+      input.addEventListener("input", () => {
+        clearTimeout(t);
+        t = setTimeout(() => {
+          const v = input.value.trim();
+          navigate("/people" + (v ? "?q=" + encodeURIComponent(v) : ""));
+        }, 450);
+      });
+    }
+  }
+
+  // ============ TASKS ============
+  // Follow-ups and next actions across the pipeline, grouped by urgency.
+  async function tasks() {
+    loading();
+    state.activeOppId = null;
+    state.activeOpp = null;
+    updatePiperContext();
+    let items = [];
+    try {
+      const res = await operatorGet("next-actions", null);
+      items = res.nextActions || res.data || [];
+    } catch (e) { return errorState("Could not load follow-ups: " + e.message); }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const open = items.filter((t) => (t.status || "open") !== "done");
+    const done = items.filter((t) => (t.status || "open") === "done");
+    const overdue = open.filter((t) => t.dueDate && String(t.dueDate).slice(0, 10) < today)
+      .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
+    const dueToday = open.filter((t) => t.dueDate && String(t.dueDate).slice(0, 10) === today);
+    const upcoming = open.filter((t) => !t.dueDate || String(t.dueDate).slice(0, 10) > today)
+      .sort((a, b) => String(a.dueDate || "9999").localeCompare(String(b.dueDate || "9999")));
+
+    const sellerName = (id) => {
+      const o = (state.opportunities || []).find((x) => x.id === id);
+      return o ? o.sellerDisplayName : null;
+    };
+    const row = (t) => `
+      <div class="task-row">
+        <div class="task-main">
+          <span class="task-title">${esc(t.title || "Follow-up")}</span>
+          ${t.opportunityId ? `<a class="task-seller" href="/opportunities/${esc(t.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(t.opportunityId)}')">${esc(sellerName(t.opportunityId) || "Open seller")}</a>` : ""}
+          ${t.details ? `<div class="task-details">${esc(t.details)}</div>` : ""}
+        </div>
+        <div class="task-side">
+          ${t.dueDate ? `<span class="task-due">${esc(String(t.dueDate).slice(0, 10))}</span>` : `<span class="task-due muted">no date</span>`}
+          ${(t.status || "open") !== "done" ? `<button class="linklike" data-task-done="${esc(t.id)}">Done</button>` : ""}
+        </div>
+      </div>`;
+    const group = (title, list) => list.length ? `
+      <section class="ph-panel"><h2 class="ph-panel-title">${title} <span class="pgroup-count">${list.length}</span></h2>
+      <div class="task-list">${list.map(row).join("")}</div></section>` : "";
+
+    view.innerHTML = `
+      <div class="ph-tasks">
+        <header class="ph-header">
+          <div>
+            <div class="ph-title">Tasks</div>
+            <div class="ph-sub">${open.length} open follow-up${open.length === 1 ? "" : "s"}</div>
+          </div>
+          <button class="ph-action" onclick="window.askPiperFor('What am I forgetting?')">Ask Piper</button>
+        </header>
+        ${group("Overdue", overdue)}
+        ${group("Due today", dueToday)}
+        ${group("Upcoming", upcoming)}
+        ${group("Done", done.slice(0, 10))}
+        ${!open.length ? `<div class="empty-state">No open follow-ups. Ask Piper “What am I forgetting?”</div>` : ""}
+      </div>
+    `;
+    view.querySelectorAll("[data-task-done]").forEach((btn) => btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-task-done");
+      try {
+        await pfetch("/api/v1/operator/next-actions/" + encodeURIComponent(id), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "done" }),
+        });
+        tasks();
+      } catch { window.showCustomAlert("Could not mark done.", "Tasks"); }
+    }));
+  }
+
+  // Ask Piper something from anywhere, opening the drawer first.
+  window.askPiperFor = async (question) => {
+    openPiperDrawer();
+    await window.submitPiperText(question);
+  };
+
+  // ============ ADMIN (dev surface, out of the founder path) ============
+  async function admin() {
+    loading();
+    state.activeOppId = null;
+    state.activeOpp = null;
+    updatePiperContext();
+    const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
+    view.innerHTML = `
+      <div class="ph-admin">
+        <header class="ph-header">
+          <div><div class="ph-title">Admin</div><div class="ph-sub">Developer and data tooling. Not part of the founder experience.</div></div>
+        </header>
+        <section class="ph-panel"><h2 class="ph-panel-title">Data &amp; system</h2>
+          <div class="admin-links">
+            <a href="/system" data-nav>System status</a>
+            <a href="/data-quality" data-nav>Data quality</a>
+            <a href="/provenance" data-nav>Provenance</a>
+            <a href="/classifications" data-nav>Classifications</a>
+          </div>
+        </section>
+        <section class="ph-panel"><h2 class="ph-panel-title">Demo fixtures</h2>
+          <label class="switch-label"><input type="checkbox" id="admin-fixtures" ${showFixtures ? "checked" : ""} />
+          <span>Show demo fixtures</span></label>
+        </section>
+      </div>
+    `;
+    const cb = document.getElementById("admin-fixtures");
+    if (cb) cb.addEventListener("change", () => {
+      localStorage.setItem("pipeline_show_fixtures", cb.checked ? "true" : "false");
+    });
+  }
+
+  window.setViewMode = (mode) => { localStorage.setItem("pipeline_view_mode", mode); };
+  window.toggleFixtures = (checked) => {
+    localStorage.setItem("pipeline_show_fixtures", checked ? "true" : "false");
+  };
 
   async function opportunityDetail(id) {
     loading();
@@ -1229,157 +1257,135 @@
       `;
     }
 
-    // Render columns
+    // ---- Priority: derived from the live Piper brief (CRM-grounded, not stored) ----
+    let needsAttention = false;
+    try {
+      const br = await api("/api/v1/piper/brief?excludeFixtures=true").catch(() => null);
+      const secs = (br && br.data && br.data.sections) || [];
+      needsAttention = secs.some((s) => ["Needs You", "Risk"].includes(s.title) &&
+        (s.items || []).some((it) => it.opportunityId === o.id));
+    } catch { needsAttention = false; }
+
+    const contact = o.contact || {};
+    const sellerPhone = contact.channel && contact.channel !== "email" ? contact.value : null;
+    const founderStage = toFounderStage(stageVal);
+
+    // Render columns — PIPER-FIRST seller view
     view.innerHTML = `
-      <p class="back-link"><a href="/opportunities" data-nav onclick="window.routeTo(event, '/opportunities')">← Back to Opportunities</a></p>
-      
-      <!-- Property Hero -->
-      <div class="deal-hero" style="display: flex; gap: 24px; align-items: center;">
-        ${heroImageHtml}
-        <div class="deal-hero-main" style="flex: 1;">
-          <div class="deal-hero-badge">${esc(o.id)}</div>
-          <h1>${esc(o.property.address)}</h1>
-          <div class="deal-hero-sub">
-            Seller Contact: <strong>${esc(o.sellerDisplayName)}</strong> · Assigned Operator: <strong>${esc(o.assignedOperator)}</strong>
+      <p class="back-link"><a href="/opportunities" data-nav onclick="window.routeTo(event, '/opportunities')">← Back to Pipeline</a></p>
+
+      <div class="seller-card">
+        <div class="seller-top">
+          <div class="seller-id">
+            <h1 class="seller-name">${esc(o.sellerDisplayName || "Unknown seller")}</h1>
+            <div class="seller-prop">${esc((o.property && o.property.address) || "No property recorded")}</div>
+            <div class="seller-phone">${sellerPhone
+              ? `<a href="tel:${esc(sellerPhone)}">${esc(sellerPhone)}</a>`
+              : `<span class="muted">Phone not recorded</span>`}</div>
           </div>
+          <span class="priority-pill ${needsAttention ? "high" : ""}">${needsAttention ? "Needs attention" : "Normal"}</span>
         </div>
-        <div class="deal-hero-actions">
-          <div class="stage-control-group">
-            <label for="detail-stage-select">Current Stage</label>
-            <select id="detail-stage-select" onchange="window.saveStageChange('${o.id}')">
-              ${["new_lead", "needs_review", "attempting_contact", "contacted", "qualified", "appointment_scheduled", "property_review", "strategy_development", "offer_preparation", "offer_approval_required", "offer_presented", "negotiating", "under_contract", "due_diligence", "closing_scheduled", "closed", "nurture", "disqualified", "lost", "archived"].map(st => `
-                <option value="${st}" ${st === stageVal ? 'selected' : ''}>${esc(formatStage(st))}</option>
-              `).join("")}
-            </select>
-          </div>
+        <div class="seller-stage-row">
+          <label for="detail-stage-select">Stage</label>
+          <select id="detail-stage-select" onchange="window.saveFounderStage('${o.id}')">
+            ${FOUNDER_STAGES.map((s) => `
+              <option value="${s.key}" ${s.key === founderStage ? "selected" : ""}>${esc(s.label)}</option>`).join("")}
+          </select>
         </div>
-      </div>
-
-      <!-- Decision Strip -->
-      <div class="decision-strip">
-        <div class="decision-item">
-          <span class="decision-label">Status</span>
-          <span class="decision-val active-status">${esc(o.status)}</span>
+        <div class="seller-actions" role="group" aria-label="Seller actions">
+          <button class="sact" onclick="window.piperCallSeller('${o.id}')">Call <span class="sact-tag">prep</span></button>
+          <button class="sact" onclick="window.piperTextSeller('${o.id}')">Text <span class="sact-tag">draft</span></button>
+          <button class="sact" onclick="window.focusSellerNote()">Add Note</button>
+          <button class="sact" onclick="window.toggleFollowUpForm('${o.id}')">Follow Up</button>
+          <button class="sact primary" onclick="window.scrollToOffer()">Offer</button>
         </div>
-        <div class="decision-item">
-          <span class="decision-label">Classification</span>
-          <span class="decision-val">${badge("cls", o.classification)}</span>
-        </div>
-        <div class="decision-item">
-          <span class="decision-label">Provenance State</span>
-          <span class="decision-val">${badge("prov", o.provenance.state)}</span>
-        </div>
-        <div class="decision-item">
-          <span class="decision-label">Underwriting Status</span>
-          <span class="decision-val ${isWarning ? 'bad-val' : 'good-val'}">
-            ${isWarning ? 'Exceeds MAO' : 'Under MAO'}
-          </span>
-        </div>
-      </div>
-
-      <!-- Split Columns -->
-      <div class="deal-room-grid">
-        <!-- Left Column: Deal Intelligence Canvas -->
-        <div class="deal-room-main">
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Acquisitions Checklist</h2>
-            <div class="checklist-box" id="detail-tasks-box">Loading…</div>
-          </div>
-
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Next Actions Queue</h2>
-            <div id="detail-next-actions">Loading…</div>
-          </div>
-
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Call Logs & Notes</h2>
-            <form class="log-form" onsubmit="window.submitSellerLog(event, '${o.id}')">
-              <input type="text" id="detail-log-input" placeholder="Type new seller update..." required />
-              <button type="submit">Add Log</button>
-            </form>
-            <div class="logs-list" id="detail-logs-list">Loading…</div>
-          </div>
-        </div>
-
-        <!-- Right Column: Economics Desk & Evidence Canvas -->
-        <div class="deal-room-side">
-          <!-- Victor Underwriting -->
-          ${victorHtml}
-          ${offersHtml}
-          ${outreachHtml}
-
-          <!-- Operator Underwriting Assumptions (server-persisted) -->
-          <div class="bridge-panel scratchpad-panel" id="detail-underwriting-section">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 8px;">
-              <h2 style="margin:0; font-size: 14px;">Operator Underwriting Assumptions</h2>
-              <span class="scratchpad-badge">Server · not Victor</span>
-            </div>
-            <p class="muted" style="font-size: 11px; margin: 0 0 10px;">Working estimates you own. These are <strong>not</strong> Victor/Deal Scout underwriting — verify independently before presenting an offer.</p>
-            <div class="form-grid-compact">
-              <div class="form-group-compact">
-                <label>ARV Target</label>
-                <input type="number" id="detail-arv" value="${arvVal}" oninput="window.recalcMao()" />
-              </div>
-              <div class="form-group-compact">
-                <label>Est Rehab</label>
-                <input type="number" id="detail-rehab" value="${rehabVal}" oninput="window.recalcMao()" />
-              </div>
-              <div class="form-group-compact">
-                <label>Fee</label>
-                <input type="number" id="detail-fee" value="${feeVal}" oninput="window.recalcMao()" />
-              </div>
-              <div class="form-group-compact">
-                <label>Holding</label>
-                <input type="number" id="detail-holding" value="${holdingVal}" oninput="window.recalcMao()" />
-              </div>
-              <div class="form-group-compact">
-                <label>Asking Price</label>
-                <input type="number" id="detail-asking" value="${askingVal}" oninput="window.recalcMao()" />
-              </div>
-            </div>
-
-            <div class="calc-output-compact">
-              <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
-                <span>Maximum Allowable Offer:</span>
-                <strong id="detail-mao-val" style="color: var(--ok); font-family: var(--mono);">${money(mao)}</strong>
-              </div>
-              <div id="detail-mao-alert" class="alert-box-compact ${isWarning ? 'warn' : 'ok'}">
-                ${isWarning ? 'Exceeds standard 75% MAO threshold' : '75% purchase rule satisfied'}
-              </div>
-            </div>
-
-            ${calcChartHtml(arvVal, rehabVal, feeVal, holdingVal, askingVal, mao, isWarning)}
-
-            <div class="form-group-compact" style="margin-top: 10px;">
-              <label>Basis for these numbers</label>
-              <input type="text" id="detail-basis" value="${esc(basisVal)}" placeholder="e.g. comp pull on 9/17, contractor walk-through" />
-            </div>
-            <div style="margin-top: 14px; text-align: right;">
-              <button class="primary" onclick="window.saveDetailUnderwriting('${o.id}')">Save Assumptions to PIPELINE</button>
-            </div>
-          </div>
-
-          <!-- Evidence & Provenance Canvas -->
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Provenance & Evidence</h2>
-            <dl class="kv-compact">
-              <dt>Message ID</dt><dd class="code-val">${esc(o.provenance.resolvedSourceMessageId || "unresolved")}</dd>
-              <dt>Original Source</dt><dd class="code-val">${esc(o.provenance.originalSourceMessageId || "—")}</dd>
-              <dt>Recovered Source</dt><dd class="code-val">${esc(o.provenance.recoveredSourceMessageId || "—")}</dd>
-              <dt>Method</dt><dd>${esc(o.provenance.recoveryMethod || "—")}</dd>
-              <dt>Confidence</dt><dd>${esc(o.provenance.recoveryConfidence || "—")}</dd>
-            </dl>
-          </div>
-
-          <!-- Historical timeline / Offers: unified seller timeline -->
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Seller Timeline</h2>
-            <div id="detail-timeline"><div class="state">Loading timeline…</div></div>
+        <div class="followup-inline" id="followup-inline" hidden>
+          <input type="text" id="followup-title" placeholder="Follow up about…" value="Follow up with ${esc(o.sellerDisplayName || "seller")}" />
+          <input type="date" id="followup-date" />
+          <div class="followup-inline-actions">
+            <button class="primary" onclick="window.submitQuickFollowUp('${o.id}')">Save</button>
+            <button class="linklike" onclick="window.toggleFollowUpForm()">Cancel</button>
           </div>
         </div>
       </div>
+
+      <div class="piper-summary">
+        <div class="piper-summary-head"><span class="piper-orb-mini" aria-hidden="true"></span><span>Piper summary</span></div>
+        <div id="seller-piper-summary-body"><div class="state">Reading the record…</div></div>
+      </div>
+
+      <div class="num-strip">
+        <div class="num"><span class="num-label">Asking</span><span class="num-val">${askingVal ? money(askingVal) : "not recorded"}</span></div>
+        <div class="num"><span class="num-label">MAO</span><span class="num-val">${money(mao)}</span></div>
+        <div class="num"><span class="num-label">ARV</span><span class="num-val">${arvVal ? money(arvVal) : "not recorded"}</span></div>
+        <div class="num"><span class="num-label">Deal math</span><span class="num-val ${isWarning ? "bad" : "good"}">${isWarning ? "Over MAO" : "Within MAO"}</span></div>
+      </div>
+
+      <div class="ph-panel">
+        <h2 class="ph-panel-title">Timeline</h2>
+        <div id="detail-timeline"><div class="state">Loading timeline…</div></div>
+      </div>
+
+      <div class="ph-panel" id="seller-offers">
+        <h2 class="ph-panel-title">Offers</h2>
+        ${offersHtml || `<div class="empty-state">No offers recorded.</div>`}
+      </div>
+
+      <div class="ph-panel" id="seller-notes">
+        <h2 class="ph-panel-title">Notes</h2>
+        <form class="log-form" onsubmit="window.submitSellerLog(event, '${o.id}')">
+          <input type="text" id="detail-log-input" placeholder="Add a note…" required />
+          <button type="submit">Add Note</button>
+        </form>
+        <div class="logs-list" id="detail-logs-list">Loading…</div>
+      </div>
+
+      <details class="deal-tools">
+        <summary>Deal tools</summary>
+        <div class="ph-panel"><h2 class="ph-panel-title">Checklist</h2><div id="detail-tasks-box">Loading…</div></div>
+        <div class="ph-panel"><h2 class="ph-panel-title">Follow-ups</h2><div id="detail-next-actions">Loading…</div></div>
+        <div class="ph-panel">
+          <h2 class="ph-panel-title">Working numbers</h2>
+          <p class="muted" style="font-size:12px">Your working estimates (not Victor underwriting). Verify before presenting an offer.</p>
+          <div class="form-grid-compact">
+            <div class="form-group-compact"><label>ARV Target</label><input type="number" id="detail-arv" value="${arvVal}" oninput="window.recalcMao()" /></div>
+            <div class="form-group-compact"><label>Est Rehab</label><input type="number" id="detail-rehab" value="${rehabVal}" oninput="window.recalcMao()" /></div>
+            <div class="form-group-compact"><label>Fee</label><input type="number" id="detail-fee" value="${feeVal}" oninput="window.recalcMao()" /></div>
+            <div class="form-group-compact"><label>Holding</label><input type="number" id="detail-holding" value="${holdingVal}" oninput="window.recalcMao()" /></div>
+            <div class="form-group-compact"><label>Asking Price</label><input type="number" id="detail-asking" value="${askingVal}" oninput="window.recalcMao()" /></div>
+          </div>
+          <div class="calc-output-compact">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+              <span>Maximum Allowable Offer:</span>
+              <strong id="detail-mao-val" style="color:var(--ok)">${money(mao)}</strong>
+            </div>
+            <div id="detail-mao-alert" class="alert-box-compact ${isWarning ? "warn" : "ok"}">
+              ${isWarning ? "Exceeds standard 75% MAO threshold" : "75% purchase rule satisfied"}
+            </div>
+          </div>
+          <div class="form-group-compact" style="margin-top:10px;"><label>Basis for these numbers</label>
+            <input type="text" id="detail-basis" value="${esc(basisVal)}" placeholder="e.g. comp pull, contractor walk-through" /></div>
+          <div style="margin-top:12px;text-align:right;">
+            <button class="primary" onclick="window.saveDetailUnderwriting('${o.id}')">Save Assumptions</button>
+          </div>
+        </div>
+        ${victorHtml}
+        ${outreachHtml}
+        <div class="ph-panel"><h2 class="ph-panel-title">Record</h2>
+          <dl class="kv-compact">
+            <dt>Source</dt><dd>${esc(o.provenance.state)}</dd>
+            <dt>Recovery</dt><dd>${esc(o.provenance.recoveryMethod || "—")}</dd>
+            <dt>Confidence</dt><dd>${esc(o.provenance.recoveryConfidence || "—")}</dd>
+          </dl>
+        </div>
+      </details>
     `;
 
+    renderChecklist(o.id);
+    renderNotes(o.id);
+    renderNextActions(o.id);
+    renderTimeline(o.id);
+    renderPiperSummary(o.id, { askingVal, mao, arvVal });
     renderChecklist(o.id);
     renderNotes(o.id);
     renderNextActions(o.id);
@@ -1406,12 +1412,157 @@
     offer: "◈", checklist: "✓", call: "☎", text: "✉",
     email: "✉", interaction: "•", communication: "✉", piper: "⦿",
   };
+  async function fetchTimelineEvents(oppId) {
+    try {
+      const { timeline } = await operatorGet("timeline", oppId);
+      return (timeline && timeline.events) || [];
+    } catch { return []; }
+  }
+
+  // Deterministic, CRM-grounded seller briefing. No LLM, no invention:
+  // every sentence comes from the record, otherwise it says "not recorded".
+  async function renderPiperSummary(oppId, nums) {
+    const host = document.getElementById("seller-piper-summary-body");
+    if (!host) return;
+    const o = state.activeOpp;
+    if (!o) { host.innerHTML = `<div class="empty-state">Record not loaded.</div>`; return; }
+    try {
+      const [events, naRes] = await Promise.all([
+        fetchTimelineEvents(oppId),
+        operatorGet("next-actions", oppId).catch(() => ({ nextActions: [] })),
+      ]);
+      const contactTypes = new Set(["call", "text", "email", "interaction", "communication", "note"]);
+      const contacts = events.filter((e) => contactTypes.has(e.type) && e.at)
+        .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      const lastContact = contacts.length ? String(contacts[0].at).slice(0, 10) : null;
+
+      const offers = o.offers || [];
+      let offerTxt = "No offers recorded.";
+      if (offers.length) {
+        const offer = offers[0];
+        const v = (offer.versions || []).find((x) => x.id === offer.activeVersionId) || (offer.versions || [])[0];
+        if (v) {
+          offerTxt = `Latest offer ${money(v.purchasePrice)} (${String(v.strategyType || "offer").replace(/_/g, " ")})`
+            + (v.createdAt ? ` on ${String(v.createdAt).slice(0, 10)}` : "") + ".";
+        }
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const open = ((naRes && naRes.nextActions) || []).filter((n) => (n.status || "open") !== "done")
+        .sort((a, b) => String(a.dueDate || "9999").localeCompare(String(b.dueDate || "9999")));
+      let fuTxt = "No follow-up scheduled.";
+      if (open.length) {
+        const d = String(open[0].dueDate || "").slice(0, 10);
+        const overdue = d && d < today;
+        fuTxt = `Next follow-up${d ? ` ${d}` : ""}${overdue ? " — overdue" : ""}: ${open[0].title || "follow up"}.`;
+      }
+
+      const seller = o.sellerDisplayName || "Unknown seller";
+      const prop = (o.property && o.property.address) || "no property recorded";
+      const fmtDate = (d) => {
+        if (!d) return "not recorded";
+        const dt = new Date(d + "T12:00:00");
+        return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      };
+      host.innerHTML = `
+        <p class="piper-summary-text"><strong>${esc(seller)}</strong> · ${esc(prop)}.</p>
+        <p class="piper-summary-text">Last contact ${fmtDate(lastContact)}. Asking ${nums.askingVal ? money(nums.askingVal) : "not recorded"}.</p>
+        <p class="piper-summary-text">${esc(offerTxt)} Working MAO ${money(nums.mao)}.</p>
+        <p class="piper-summary-text">${esc(fuTxt)}</p>`;
+    } catch {
+      host.innerHTML = `<div class="state error">Could not read the record.</div>`;
+    }
+  }
+
+  // Founder picks one of 8 stages; the backend records the bucket's entry stage.
+  // History is never rewritten — this is the same stage endpoint as before.
+  window.saveFounderStage = async (oppId) => {
+    const select = document.getElementById("detail-stage-select");
+    const founderKey = select ? select.value : null;
+    if (!founderKey || !FOUNDER_STAGE_DEFAULTS[founderKey]) return;
+    const target = FOUNDER_STAGE_DEFAULTS[founderKey];
+    const current = state.activeOpp ? state.activeOpp.stage : null;
+    if (target === current) return;
+    const closed = ["closed", "nurture", "disqualified", "lost", "archived"];
+    let reason = null;
+    if (closed.includes(current) && !closed.includes(target)) {
+      reason = window.prompt("Reopening a closed record — reason (required):");
+      if (!reason || !reason.trim()) { if (select) select.value = toFounderStage(current); return; }
+    }
+    try {
+      const res = await pfetch(`/api/v1/opportunities/${encodeURIComponent(oppId)}/stage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: target, reason }),
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error || "stage_move_failed");
+      window.showCustomAlert(`Stage moved to ${esc(founderStageLabel(founderKey))}.`, "Stage Updated");
+      opportunityDetail(oppId);
+    } catch (e) {
+      window.showCustomAlert("Could not move stage: " + esc(e.message), "Stage Move Failed");
+      if (select && current) select.value = toFounderStage(current);
+    }
+  };
+
+  // Call / Text route through Piper's governed preparation tools.
+  // prepare_call is plan-only and draft_sms is draft-only — Piper says so honestly.
+  window.piperCallSeller = async (oppId) => {
+    const o = state.activeOpp;
+    const name = (o && o.sellerDisplayName) || "this seller";
+    const prop = (o && o.property && o.property.address) || "";
+    openPiperDrawer();
+    await window.submitPiperText(`Prepare a call to ${name}${prop ? " about " + prop : ""}. Preparation only — do not dial.`);
+  };
+  window.piperTextSeller = async (oppId) => {
+    const o = state.activeOpp;
+    const name = (o && o.sellerDisplayName) || "this seller";
+    openPiperDrawer();
+    await window.submitPiperText(`Draft a text message to ${name}. Draft only — do not send.`);
+  };
+  window.focusSellerNote = () => {
+    const panel = document.getElementById("seller-notes");
+    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    const input = document.getElementById("detail-log-input");
+    if (input) setTimeout(() => input.focus(), 350);
+  };
+  window.toggleFollowUpForm = () => {
+    const el = document.getElementById("followup-inline");
+    if (el) el.hidden = !el.hidden;
+  };
+  window.submitQuickFollowUp = async (oppId) => {
+    const title = (document.getElementById("followup-title") || {}).value || "Follow up";
+    const dueDate = (document.getElementById("followup-date") || {}).value || null;
+    try {
+      const res = await pfetch("/api/v1/operator/next-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: oppId, title, dueDate }),
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error || "save_failed");
+      window.showCustomAlert("Follow-up saved.", "Follow Up");
+      opportunityDetail(oppId);
+    } catch (e) {
+      window.showCustomAlert("Could not save follow-up: " + esc(e.message), "Follow Up");
+    }
+  };
+  window.scrollToOffer = () => {
+    const form = document.getElementById("prepare-offer-form");
+    if (form) {
+      window.togglePrepareOfferForm(true);
+      form.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const panel = document.getElementById("seller-offers");
+    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   async function renderTimeline(oppId) {
     const host = document.getElementById("detail-timeline");
     if (!host) return;
     try {
-      const { timeline } = await operatorGet("timeline", oppId);
-      const events = timeline.events || [];
+      const events = await fetchTimelineEvents(oppId);
       if (!events.length) {
         host.innerHTML = `<div class="empty-state">No events recorded yet.</div>`;
         return;
@@ -2421,17 +2572,8 @@
     else if (action === "verify") query = "Show provenance and classification";
     else if (action === "unresolved") query = "Which records are unresolved?";
     else if (action === "attention") query = "What needs my attention?";
-    else if (action === "why") query = state.activeOppId ? "Show me why this deal needs attention" : "Show me why";
-
-    if (action === "underwriting") {
-      const id = state.activeOppId || (state.opportunities[0] && state.opportunities[0].id);
-      if (id) { navigate("/opportunities/" + encodeURIComponent(id)); }
-      setTimeout(() => {
-        const target = document.getElementById("detail-underwriting-section");
-        if (target) { target.classList.add("highlight-target"); target.scrollIntoView({ behavior: "smooth", block: "center" }); }
-      }, 300);
-      return;
-    }
+    else if (action === "changed") query = "What changed today?";
+    else if (action === "forgetting") query = "What am I forgetting?";
     if (piperChatInput) {
       piperChatInput.value = query;
       piperChatForm.dispatchEvent(new Event("submit"));
@@ -2443,25 +2585,21 @@
     const activeOppCard = document.getElementById("piper-active-deal-card");
     
     if (state.activeOppId) {
-      const o = state.activeOpp || state.opportunities.find(x => x.id === state.activeOppId);
-      const text = `focused on deal #${state.activeOppId.slice(0, 8)}`;
-      piperContextText.textContent = text;
-      
+      const o = state.activeOpp || (state.opportunities || []).find(x => x.id === state.activeOppId);
+      const label = o ? (o.sellerDisplayName || (o.property && o.property.address) || "this deal") : "this deal";
+      piperContextText.textContent = `Looking at ${label} — ask me anything about it.`;
       if (o && activeOppCard) {
-        const mao = o.underwriting && o.underwriting.mao != null ? o.underwriting.mao : null;
-        
         activeOppCard.innerHTML = `
           <div class="active-deal-header">
             <span class="deal-icon">✦</span>
             <div class="deal-meta">
-              <span class="deal-address">${esc(o.property.address)}</span>
-              <span class="deal-apn">APN: ${esc(o.property.apn || "Unknown")}</span>
+              <span class="deal-address">${esc((o.property && o.property.address) || label)}</span>
             </div>
           </div>
           <div class="active-deal-metrics">
             <div class="metric-mini">
               <span class="lbl">Stage</span>
-              <span class="val stage-badge s-${esc(o.stage)}">${esc(formatStage(o.stage))}</span>
+              <span class="val stage-badge">${esc(founderStageLabel(toFounderStage(o.stage)))}</span>
             </div>
             <div class="metric-mini">
               <span class="lbl">MAO (75%)</span>
@@ -2474,7 +2612,7 @@
         activeOppCard.classList.add("hidden");
       }
     } else {
-      piperContextText.textContent = `view ${location.pathname}`;
+      piperContextText.textContent = "Piper is ready — ask about any seller or deal.";
       if (activeOppCard) {
         activeOppCard.innerHTML = "";
         activeOppCard.classList.add("hidden");
@@ -2509,6 +2647,9 @@
     if (path === "/" || path === "/index.html") p = overview();
     else if (path === "/opportunities") p = opportunities();
     else if (detail) p = opportunityDetail(decodeURIComponent(detail[1]));
+    else if (path === "/people") p = people();
+    else if (path === "/tasks") p = tasks();
+    else if (path === "/admin") p = admin();
     else if (path === "/provenance") p = provenance();
     else if (path === "/classifications") p = classifications();
     else if (path === "/data-quality") p = dataQuality();
