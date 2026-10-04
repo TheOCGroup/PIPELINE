@@ -28,6 +28,7 @@ const INTENTS = [
   { id: "offerDecisionGoWrong", patterns: [/go wrong/i, /could make this.*wrong/i] },
   { id: "offerDecisionPrepare", patterns: [/prepare.*offer/i, /prepare.*draft/i] },
   { id: "offerDecisionChangePrice", patterns: [/change.*price to/i, /modify.*price to/i] },
+  { id: "brief",          patterns: [/what do i need to know/i, /give me (the )?(morning|daily|quick )?brief/i, /catch me up/i, /where should i start/i, /which one first/i, /good (morning|afternoon|evening).*what/i] },
   { id: "attention",      patterns: [/what needs (my|your) attention/i, /needs? me/i, /what should i look at/i, /anything urgent/i] },
   { id: "changed",        patterns: [/what changed/i, /what.s new/i, /since (my |the )?last/i, /any updates?/i] },
   { id: "stalled",        patterns: [/stalled/i, /stuck/i, /not moving/i, /sitting (in|for)/i, /why is this (deal )?still here/i] },
@@ -122,6 +123,7 @@ export function answerQuestion(question, snapshot, context = {}) {
       const active = target || snapshot.opportunities.find(o => o.underwriting && o.underwriting.status === "completed");
       return offerDecisionChangePrice(text, active, snapshot);
     }
+    case "brief":        return briefing(snapshot);
     case "attention":    return attention(snapshot);
     case "changed":      return changed(snapshot);
     case "stalled":      return stalled(snapshot, target);
@@ -144,6 +146,27 @@ export function answerQuestion(question, snapshot, context = {}) {
 }
 
 // --- answers ---------------------------------------------------------------
+
+function briefing(s) {
+  const brief = buildBrief(s);
+  const priorityOrder = ["NEEDS YOU", "EXIT EXECUTION", "STALLED", "RISK", "NEXT", "CHANGED", "NEW"];
+  const orderedSections = priorityOrder
+    .map((title) => brief.sections.find((section) => section.title === title))
+    .filter(Boolean);
+  const items = orderedSections.flatMap((section) => section.items || []).slice(0, 5);
+  const first = items[0] || null;
+  const reason = first?.reasons?.[0] || null;
+  const start = first
+    ? ` Start with ${first.label}${reason ? ` — ${reason}` : "."}`
+    : "";
+  return say(`${brief.headline}${start}`, items, s, {
+    followUps: [
+      "Who needs my attention?",
+      "What changed today?",
+      "What am I forgetting?"
+    ]
+  });
+}
 
 function attention(s) {
   const total = s.opportunities.length;

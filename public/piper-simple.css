@@ -713,13 +713,322 @@ body.fp .ocg-command-context, body.fp .ocg-command-center, body.fp .ocg-deal-sto
   display: none !important;
 }
 
+/* ---------- Piper-first split workspace: no orb, no dashboard pile ---------- */
+.fp-home-grid {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 30px 0 42px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
+  gap: 28px;
+  align-items: start;
+}
+.fp-piper-pane {
+  min-width: 0;
+  padding: 26px 6px 6px;
+}
+.fp-piper-identity {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 38px;
+}
+.fp-piper-word {
+  font-family: Outfit, Inter, sans-serif;
+  font-size: clamp(42px, 6vw, 66px);
+  line-height: 0.9;
+  font-weight: 700;
+  letter-spacing: -0.055em;
+  background: linear-gradient(110deg, #ffffff 0%, #9fd4ff 48%, #6ee7c8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.fp-piper-kicker {
+  margin-top: 10px;
+  color: #8f9bad;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+.fp-voice-output {
+  border: 1px solid rgba(255,255,255,0.11);
+  background: rgba(255,255,255,0.035);
+  color: #b7c1cf;
+  min-height: 38px;
+  border-radius: 999px;
+  padding: 8px 13px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+.fp-voice-output[aria-pressed="true"] {
+  color: #dff8f1;
+  border-color: rgba(110,231,200,0.28);
+  background: rgba(110,231,200,0.06);
+}
+.fp-piper-pane .fp-hero-greet {
+  text-align: left;
+  font-size: clamp(30px, 4vw, 44px);
+  margin: 0 0 24px;
+}
+.fp-piper-pane .fp-hero-ask {
+  max-width: none;
+}
+.fp-piper-pane .fp-suggest {
+  justify-content: flex-start;
+}
+.fp-voice-note {
+  min-height: 20px;
+  margin: 8px 4px 0;
+  color: #91a0b3;
+  font-size: 12px;
+}
+.fp-mic-btn.listening,
+.piper-voice-btn.listening {
+  color: #6ee7c8 !important;
+  background: rgba(110,231,200,0.10) !important;
+  box-shadow: 0 0 0 4px rgba(110,231,200,0.08);
+}
+.fp-mustknow {
+  margin-top: 34px;
+}
+.fp-mustknow-head,
+.fp-pipeline-snapshot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 11px;
+  color: #8f9bad;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.fp-mustknow-head a,
+.fp-pipeline-snapshot-head a {
+  color: #9fc8ff;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 650;
+  text-decoration: none;
+}
+.fp-show-pane {
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.075);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.018)),
+    radial-gradient(circle at 88% 8%, rgba(47,123,255,0.12), transparent 34%);
+  border-radius: 24px;
+  padding: 24px;
+  min-height: 610px;
+  box-shadow: 0 28px 80px rgba(0,0,0,0.22);
+}
+.fp-show-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.fp-show-eyebrow {
+  color: #6ee7c8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.fp-show-head h2 {
+  margin: 8px 0 0;
+  font-family: Outfit, Inter, sans-serif;
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+}
+.fp-show-ask {
+  flex-shrink: 0;
+  border: 1px solid rgba(159,200,255,0.22);
+  background: rgba(47,123,255,0.08);
+  color: #cfe2ff;
+  border-radius: 999px;
+  min-height: 40px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.fp-focus-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 20px 0 26px;
+}
+.fp-focus-item {
+  display: grid;
+  grid-template-columns: 96px minmax(0,1fr);
+  gap: 3px 12px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 15px;
+  background: rgba(6,11,20,0.38);
+  color: #edf2f9;
+  text-decoration: none;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+.fp-focus-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(159,200,255,0.28);
+  background: rgba(47,123,255,0.055);
+}
+.fp-focus-item .fp-focus-type {
+  grid-row: 1 / span 2;
+  color: #8fa0b7;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.fp-focus-item strong { font-size: 14px; }
+.fp-focus-item > span:last-child {
+  grid-column: 2;
+  color: #8f9bad;
+  font-size: 12px;
+}
+.fp-pipeline-snapshot {
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+}
+.fp-show-pane .fstage-strip {
+  grid-template-columns: repeat(4, 1fr);
+}
+.fp-show-pane .fstage {
+  min-height: 70px;
+  background: rgba(255,255,255,0.025);
+}
+
+/* Piper identity marks replace every orb in the founder experience. */
+.fp-unlock-piper {
+  font-family: Outfit, Inter, sans-serif;
+  font-size: 44px;
+  font-weight: 750;
+  letter-spacing: -0.05em;
+  margin-bottom: 18px;
+  background: linear-gradient(110deg, #fff, #9fd4ff 52%, #6ee7c8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.piper-toggle-mark,
+.piper-summary-mark {
+  display: inline-grid;
+  place-items: center;
+  font-family: Outfit, Inter, sans-serif;
+  font-weight: 800;
+  color: #dbeafe;
+  border: 1px solid rgba(159,200,255,0.24);
+  background: rgba(47,123,255,0.08);
+}
+.piper-toggle-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+  margin-right: 7px;
+}
+.piper-summary-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  margin-right: 7px;
+}
+body.fp .piper-orb-mini,
+body.fp .status-orb,
+body.fp .status-ring,
+body.fp .fp-hero-orb,
+body.fp .fp-unlock-orb,
+body.fp .fp-loading-orb {
+  display: none !important;
+}
+.piper-voice-btn {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #aeb9c8;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 17px;
+}
+body.fp .piper-toggle {
+  display: inline-flex !important;
+  align-items: center;
+  grid-auto-flow: unset;
+  gap: 0;
+  width: auto !important;
+  height: 44px !important;
+  min-width: 92px;
+  padding: 0 14px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(159,200,255,0.22) !important;
+  background: rgba(10,18,32,0.94) !important;
+  color: #e7eef8 !important;
+  font-size: 13px !important;
+  font-weight: 750 !important;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.34) !important;
+}
+body.fp .piper-toggle::before,
+body.fp .piper-toggle::after {
+  content: none !important;
+  display: none !important;
+}
+body.fp .piper-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(159,200,255,0.38) !important;
+  background: rgba(18,31,51,0.96) !important;
+}
+
+/* Loading uses a small activity line, never a glowing ball. */
+.fp-loading::before {
+  content: "";
+  width: 32px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(159,200,255,.2), #9fc8ff, rgba(110,231,200,.25));
+  animation: fp-load-line 1.05s ease-in-out infinite alternate;
+}
+@keyframes fp-load-line {
+  from { transform: scaleX(.45); opacity: .45; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 860px) {
   .fp-nav { display: none; }
   .fp-tabbar { display: flex; }
   .fp-header { padding: 16px 18px 10px; }
   .fp-shell main { padding: 4px 18px 130px; }
-  .fp-hero { padding: 28px 8px 4px; }
+  .fp-home-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 8px 0 24px;
+  }
+  .fp-piper-pane { padding: 20px 0 0; }
+  .fp-piper-identity { margin-bottom: 28px; }
+  .fp-piper-word { font-size: 48px; }
+  .fp-piper-pane .fp-hero-greet { font-size: 31px; margin-bottom: 18px; }
+  .fp-ask-row { padding-left: 14px; }
+  .fp-ask-row input { font-size: 16px; }
+  .fp-suggest { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
+  .fp-suggest button { flex: 0 0 auto; }
+  .fp-show-pane { min-height: 0; padding: 18px; border-radius: 20px; }
+  .fp-show-head { align-items: center; }
+  .fp-show-head h2 { font-size: 22px; }
+  .fp-focus-item { grid-template-columns: 76px minmax(0,1fr); }
+  .fp-show-pane .fstage-strip { grid-template-columns: repeat(2, 1fr); }
   .fp-actions { grid-template-columns: 1fr 1fr; }
   body.fp .piper-widget { bottom: 92px !important; right: 18px !important; }
   body.fp .piper-drawer { width: 100% !important; max-width: 100vw !important; }

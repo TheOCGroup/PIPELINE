@@ -126,6 +126,35 @@ test("Piper-first stylesheet is served as CSS, not the SPA fallback", async (t) 
   assert.match(cssText, /\.ph-/);
 });
 
+test("Piper founder shell uses a human identity, split workspace, and real voice controls instead of an orb", async (t) => {
+  const db = makeTempDb();
+  const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath));
+  t.after(() => { app.close(); db.cleanup(); });
+
+  const html = await (await fetch(`${baseUrl}/`)).text();
+  assert.match(html, /class="fp-unlock-piper"/);
+  assert.match(html, /class="piper-toggle-mark"/);
+  assert.match(html, /id="piper-voice-btn"/);
+  assert.match(html, /id="piper-voice-output"/);
+  assert.doesNotMatch(html, /class="piper-orb-mini"/);
+  assert.doesNotMatch(html, /class="status-orb"/);
+
+  const appJs = await (await fetch(`${baseUrl}/app.js`)).text();
+  assert.match(appJs, /class="fp-home-grid"/);
+  assert.match(appJs, /class="fp-piper-word">Piper/);
+  assert.match(appJs, /class="fp-show-pane"/);
+  assert.match(appJs, /SpeechRecognition/);
+  assert.match(appJs, /SpeechSynthesisUtterance/);
+  assert.match(appJs, /Microsoft Ava Multilingual Online/);
+  assert.match(appJs, /speakBriefOnce/);
+  assert.doesNotMatch(appJs, /Microsoft Zira/);
+
+  const cssText = await (await fetch(`${baseUrl}/piper-simple.css`)).text();
+  assert.match(cssText, /\.fp-home-grid/);
+  assert.match(cssText, /\.fp-piper-word/);
+  assert.match(cssText, /\.fp-show-pane/);
+});
+
 test("unknown API routes return a deterministic 404 with no internals", async (t) => {
   const db = makeTempDb();
   const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath));

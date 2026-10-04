@@ -16,7 +16,7 @@
     <!-- Clean unlock gate: shown before the founder experience loads. -->
     <div id="fp-unlock" class="fp-unlock">
       <div class="fp-unlock-card">
-        <div class="fp-unlock-orb" aria-hidden="true"></div>
+        <div class="fp-unlock-piper" aria-hidden="true">Piper</div>
         <div class="fp-unlock-brand">OCG PIPELINE</div>
         <div class="fp-unlock-sub">Acquisitions powered by Piper</div>
         <form id="fp-unlock-form" class="fp-unlock-form">
@@ -44,7 +44,7 @@
         </nav>
         <div class="fp-status">
           <span id="demo-banner" class="fp-chip fp-chip-demo" role="status" hidden>DEMO</span>
-          <span class="fp-chip" title="Piper is working from your Pipeline records with reduced capabilities.">Piper limited</span>
+          <span id="fp-piper-status" class="fp-chip" title="Piper is checking her operating state.">Piper limited</span>
         </div>
       </header>
 
@@ -61,13 +61,13 @@
 
       <!-- Piper conversation: an overlay, never a permanent rail. -->
       <aside id="piper-widget" class="piper-widget" aria-label="Piper">
-        <button id="piper-toggle" class="piper-toggle" aria-label="Talk to Piper"><span class="piper-orb-mini"></span><span class="piper-toggle-text">Piper</span></button>
+        <button id="piper-toggle" class="piper-toggle" aria-label="Talk to Piper"><span class="piper-toggle-mark">P</span><span class="piper-toggle-text">Piper</span></button>
         <div id="piper-drawer" class="piper-drawer" hidden>
-          <div class="piper-header"><div class="piper-status"><span class="status-dot"><span class="status-orb"></span><span class="status-ring"></span></span><div class="piper-title-group"><div class="piper-title-row"><span class="piper-name">Piper</span><span class="piper-limited-tag">limited</span></div><div class="piper-subtext">Your acquisition assistant</div></div></div><div class="piper-header-actions"><button type="button" id="piper-stop" class="piper-stop" hidden onclick="window.piperCancel()" title="Interrupt Piper">■ Stop</button><button type="button" id="piper-close-btn" class="piper-tool-btn" title="Close Piper">✕</button></div></div>
+          <div class="piper-header"><div class="piper-status"><div class="piper-title-group"><div class="piper-title-row"><span class="piper-name">Piper</span><span class="piper-limited-tag">limited</span></div><div class="piper-subtext">Your acquisition super agent</div></div></div><div class="piper-header-actions"><button type="button" id="piper-voice-output" class="piper-tool-btn" title="Piper voice on" aria-pressed="true">🔊</button><button type="button" id="piper-stop" class="piper-stop" hidden onclick="window.piperCancel()" title="Interrupt Piper">■ Stop</button><button type="button" id="piper-close-btn" class="piper-tool-btn" title="Close Piper">✕</button></div></div>
           <div id="piper-context-bar" class="piper-context-bar"><div class="context-indicator"><span id="piper-context-text">Piper is ready</span></div><div id="piper-active-deal-card" class="piper-active-deal-card hidden"></div></div>
           <div id="piper-chat-history" class="piper-chat-history"></div>
           <div class="quick-actions-bar" id="piper-quick-actions"><button type="button" onclick="window.triggerPiperQuickAction('attention')" class="quick-action-btn pulse-glow">What needs attention?</button><button type="button" onclick="window.triggerPiperQuickAction('changed')" class="quick-action-btn">What changed today?</button><button type="button" onclick="window.triggerPiperQuickAction('forgetting')" class="quick-action-btn">What am I forgetting?</button></div>
-          <div class="piper-input-container"><form id="piper-chat-form" class="piper-chat-form"><div class="input-wrapper"><input type="text" id="piper-chat-input" placeholder="Ask Piper…" required autocomplete="off" /><button type="submit" class="piper-send-btn" title="Ask Piper"><span class="send-icon">▲</span></button></div></form><div class="piper-input-footer"><p id="piper-state-note" class="piper-state-note"></p><p id="piper-disclosure" class="piper-disclosure">Piper works from your Pipeline records.</p></div></div>
+          <div class="piper-input-container"><form id="piper-chat-form" class="piper-chat-form"><div class="input-wrapper"><input type="text" id="piper-chat-input" placeholder="Talk to Piper…" required autocomplete="off" /><button type="button" id="piper-voice-btn" class="piper-voice-btn" title="Talk to Piper" aria-label="Talk to Piper">🎙</button><button type="submit" class="piper-send-btn" title="Ask Piper"><span class="send-icon">▲</span></button></div></form><div class="piper-input-footer"><p id="piper-state-note" class="piper-state-note"></p><p id="piper-voice-note" class="piper-disclosure"></p><p id="piper-disclosure" class="piper-disclosure">Piper works from your Pipeline records.</p></div></div>
         </div>
       </aside>
     </div>

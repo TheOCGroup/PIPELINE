@@ -64,7 +64,15 @@ function parseThreadContext(row) {
   return ctx;
 }
 
-const SYSTEM_PROMPT = `You are Piper, the head agent for OCG PIPELINE, a seller-opportunity pipeline.
+const SYSTEM_PROMPT = `You are Piper, OCG's female acquisitions super agent and the founder's day-to-day operating partner.
+
+How you should sound and work:
+- Sound like a real, capable colleague: natural, conversational, confident, concise, and warm without being chatty. Use contractions. Do not sound like a robot, help desk, or database console.
+- Lead with what matters. For broad questions such as "what do I need to know?", "what needs my attention?", "what am I forgetting?", or "which one first?", proactively call get_operating_brief and/or get_tasks before asking the founder to define a criterion.
+- When stored evidence clearly identifies overdue work, risk, stalled deals, or a pending decision, surface the most time-sensitive grounded item first and explain why in one sentence. Do not invent a ranking when the tools do not support one.
+- Keep continuity across turns. Use the bounded conversation context to understand "him", "her", "that property", "that deal", "the last offer", and "which one" when the referent is actually resolved. If more than one plausible record remains, ask one short clarification.
+- Do not narrate tool mechanics or provider details to the founder. Just answer and, when useful, give one grounded next step.
+- You may be proactive, but not speculative: proactive means surfacing verified risks, overdue work, missing next actions, and decisions already present in PIPELINE.
 
 Rules you must follow:
 - Every factual claim must come from a tool result. Never state an address, price, stage, classification or count that a tool did not return.
@@ -78,6 +86,22 @@ Rules you must follow:
 - Provenance "unresolved" means the source could not be established. It is NOT a finding that a record is synthetic.
 - To change anything, call a write tool. It will be shown to the operator for approval; never claim an action is done before it is approved and executed.
 - Be concise and specific. Lead with the answer.`;
+
+const WRITE_INTENT_PATTERNS = Object.freeze({
+  create_next_action: /\b(remind|follow\s*up|next action|task|schedule)\b/i,
+  add_note: /\b(add|save|record|leave|make)\b.{0,24}\b(note|notes)\b|\b(note|remember) that\b/i,
+  log_interaction: /\b(log|record)\b.{0,24}\b(call|text|sms|email|contact|interaction)\b/i,
+  prepare_offer: /\b(prepare|draft|create|make|write)\b.{0,24}\boffer\b/i,
+  modify_offer: /\b(change|modify|revise|update|redo)\b.{0,24}\boffer\b/i,
+  prepare_outreach_draft: /\b(prepare|draft|create|write)\b.{0,24}\b(outreach|message)\b/i,
+  draft_sms: /\b(draft|write|prepare|compose|send)\b.{0,24}\b(text|sms|message)\b/i,
+  draft_email: /\b(draft|write|prepare|compose|send)\b.{0,24}\b(email|e-mail)\b/i,
+});
+
+function writeToolExplicitlyRequested(name, question) {
+  const pattern = WRITE_INTENT_PATTERNS[name];
+  return !!pattern && pattern.test(String(question || ""));
+}
 
 // Exported for contract tests: grounding rules are part of Piper's safety
 // contract, not an implementation detail.
@@ -332,7 +356,9 @@ export class PiperRuntime {
 
         if (!calls.length) break;
 
-        const writes = calls.filter((c) => isWriteTool(c.name));
+        const proposedWrites = calls.filter((c) => isWriteTool(c.name));
+        const writes = proposedWrites.filter((c) => writeToolExplicitlyRequested(c.name, question));
+        const blockedWrites = proposedWrites.filter((c) => !writeToolExplicitlyRequested(c.name, question));
         const reads = calls.filter((c) => !isWriteTool(c.name));
 
         // Read tools run now; they cannot mutate anything.
@@ -347,7 +373,20 @@ export class PiperRuntime {
           this.#appendMessage(thread.id, runId, "tool", `${call.name} -> ${result.ok ? "ok" : result.error}`);
         }
 
-        // Write tools are parked, never executed here.
+        // A model may not turn an informational question into an unsolicited action.
+        // Small/local models are especially prone to this, so enforce it here rather
+        // than trusting prompt-following. Explicit founder wording is required before
+        // any write proposal can even reach the approval queue.
+        if (blockedWrites.length) {
+          const blockedNames = blockedWrites.map((c) => c.name).join(", ");
+          messages.push({
+            role: "user",
+            content: `Do not take action. The founder did not explicitly request these write tools: ${blockedNames}. Continue with read-only tools and answer the question.`,
+          });
+          this.#appendMessage(thread.id, runId, "tool", `blocked unsolicited write proposal(s): ${blockedNames}`);
+        }
+
+        // Explicitly requested write tools are parked, never executed here.
         if (writes.length) {
           for (const call of writes) {
             this.db.prepare(`
@@ -363,7 +402,7 @@ export class PiperRuntime {
           return this.#result(runId, thread.id, { answer: text, items: itemsFrom(readResults), deterministic: false });
         }
 
-        if (!reads.length) break;
+        if (!reads.length && !blockedWrites.length) break;
       }
 
       state = this.#setState(runId, state, RUN_STATES.COMPLETE);

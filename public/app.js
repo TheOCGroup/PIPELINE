@@ -81,6 +81,7 @@
   const piperChatInput = document.getElementById("piper-chat-input");
   const piperChatForm = document.getElementById("piper-chat-form");
   const piperContextText = document.getElementById("piper-context-text");
+  let PiperVoice = null;
 
   // State Ledger
   let state = {
@@ -91,7 +92,7 @@
     systemStatus: {},
     activeOppId: null,
     piperMessages: [
-      { sender: "bot", text: "I read stage, provenance, classification, and data-quality state from PIPELINE's read-only API. Ask about any opportunity, or open one and ask what its provenance actually shows." }
+      { sender: "bot", text: "Hey Genaro. I’m Piper. Tell me what you need — I’ll pull the seller, deal, follow-up, offer, or underwriting context and keep you focused on what matters." }
     ]
   };
 
@@ -424,14 +425,24 @@
     })).filter((sec) => (sec.items || []).length > 0);
 
     // Founder-friendly Today rows, in a stable order.
-    const ROW_ORDER = ["Needs You", "Next Actions", "Risk", "Stalled", "Changed", "New"];
+    const ROW_ORDER = ["NEEDS YOU", "NEXT", "RISK", "STALLED", "CHANGED", "NEW", "EXIT EXECUTION"];
     const ROW_LABEL = {
-      "Needs You": (n) => `${n} seller${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} attention`,
-      "Next Actions": (n) => `${n} follow-up${n === 1 ? "" : "s"}`,
-      "Risk": (n) => `${n} at risk`,
-      "Stalled": (n) => `${n} stalled`,
-      "Changed": (n) => `${n} updated recently`,
-      "New": (n) => `${n} new`,
+      "NEEDS YOU": (n) => `${n} seller${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} attention`,
+      "NEXT": (n) => `${n} next action${n === 1 ? "" : "s"}`,
+      "RISK": (n) => `${n} deal${n === 1 ? "" : "s"} at risk`,
+      "STALLED": (n) => `${n} stalled deal${n === 1 ? "" : "s"}`,
+      "CHANGED": (n) => `${n} recent update${n === 1 ? "" : "s"}`,
+      "NEW": (n) => `${n} new lead${n === 1 ? "" : "s"}`,
+      "EXIT EXECUTION": (n) => `${n} exit item${n === 1 ? "" : "s"} in motion`,
+    };
+    const SECTION_LABEL = {
+      "NEEDS YOU": "Needs attention",
+      "NEXT": "Next action",
+      "RISK": "At risk",
+      "STALLED": "Stalled",
+      "CHANGED": "Updated",
+      "NEW": "New",
+      "EXIT EXECUTION": "Exit",
     };
     const todayRows = sections
       .slice()
@@ -441,7 +452,7 @@
         const label = (ROW_LABEL[sec.title] || ((m) => `${m} in ${sec.title.toLowerCase()}`))(n);
         const items = sec.items.slice(0, 8).map((item) => `
           <a class="today-item-link" href="/opportunities/${esc(item.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(item.opportunityId)}')">
-            ${esc(item.address || item.opportunityId)}
+            ${esc(item.label || item.address || "Opportunity")}
             <span class="today-item-reasons">${esc((item.reasons || []).slice(0, 2).join(" · "))}</span>
           </a>`).join("");
         const more = sec.items.length > 8 ? `<div class="muted" style="font-size:12px">+ ${sec.items.length - 8} more</div>` : "";
@@ -468,45 +479,79 @@
         <span class="fstage-label">${esc(s.label)}</span>
       </button>`).join("");
 
-    // PIPER-FIRST Home: hero owns the first viewport. No dashboard chrome.
+    const focusItems = (sections || [])
+      .flatMap((sec) => sec.items.map((item) => ({ ...item, section: sec.title })))
+      .slice(0, 4);
+    const focusHtml = focusItems.length
+      ? focusItems.map((item) => `
+          <a class="fp-focus-item" href="/opportunities/${esc(item.opportunityId)}"
+             onclick="window.routeTo(event, '/opportunities/${esc(item.opportunityId)}')">
+            <span class="fp-focus-type">${esc(SECTION_LABEL[item.section] || item.section)}</span>
+            <strong>${esc(item.label || item.address || "Opportunity")}</strong>
+            <span>${esc((item.reasons || []).slice(0, 1).join(" · ") || "Open record")}</span>
+          </a>`).join("")
+      : `<div class="fp-empty">Nothing urgent. Piper is watching the pipeline.</div>`;
+
+    // PIPER-FIRST Home: Piper + must-knows on the left, context on the right.
     view.innerHTML = `
-      <div class="fp-hero">
-        <div class="fp-hero-orb" aria-hidden="true"></div>
-        <h1 class="fp-hero-greet">What do you need, Genaro?</h1>
-        <form class="fp-hero-ask" id="fp-ask-form">
-          <div class="fp-ask-row">
-            <input id="fp-ask-input" type="text" autocomplete="off"
-              placeholder="Ask Piper anything about your sellers or deals…" aria-label="Ask Piper" />
-            <button type="button" class="fp-mic-btn" disabled
-              title="Voice input is not connected yet." aria-label="Voice input (not available yet)">◉</button>
-            <button type="submit" class="fp-ask-btn" aria-label="Ask Piper">▲</button>
+      <div class="fp-home-grid">
+        <section class="fp-piper-pane" aria-label="Piper">
+          <div class="fp-piper-identity">
+            <div>
+              <div class="fp-piper-word">Piper</div>
+              <div class="fp-piper-kicker">Acquisition super agent</div>
+            </div>
+            <button type="button" id="fp-voice-output-home" class="fp-voice-output" aria-pressed="true" title="Piper voice on">Voice on</button>
           </div>
-        </form>
-        <div class="fp-suggest">
-          <button type="button" data-hint="Who needs my attention?">Who needs my attention?</button>
-          <button type="button" data-hint="What changed today?">What changed today?</button>
-          <button type="button" data-hint="What am I forgetting?">What am I forgetting?</button>
-        </div>
+
+          <h1 class="fp-hero-greet">What do you need, Genaro?</h1>
+
+          <form class="fp-hero-ask" id="fp-ask-form">
+            <div class="fp-ask-row">
+              <input id="fp-ask-input" type="text" autocomplete="off"
+                placeholder="Talk to Piper about any seller or deal…" aria-label="Ask Piper" />
+              <button type="button" class="fp-mic-btn" id="fp-mic-btn"
+                title="Talk to Piper" aria-label="Talk to Piper">🎙</button>
+              <button type="submit" class="fp-ask-btn" aria-label="Ask Piper">▲</button>
+            </div>
+            <div id="fp-voice-note" class="fp-voice-note" aria-live="polite"></div>
+          </form>
+
+          <div class="fp-suggest">
+            <button type="button" data-hint="Who needs my attention?">Who needs my attention?</button>
+            <button type="button" data-hint="What changed today?">What changed today?</button>
+            <button type="button" data-hint="What am I forgetting?">What am I forgetting?</button>
+          </div>
+
+          <div class="fp-mustknow">
+            <div class="fp-mustknow-head">
+              <span>Must know</span>
+              <a href="/tasks" data-nav>See tasks</a>
+            </div>
+            <div class="fp-card">${todayRows || `<div class="fp-empty">Nothing needs your attention right now.</div>`}</div>
+          </div>
+        </section>
+
+        <aside class="fp-show-pane" aria-label="What Piper is showing you">
+          <div class="fp-show-head">
+            <div>
+              <span class="fp-show-eyebrow">Piper is watching</span>
+              <h2>${esc(b?.headline || "Pipeline is under control.")}</h2>
+            </div>
+            <button type="button" class="fp-show-ask" data-hint="Give me the short version of what matters right now.">Ask why</button>
+          </div>
+
+          <div class="fp-focus-list">${focusHtml}</div>
+
+          <div class="fp-pipeline-snapshot">
+            <div class="fp-pipeline-snapshot-head">
+              <span>Pipeline</span>
+              <a href="/opportunities" data-nav>Open pipeline</a>
+            </div>
+            <div class="fstage-strip">${stageStrip}</div>
+          </div>
+        </aside>
       </div>
-
-      <section class="fp-section" aria-label="Today">
-        <h2 class="fp-section-title">Today</h2>
-        <div class="fp-card">${todayRows || `<div class="fp-empty">Nothing needs your attention right now.</div>`}</div>
-      </section>
-
-      <section class="fp-section" aria-label="Pipeline">
-        <h2 class="fp-section-title">Pipeline</h2>
-        <div class="fp-card" style="padding:14px"><div class="fstage-strip">${stageStrip}</div></div>
-      </section>
-
-      <section class="fp-section" aria-label="Quick actions">
-        <div class="fp-actions">
-          <button type="button" class="fp-action primary" onclick="window.openNewOpportunityModal()">＋ New Seller</button>
-          <button type="button" class="fp-action" id="fp-ask-piper-btn">Ask Piper</button>
-          <button type="button" class="fp-action" onclick="window.routeTo(event, '/opportunities?focus=search')">Search</button>
-          <button type="button" class="fp-action" onclick="window.routeTo(event, '/tasks')">Today&apos;s Follow-Ups</button>
-        </div>
-      </section>
     `;
 
     // Hero input -> Piper overlay conversation (the shared Piper flow).
@@ -521,8 +566,10 @@
     };
     if (form && input) {
       form.addEventListener("submit", (e) => { e.preventDefault(); askPiper(input.value); });
-      const askBtn = document.getElementById("fp-ask-piper-btn");
-      if (askBtn) askBtn.addEventListener("click", () => { openPiperDrawer(); });
+    }
+    if (PiperVoice) {
+      PiperVoice.bindHomeControls();
+      PiperVoice.speakBriefOnce(b?.headline || "Pipeline is under control.");
     }
     view.querySelectorAll("[data-hint]").forEach((btn) => btn.addEventListener("click", () => askPiper(btn.getAttribute("data-hint"))));
     // Today rows: expand inline, or hand the section to Piper.
@@ -1301,7 +1348,7 @@
       </div>
 
       <div class="piper-summary">
-        <div class="piper-summary-head"><span class="piper-orb-mini" aria-hidden="true"></span><span>Piper summary</span></div>
+        <div class="piper-summary-head"><span class="piper-summary-mark" aria-hidden="true">P</span><span>Piper summary</span></div>
         <div id="seller-piper-summary-body"><div class="state">Reading the record…</div></div>
       </div>
 
@@ -2201,6 +2248,7 @@
         renderPiperHistory();
 
         let reply;
+        let spokenReply = "";
         try {
           const res = await pfetch("/api/v1/piper/ask", {
             method: "POST",
@@ -2217,6 +2265,7 @@
             state.piperRunId = body.data.runId;
             setPiperState(body.data.state, body.data.stateLabel);
             reply = renderPiperAnswer(body.data);
+            spokenReply = String(body.data.answer || "").trim();
             executeWorkspaceDirective(body.data.directive);
           } else {
             setPiperState("failed");
@@ -2230,6 +2279,7 @@
         state.piperMessages = state.piperMessages.filter((m) => !m.pending);
         state.piperMessages.push({ sender: "bot", text: reply });
         renderPiperHistory();
+        if (spokenReply && PiperVoice) PiperVoice.speak(spokenReply);
     }
 
     if (piperChatForm) {
@@ -2241,43 +2291,244 @@
       });
     }
 
-    // ---- Voice-prep shell (P2 directive, P7 detail) ----
-    // The microphone UI exists so the layout is settled, but voice input is
-    // NOT wired: no speech service is provisioned, no media is captured, and
-    // no claim is made that voice works. The state machine below models the
-    // future flow (idle -> requesting -> listening -> transcribing ->
-    // submitting -> idle) and stays parked in `unavailable` until a founder
-    // approves a provider. Transcripts, when they exist, will enter through
-    // submitPiperText — the same contract as typed input — so text and voice
-    // share one conversation state.
-    const PiperVoice = {
-      enabled: false, // no speech provider; founder has not approved one
-      state: "unavailable",
-      setState(next) {
-        this.state = next;
-        const btn = document.getElementById("piper-voice-btn");
-        if (btn) {
-          btn.dataset.voiceState = next;
-          btn.title = next === "unavailable"
-            ? "Voice input arrives in a future update — no speech service is connected."
-            : `Voice: ${next}`;
-        }
-        const note = document.getElementById("piper-voice-note");
-        if (note) note.textContent = next === "unavailable" ? "Voice input is not available yet." : "";
+    // ---- Piper browser voice layer ----
+    // Zero-cost voice path: browser speech recognition for input and the best
+    // natural female system voice available on this Windows machine for output.
+    // Both voice and typing use submitPiperText(), so context and approvals stay identical.
+    PiperVoice = {
+      state: "idle",
+      outputEnabled: localStorage.getItem("piper_voice_output") !== "off",
+      recognition: null,
+      selectedVoice: null,
+      listeningOrigin: null,
+
+      supportsInput() {
+        return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
       },
-      // Future entry point: a transcript from any speech service lands here.
+
+      supportsOutput() {
+        return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+      },
+
+      chooseVoice() {
+        if (!this.supportsOutput()) return null;
+        const voices = window.speechSynthesis.getVoices() || [];
+        const english = voices.filter((v) => /^en([-_]|$)/i.test(v.lang || ""));
+        const pool = english.length ? english : voices;
+        const preferred = [
+          /Microsoft Ava Multilingual Online \(Natural\)/i,
+          /Microsoft Emma Multilingual Online \(Natural\)/i,
+          /Microsoft Jenny Online \(Natural\)/i,
+          /Microsoft Aria Online \(Natural\)/i,
+          /Microsoft Ava Online \(Natural\)/i,
+          /Microsoft Sonia Online \(Natural\)/i,
+          /Samantha/i,
+          /Google.*US English.*Female/i,
+        ];
+        for (const rx of preferred) {
+          const match = pool.find((v) => rx.test(v.name || ""));
+          if (match) return match;
+        }
+        // Never fall back to a random/male/robotic voice. Piper only speaks when
+        // the browser exposes a plausibly natural female English voice.
+        const femaleHint = /(Ava|Emma|Jenny|Aria|Sonia|Samantha|Michelle|Ana|Libby|Mia|Sara|Sarah|Jane|Joanna|Female)/i;
+        return pool.find((v) => /Online \(Natural\)/i.test(v.name || "") && femaleHint.test(v.name || ""))
+          || pool.find((v) => femaleHint.test(v.name || ""))
+          || null;
+      },
+
+      refreshVoice() {
+        this.selectedVoice = this.chooseVoice();
+        this.syncButtons();
+      },
+
+      setState(next, note = "") {
+        this.state = next;
+        const btns = [
+          document.getElementById("piper-voice-btn"),
+          document.getElementById("fp-mic-btn"),
+        ].filter(Boolean);
+        btns.forEach((btn) => {
+          btn.dataset.voiceState = next;
+          btn.classList.toggle("listening", next === "listening");
+          btn.title = next === "listening" ? "Listening — tap to stop" : "Talk to Piper";
+        });
+        const text = note || (next === "listening" ? "Listening…" : "");
+        const notes = [
+          document.getElementById("piper-voice-note"),
+          document.getElementById("fp-voice-note"),
+        ].filter(Boolean);
+        notes.forEach((el) => { el.textContent = text; });
+      },
+
+      syncButtons() {
+        const outputBtns = [
+          document.getElementById("piper-voice-output"),
+          document.getElementById("fp-voice-output-home"),
+        ].filter(Boolean);
+        outputBtns.forEach((btn) => {
+          const naturalReady = !!this.selectedVoice;
+          const on = this.outputEnabled && naturalReady;
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+          btn.disabled = !naturalReady;
+          btn.textContent = on
+            ? (btn.id === "fp-voice-output-home" ? "Voice on" : "🔊")
+            : (btn.id === "fp-voice-output-home" ? (naturalReady ? "Voice off" : "Voice unavailable") : "🔇");
+          const voiceName = naturalReady ? ` · ${this.selectedVoice.name}` : "";
+          btn.title = naturalReady
+            ? `Piper voice ${on ? "on" : "off"}${voiceName}`
+            : "A natural Piper voice is not available in this browser.";
+        });
+      },
+
+      toggleOutput() {
+        this.outputEnabled = !this.outputEnabled;
+        localStorage.setItem("piper_voice_output", this.outputEnabled ? "on" : "off");
+        if (!this.outputEnabled && this.supportsOutput()) window.speechSynthesis.cancel();
+        this.syncButtons();
+      },
+
+      speak(text) {
+        if (!this.outputEnabled || !this.supportsOutput()) return;
+        const voice = this.selectedVoice || this.chooseVoice();
+        if (!voice) return;
+        const clean = String(text || "")
+          .replace(/<[^>]*>/g, " ")
+          .replace(/[*_#>`]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (!clean) return;
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(clean);
+        utter.voice = voice;
+        utter.lang = voice.lang || "en-US";
+        utter.rate = 0.98;
+        utter.pitch = 1.0;
+        utter.volume = 1;
+        window.speechSynthesis.speak(utter);
+      },
+
+      speakBriefOnce(text) {
+        if (!text || sessionStorage.getItem("piper_brief_spoken") === "1") return;
+        const voice = this.selectedVoice || this.chooseVoice();
+        if (!voice || !this.outputEnabled) return;
+        sessionStorage.setItem("piper_brief_spoken", "1");
+        window.setTimeout(() => this.speak(`Hey Genaro. ${text}`), 450);
+      },
+
+      ensureRecognition() {
+        if (this.recognition || !this.supportsInput()) return this.recognition;
+        const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new Recognition();
+        recognition.lang = "en-US";
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = () => this.setState("listening", "Listening…");
+        recognition.onresult = (event) => {
+          let interim = "";
+          let finalText = "";
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            const piece = event.results[i][0]?.transcript || "";
+            if (event.results[i].isFinal) finalText += piece;
+            else interim += piece;
+          }
+          const heard = (finalText || interim).trim();
+          if (heard) this.setState("listening", heard);
+          if (finalText.trim()) {
+            const transcript = finalText.trim();
+            const homeInput = document.getElementById("fp-ask-input");
+            if (homeInput) homeInput.value = transcript;
+            if (piperChatInput) piperChatInput.value = transcript;
+          }
+        };
+        recognition.onerror = (event) => {
+          const friendly = event.error === "not-allowed"
+            ? "Microphone permission is blocked."
+            : event.error === "no-speech"
+              ? "I didn’t hear anything."
+              : "Voice input stopped.";
+          this.setState("idle", friendly);
+        };
+        recognition.onend = async () => {
+          const homeInput = document.getElementById("fp-ask-input");
+          const transcript = (piperChatInput?.value || homeInput?.value || "").trim();
+          this.setState("idle", "");
+          if (transcript && this.listeningOrigin) {
+            if (homeInput) homeInput.value = "";
+            if (piperChatInput) piperChatInput.value = "";
+            openPiperDrawer();
+            await submitPiperText(transcript);
+          }
+          this.listeningOrigin = null;
+        };
+        this.recognition = recognition;
+        return recognition;
+      },
+
+      startListening(origin = "drawer") {
+        if (!this.supportsInput()) {
+          this.setState("idle", "Voice input is not supported in this browser. Use Edge or Chrome.");
+          return;
+        }
+        const recognition = this.ensureRecognition();
+        if (this.state === "listening") {
+          try { recognition.stop(); } catch {}
+          return;
+        }
+        this.listeningOrigin = origin;
+        try {
+          recognition.start();
+        } catch {
+          this.setState("idle", "Voice is already starting.");
+        }
+      },
+
+      bindHomeControls() {
+        const mic = document.getElementById("fp-mic-btn");
+        if (mic && !mic.dataset.voiceBound) {
+          mic.dataset.voiceBound = "true";
+          mic.addEventListener("click", () => this.startListening("home"));
+        }
+        const output = document.getElementById("fp-voice-output-home");
+        if (output && !output.dataset.voiceBound) {
+          output.dataset.voiceBound = "true";
+          output.addEventListener("click", () => this.toggleOutput());
+        }
+        this.syncButtons();
+      },
+
+      init() {
+        const drawerMic = document.getElementById("piper-voice-btn");
+        if (drawerMic && !drawerMic.dataset.voiceBound) {
+          drawerMic.dataset.voiceBound = "true";
+          drawerMic.addEventListener("click", () => this.startListening("drawer"));
+        }
+        const output = document.getElementById("piper-voice-output");
+        if (output && !output.dataset.voiceBound) {
+          output.dataset.voiceBound = "true";
+          output.addEventListener("click", () => this.toggleOutput());
+        }
+        if (this.supportsOutput()) {
+          this.refreshVoice();
+          window.speechSynthesis.onvoiceschanged = () => this.refreshVoice();
+        }
+        this.syncButtons();
+        this.setState("idle", "");
+      },
+
       async submitTranscript(transcript) {
-        if (!this.enabled) return;
+        if (!transcript?.trim()) return;
         this.setState("submitting");
         await submitPiperText(transcript);
         this.setState("idle");
       },
     };
+
     window.PiperVoice = PiperVoice;
-    // Expose the shared contract for the future voice path.
     window.submitPiperText = submitPiperText;
-    // Park the shell in `unavailable`: honest label, no capture, no claim.
-    PiperVoice.setState("unavailable");
+    PiperVoice.init();
   }
 
   /**
@@ -2477,18 +2728,29 @@
       const pillText = document.getElementById("piper-provider-text");
       if (pill && pillText) {
         pill.classList.toggle("connected", !!p.connected);
-        pillText.textContent = "Piper limited";
-        pill.title = "Piper is working from your Pipeline records with reduced capabilities.";
+        pillText.textContent = p.connected ? "Piper ready" : "Piper limited";
+        pill.title = p.connected
+          ? "Piper is connected to her local intelligence layer."
+          : "Piper is working from Pipeline records with reduced conversational capability.";
       }
       const sidePill = document.getElementById("sidebar-active-provider");
       if (sidePill) {
         sidePill.classList.toggle("limited", !p.connected);
-        sidePill.textContent = "Piper limited";
-        sidePill.title = "Piper is working from your Pipeline records with reduced capabilities.";
+        sidePill.textContent = p.connected ? "Piper ready" : "Piper limited";
+        sidePill.title = p.connected
+          ? "Piper is connected to her local intelligence layer."
+          : "Piper is working from Pipeline records with reduced conversational capability.";
       }
       const footerMode = document.getElementById("footer-mode");
       if (footerMode) {
-        footerMode.textContent = "Piper limited";
+        footerMode.textContent = p.connected ? "Piper ready" : "Piper limited";
+      }
+      const founderStatus = document.getElementById("fp-piper-status");
+      if (founderStatus) {
+        founderStatus.textContent = p.connected ? "Piper ready" : "Piper limited";
+        founderStatus.title = p.connected
+          ? "Piper is connected to her local intelligence layer."
+          : "Piper is working from Pipeline records with reduced conversational capability.";
       }
       setPiperState("idle", "");
       const disc = document.getElementById("piper-disclosure");

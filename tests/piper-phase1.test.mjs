@@ -523,6 +523,12 @@ test("17. null provider degrades to the honest deterministic path", async (t) =>
   assert.equal(typeof res.answer, "string");
   assert.ok(res.answer.length > 0);
   assert.equal(res.wrote, false);
+
+  const brief = await runtime.ask({ question: "Good morning Piper, what do I need to know?" });
+  assert.equal(brief.deterministic, true);
+  assert.equal(brief.state, "complete");
+  assert.doesNotMatch(brief.answer, /don.?t have a deterministic answer/i);
+  assert.ok(brief.answer.length > 10);
 });
 
 // --- 18. paraphrases hit the same governed tools ---------------------------------------
@@ -559,4 +565,28 @@ test("18. paraphrased follow-up questions route to the same governed tool", asyn
   assert.equal(resA.wrote, false);
   assert.equal(resB.wrote, false);
   assert.ok(!toolsUsed(a.runtime).length && !toolsUsed(b.runtime).length, "reads leave no tool-call rows");
+});
+
+// --- 19. informational questions cannot create unsolicited write proposals ---------------
+
+test("19. unsolicited write tool calls are blocked on informational questions", async (t) => {
+  const { runtime, provider, db } = await fresh(t);
+  provider.script.push(
+    {
+      text: "Good morning. I’ll pull the operating brief.",
+      toolCalls: [
+        { name: "get_operating_brief", arguments: {} },
+        { name: "draft_sms", arguments: { opportunityId: "opp_robert_001", contentText: "Hi Robert." } },
+      ],
+    },
+    say("Three items need your attention. Nothing was changed.")
+  );
+
+  const res = await runtime.ask({ question: "Good morning Piper, what do I need to know?" });
+  assert.equal(res.state, "complete");
+  assert.equal(res.wrote, false);
+  assert.equal(res.pendingApprovals.length, 0);
+  const writes = db.prepare("SELECT COUNT(*) AS n FROM piper_tool_calls WHERE requires_approval = 1").get().n;
+  assert.equal(writes, 0, "unsolicited write proposal never reaches the approval queue");
+  assert.ok(provider.sent.length >= 2, "runtime asks the model to continue read-only after blocking the write");
 });
