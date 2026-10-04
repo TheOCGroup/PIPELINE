@@ -2898,8 +2898,10 @@
 
   // ---- router ----
   function render() {
-    // Founder gate: the experience never renders without the operator secret.
-    if (!window.hasOperatorSecret()) { showUnlock(); return; }
+    // Local development never blocks the founder behind an operator-secret gate.
+    // Production keeps the existing auth boundary.
+    const localDev = state.systemStatus?.runtimeMode === "development";
+    if (!localDev && !window.hasOperatorSecret()) { showUnlock(); return; }
     const path = location.pathname;
     document.querySelectorAll("[data-nav]").forEach((a) => {
       if (a.closest(".fp-nav, .fp-tabbar")) a.setAttribute("aria-current", a.getAttribute("href") === path ? "page" : "false");
@@ -2935,7 +2937,8 @@
     await refreshMode();
     initPiperWidget();
     initFpDrawer();
-    if (window.hasOperatorSecret()) enterApp();
+    const localDev = state.systemStatus?.runtimeMode === "development";
+    if (localDev || window.hasOperatorSecret()) enterApp();
     else showUnlock();
   })();
 
