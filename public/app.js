@@ -470,15 +470,6 @@
           </div>`;
       }).join("");
 
-    const counts = {};
-    FOUNDER_STAGES.forEach((s) => { counts[s.key] = 0; });
-    opps.forEach((o) => { counts[toFounderStage(o.stage)] += 1; });
-    const stageStrip = FOUNDER_STAGES.map((s) => `
-      <button class="fstage" data-fstage="${s.key}" onclick="window.routeTo(event, '/opportunities?fstage=${s.key}')">
-        <span class="fstage-count">${counts[s.key]}</span>
-        <span class="fstage-label">${esc(s.label)}</span>
-      </button>`).join("");
-
     const focusItems = (sections || [])
       .flatMap((sec) => sec.items.map((item) => ({ ...item, section: sec.title })))
       .slice(0, 4);
@@ -535,20 +526,16 @@
         <aside class="fp-show-pane" aria-label="What Piper is showing you">
           <div class="fp-show-head">
             <div>
-              <span class="fp-show-eyebrow">Piper is watching</span>
-              <h2>${esc(b?.headline || "Pipeline is under control.")}</h2>
+              <span class="fp-show-eyebrow" id="fp-show-eyebrow">Piper is watching</span>
+              <h2 id="fp-show-title">${esc(b?.headline || "Pipeline is under control.")}</h2>
             </div>
             <button type="button" class="fp-show-ask" data-hint="Give me the short version of what matters right now.">Ask why</button>
           </div>
 
-          <div class="fp-focus-list">${focusHtml}</div>
+          <div class="fp-focus-list" id="fp-show-content">${focusHtml}</div>
 
-          <div class="fp-pipeline-snapshot">
-            <div class="fp-pipeline-snapshot-head">
-              <span>Pipeline</span>
-              <a href="/opportunities" data-nav>Open pipeline</a>
-            </div>
-            <div class="fstage-strip">${stageStrip}</div>
+          <div class="fp-show-footer">
+            <a href="/opportunities" data-nav>Open full pipeline</a>
           </div>
         </aside>
       </div>
@@ -593,6 +580,41 @@
     if (drawer && drawer.classList.contains("hidden")) {
       document.getElementById("piper-toggle").click();
     }
+  }
+
+  // On Home, Piper's right-side workspace changes with the conversation.
+  // It shows only grounded records returned by Piper, never a second dashboard.
+  function showPiperResultOnHome(data) {
+    const title = document.getElementById("fp-show-title");
+    const eyebrow = document.getElementById("fp-show-eyebrow");
+    const content = document.getElementById("fp-show-content");
+    if (!title || !content || !data) return;
+
+    const answer = String(data.answer || "").trim();
+    if (answer) title.textContent = answer;
+    if (eyebrow) eyebrow.textContent = "Piper found this";
+
+    const items = (data.items || []).slice(0, 4);
+    content.innerHTML = items.length
+      ? items.map((item) => {
+          const label = esc(item.label || "Opportunity");
+          const reason = esc((item.reasons || []).slice(0, 1).join(" · ") || "Relevant to Piper's answer");
+          if (!item.opportunityId) {
+            return `<div class="fp-focus-item fp-focus-static">
+              <span class="fp-focus-type">Relevant</span>
+              <strong>${label}</strong>
+              <span>${reason}</span>
+            </div>`;
+          }
+          const id = esc(item.opportunityId);
+          return `<a class="fp-focus-item" href="/opportunities/${id}"
+             onclick="window.routeTo(event, '/opportunities/${id}')">
+            <span class="fp-focus-type">Relevant</span>
+            <strong>${label}</strong>
+            <span>${reason}</span>
+          </a>`;
+        }).join("")
+      : `<div class="fp-empty fp-answer-empty">That answer did not require opening a record.</div>`;
   }
 
   // Founder shell: Piper is an overlay, never a permanent rail.
@@ -2266,6 +2288,7 @@
             setPiperState(body.data.state, body.data.stateLabel);
             reply = renderPiperAnswer(body.data);
             spokenReply = String(body.data.answer || "").trim();
+            showPiperResultOnHome(body.data);
             executeWorkspaceDirective(body.data.directive);
           } else {
             setPiperState("failed");
