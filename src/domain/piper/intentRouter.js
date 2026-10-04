@@ -169,37 +169,31 @@ function briefing(s) {
 }
 
 function attention(s) {
-  const total = s.opportunities.length;
-  const unresProv = s.opportunities.filter(o => o.provenanceState === "unresolved");
-  const insuffEv = s.opportunities.filter(o => o.underwriting?.status === "insufficient_evidence" || (o.underwriting?.confidence === 0 && o.underwriting?.limitations));
-  const attentionCount = unresProv.length + insuffEv.length;
-  const priorityRecord = unresProv[0] || insuffEv[0] || s.opportunities[0];
+  const brief = buildBrief(s);
+  const priorityOrder = ["NEEDS YOU", "NEXT", "STALLED", "RISK"];
+  const prioritySections = priorityOrder
+    .map((title) => brief.sections.find((section) => section.title === title))
+    .filter(Boolean);
+  const items = prioritySections.flatMap((section) => section.items || []).slice(0, 6);
+  if (!items.length) {
+    return say("Nothing urgent is waiting on you right now. I’ll keep watching the pipeline.", [], s, {
+      followUps: ["What changed today?", "What am I forgetting?", "Show me new leads"]
+    });
+  }
 
-  const answer = `You have ${total} classified records. ${attentionCount} need attention: ${insuffEv.length > 0 ? (insuffEv.length === 2 ? "two" : insuffEv.length) : "none"} have insufficient comparable evidence and ${unresProv.length > 0 ? (unresProv.length === 1 ? "one" : unresProv.length) : "none"} remains unresolved.`;
+  const first = items[0];
+  const reason = first?.reasons?.[0] || "";
+  const answer = `You have ${items.length} item${items.length === 1 ? "" : "s"} worth your attention. I’d start with ${first.label}${reason ? ` — ${reason}` : "."}`;
 
-  const items = [
-    ...(unresProv.map(o => ({ opportunityId: o.id, label: label(o), reasons: [`Unresolved provenance: lead source cannot be verified against intake log.`] }))),
-    ...(insuffEv.slice(0, 3).map(o => ({ opportunityId: o.id, label: label(o), reasons: [`Insufficient comparable evidence: ${o.underwriting?.limitations || 'Victor requires comp verification.'}`] })))
-  ];
-
-  return say(
-    answer,
-    items,
-    s,
-    {
-      directive: priorityRecord ? {
-        type: "highlight",
-        opportunityId: priorityRecord.id,
-        recordTitle: label(priorityRecord),
-        view: "opportunities"
-      } : null,
-      followUps: [
-        "Show me why",
-        "Go to underwriting",
-        "Show me the unresolved classifications"
-      ]
-    }
-  );
+  return say(answer, items, s, {
+    directive: first?.opportunityId ? {
+      type: "highlight",
+      opportunityId: first.opportunityId,
+      recordTitle: first.label,
+      view: "opportunities"
+    } : null,
+    followUps: ["Why that one first?", "What changed today?", "What am I forgetting?"]
+  });
 }
 
 function showWhyHandler(target, s) {
@@ -246,16 +240,20 @@ function showWhyHandler(target, s) {
 function gotoUnderwritingHandler(target, s) {
   if (!target) return needTarget(s);
   const u = target.underwriting || {};
-  const answer = `Transitioning workspace to Victor Underwriting for ${label(target)}. ARV: ${money(u.arv || 250000)}, Rehab: ${money(u.rehab || 50000)}, Authorized Ceiling (MAO): ${money(u.mao || 110000)}.`;
+  const arv = u.arv != null ? money(u.arv) : "not recorded";
+  const rehab = u.rehab != null ? money(u.rehab) : "not recorded";
+  const mao = u.mao != null ? money(u.mao) : "not recorded";
+  const confidence = u.confidence != null ? `${Math.round(u.confidence * 100)}%` : "not recorded";
+  const answer = `Here’s Victor’s latest underwriting for ${label(target)}. ARV is ${arv}, rehab is ${rehab}, and MAO is ${mao}.`;
   return say(
     answer,
     [{
       opportunityId: target.id,
       label: label(target),
       reasons: [
-        `ARV Snapshot: ${money(u.arv || 250000)} (Confidence: ${Math.round((u.confidence || 0.85) * 100)}%)`,
-        `Rehab Estimate: ${money(u.rehab || 50000)} (${u.limitations || 'Cosmetic renovation'})`,
-        `Target Purchase Ceiling: ${money(u.mao || 110000)}`
+        `ARV: ${arv} · confidence: ${confidence}`,
+        `Rehab: ${rehab}${u.limitations ? ` · ${u.limitations}` : ""}`,
+        `MAO: ${mao}`
       ]
     }],
     s,
@@ -266,9 +264,9 @@ function gotoUnderwritingHandler(target, s) {
         recordTitle: label(target)
       },
       followUps: [
-        "Show me the unresolved classifications",
         "What am I missing?",
-        "Provenance state"
+        "What price would be safe?",
+        "Show me the risks"
       ]
     }
   );
