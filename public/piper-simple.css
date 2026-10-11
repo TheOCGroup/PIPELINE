@@ -1022,10 +1022,22 @@ body.fp .piper-toggle:hover {
   .fp-piper-identity { margin-bottom: 28px; }
   .fp-piper-word { font-size: 48px; }
   .fp-piper-pane .fp-hero-greet { font-size: 31px; margin-bottom: 18px; }
-  .fp-ask-row { padding-left: 14px; }
-  .fp-ask-row input { font-size: 16px; }
-  .fp-suggest { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
-  .fp-suggest button { flex: 0 0 auto; }
+  .fp-ask-row { padding: 6px 6px 6px 14px; gap: 4px; }
+  .fp-ask-row input { font-size: 15px; padding: 12px 0; }
+  .fp-ask-btn,
+  .fp-mic-btn { width: 44px; height: 44px; border-radius: 13px; font-size: 16px; }
+  .fp-suggest {
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 7px;
+    padding-bottom: 0;
+  }
+  .fp-suggest button {
+    flex: 0 1 auto;
+    min-height: 40px;
+    padding: 9px 13px;
+    font-size: 12px;
+  }
   .fp-show-pane { min-height: 0; padding: 18px; border-radius: 20px; }
   .fp-show-head { align-items: center; }
   .fp-show-head h2 { font-size: 22px; }
