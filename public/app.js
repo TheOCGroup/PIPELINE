@@ -81,6 +81,7 @@
   const piperChatInput = document.getElementById("piper-chat-input");
   const piperChatForm = document.getElementById("piper-chat-form");
   const piperContextText = document.getElementById("piper-context-text");
+  let PiperVoice = null;
 
   // State Ledger
   let state = {
@@ -91,7 +92,7 @@
     systemStatus: {},
     activeOppId: null,
     piperMessages: [
-      { sender: "bot", text: "I read stage, provenance, classification, and data-quality state from PIPELINE's read-only API. Ask about any opportunity, or open one and ask what its provenance actually shows." }
+      { sender: "bot", text: "Hey Genaro. I’m Piper. Tell me what you need — I’ll pull the seller, deal, follow-up, offer, or underwriting context and keep you focused on what matters." }
     ]
   };
 
@@ -199,65 +200,47 @@
   };
   const formatStage = (s) => stageLabels[s] || String(s || "any").replace(/_/g, " ");
 
+  // ---- Founder-stage mapping layer (PIPER-FIRST simplification) ----
+  // The backend keeps its detailed stage model; the founder sees 8 buckets.
+  // Canonical mapping lives in src/founderStages.mjs — keep this copy in sync.
+  const FOUNDER_STAGES = [
+    { key: "new", label: "New" },
+    { key: "contacted", label: "Contacted" },
+    { key: "appointment", label: "Appointment" },
+    { key: "offer", label: "Offer" },
+    { key: "negotiating", label: "Negotiating" },
+    { key: "under_contract", label: "Under Contract" },
+    { key: "closed", label: "Closed" },
+    { key: "dead", label: "Dead" },
+  ];
+  const STAGE_TO_FOUNDER = {
+    new_lead: "new", needs_review: "new",
+    attempting_contact: "contacted", contacted: "contacted", qualified: "contacted",
+    appointment_scheduled: "appointment", property_review: "appointment",
+    strategy_development: "offer", offer_preparation: "offer",
+    offer_approval_required: "offer", offer_presented: "offer",
+    negotiating: "negotiating",
+    under_contract: "under_contract", due_diligence: "under_contract",
+    closing_scheduled: "under_contract",
+    closed: "closed",
+    nurture: "dead", disqualified: "dead", lost: "dead", archived: "dead",
+  };
+  const FOUNDER_STAGE_DEFAULTS = {
+    new: "new_lead", contacted: "attempting_contact",
+    appointment: "appointment_scheduled", offer: "offer_preparation",
+    negotiating: "negotiating", under_contract: "under_contract",
+    closed: "closed", dead: "disqualified",
+  };
+  const toFounderStage = (s) => STAGE_TO_FOUNDER[s] || "new";
+  const founderStageLabel = (k) => (FOUNDER_STAGES.find((x) => x.key === k) || {}).label || String(k || "new");
+
   // Helper: Money Formatter
   const money = (val) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(val || 0);
 
   // Helper: Badges
   const badge = (cls, val) => `<span class="badge b-${esc(val)}">${esc(val)}</span>`;
   const loading = () => {
-    const path = location.pathname;
-    const isDetail = path.match(/^\/opportunities\/([^/]+)$/);
-    
-    let skeletonHtml = '';
-    if (path === "/" || path === "/index.html") {
-      skeletonHtml = `
-        <div class="skeleton-narrative-panel skeleton-pulse"></div>
-        <div class="skeleton-bridge-grid" style="margin-top: 20px;">
-          <div class="skeleton-main-col">
-            <div class="skeleton-panel skeleton-pulse" style="height: 300px; margin-bottom: 20px;"></div>
-            <div class="skeleton-panel skeleton-pulse" style="height: 250px;"></div>
-          </div>
-          <div class="skeleton-side-col">
-            <div class="skeleton-panel skeleton-pulse" style="height: 200px; margin-bottom: 20px;"></div>
-            <div class="skeleton-panel skeleton-pulse" style="height: 350px;"></div>
-          </div>
-        </div>
-      `;
-    } else if (path === "/opportunities") {
-      skeletonHtml = `
-        <div class="skeleton-header skeleton-pulse" style="height: 60px; margin-bottom: 20px; width: 300px;"></div>
-        <div class="skeleton-filters skeleton-pulse" style="height: 50px; margin-bottom: 20px;"></div>
-        <div class="skeleton-board">
-          <div class="skeleton-column skeleton-pulse"></div>
-          <div class="skeleton-column skeleton-pulse"></div>
-          <div class="skeleton-column skeleton-pulse"></div>
-          <div class="skeleton-column skeleton-pulse"></div>
-          <div class="skeleton-column skeleton-pulse"></div>
-          <div class="skeleton-column skeleton-pulse"></div>
-        </div>
-      `;
-    } else if (isDetail) {
-      skeletonHtml = `
-        <div class="skeleton-hero skeleton-pulse" style="height: 120px; margin-bottom: 20px;"></div>
-        <div class="skeleton-strip skeleton-pulse" style="height: 60px; margin-bottom: 20px;"></div>
-        <div class="skeleton-deal-room-grid">
-          <div class="skeleton-room-main">
-            <div class="skeleton-panel skeleton-pulse" style="height: 200px; margin-bottom: 20px;"></div>
-            <div class="skeleton-panel skeleton-pulse" style="height: 250px; margin-bottom: 20px;"></div>
-          </div>
-          <div class="skeleton-room-side">
-            <div class="skeleton-panel skeleton-pulse" style="height: 300px; margin-bottom: 20px;"></div>
-            <div class="skeleton-panel skeleton-pulse" style="height: 200px; margin-bottom: 20px;"></div>
-          </div>
-        </div>
-      `;
-    } else {
-      skeletonHtml = `
-        <div class="skeleton-header skeleton-pulse" style="height: 50px; margin-bottom: 20px; width: 250px;"></div>
-        <div class="skeleton-panel skeleton-pulse" style="height: 400px;"></div>
-      `;
-    }
-    view.innerHTML = `<div class="skeleton-container">${skeletonHtml}</div>`;
+    view.innerHTML = `<div class="fp-loading" role="status" aria-label="Loading"><span class="fp-loading-orb" aria-hidden="true"></span><span>Loading\u2026</span></div>`;
   };
   const errorState = (msg) => { view.innerHTML = `<div class="state error">${esc(msg)}</div>`; };
   const empty = (msg) => `<div class="state">${esc(msg)}</div>`;
@@ -419,420 +402,524 @@
     });
   }
 
+  // ============ PIPER-FIRST HOME ============
+  // One screen: Piper input, Today briefing, 8-stage pipeline, 4 quick actions.
   async function overview() {
     loading();
     state.activeOppId = null;
+    state.activeOpp = null;
     updatePiperContext();
     const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
-    const [dq, sys, opps, briefRes] = await Promise.all([
-      api("/api/v1/data-quality"),
-      api("/api/v1/system/status"),
-      api("/api/v1/opportunities?pageSize=100"),
-      api(`/api/v1/piper/brief?excludeFixtures=${!showFixtures}`).catch(() => ({ ok: true, data: { headline: "Pipeline active", sections: [] } }))
+    const [briefRes, oppsRes] = await Promise.all([
+      api(`/api/v1/piper/brief?excludeFixtures=${!showFixtures}`).catch(() => ({ ok: true, data: { sections: [] } })),
+      api("/api/v1/opportunities?pageSize=100").catch(() => ({ ok: true, data: [] })),
     ]);
-    const d = dq.data, s = sys.data, b = briefRes.data;
-    
-    const fixtureIds = new Set(opps.data.filter(o => o.isFixture).map(o => o.id));
-    state.opportunities = showFixtures ? opps.data : opps.data.filter(o => !o.isFixture);
+    const b = briefRes.data || {};
+    const opps = (oppsRes.data || []).filter((o) => showFixtures || !o.isFixture);
+    state.opportunities = opps;
 
-    const stageCounts = {};
-    state.opportunities.forEach(o => {
-      const actualStage = o.stage || "new_lead";
-      stageCounts[actualStage] = (stageCounts[actualStage] || 0) + 1;
-    });
+    const fixtureIds = new Set((oppsRes.data || []).filter((o) => o.isFixture).map((o) => o.id));
+    let sections = (b.sections || []).map((sec) => ({
+      ...sec,
+      items: (sec.items || []).filter((item) => !item.opportunityId || !fixtureIds.has(item.opportunityId)),
+    })).filter((sec) => (sec.items || []).length > 0);
 
-    let filteredSections = b.sections || [];
-    if (!showFixtures) {
-      filteredSections = filteredSections.map(sec => ({
-        ...sec,
-        items: sec.items.filter(item => !item.opportunityId || !fixtureIds.has(item.opportunityId))
-      })).filter(sec => sec.items.length > 0);
-    }
-
-    let narrativeParts = [];
-    if (filteredSections) {
-      for (const sec of filteredSections) {
-        const count = sec.items.length;
-        if (count > 0) {
-          const t = sec.title;
-          if (t === "Needs You") {
-            narrativeParts.push(`${count} require(s) operator attention`);
-          } else if (t === "Risk") {
-            narrativeParts.push(`${count} flagged as risk`);
-          } else if (t === "Stalled") {
-            narrativeParts.push(`${count} stalled`);
-          } else if (t === "Changed") {
-            narrativeParts.push(`${count} updated recently`);
-          } else if (t === "New") {
-            narrativeParts.push(`${count} new arrival(s)`);
-          } else if (t === "Next Actions") {
-            narrativeParts.push(`${count} pending action(s)`);
-          } else {
-            narrativeParts.push(`${count} in ${esc(t.toLowerCase())}`);
-          }
-        }
-      }
-    }
-    const narrativeText = narrativeParts.length 
-      ? `Currently, ${narrativeParts.join(", ")}.` 
-      : "All systems nominal.";
-
-    view.innerHTML = `
-      <!-- 1. Top Piper Operating Statement -->
-      <div class="operating-narrative-panel">
-        <div class="narrative-badge">✦ PIPER HEAD AGENT BRIEF</div>
-        <div class="narrative-text">
-          "${esc(b?.headline || "Pipeline Operational")}. ${narrativeText}"
-        </div>
-      </div>
-
-      <!-- 1b. Quick actions: the two things a founder reaches for first -->
-      <div class="dashboard-actions">
-        <button class="primary" onclick="window.openNewOpportunityModal()">＋ New Opportunity</button>
-        <button class="ghost" onclick="window.scrollToPiper()">Ask Piper</button>
-      </div>
-
-      <!-- 2. Asymmetric Columns -->
-      <div class="bridge-grid">
-        <!-- Main Column -->
-        <div class="bridge-main-col">
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Needs Attention / Priority Queue</h2>
-            <div class="priority-list">
-              ${filteredSections && filteredSections.length ? filteredSections.map(sec => `
-                <div class="priority-group">
-                  <div class="priority-group-title">${esc(sec.title)}</div>
-                  ${sec.items.map(item => `
-                    <div class="priority-row">
-                      <div class="priority-row-left">
-                        <a class="deal-link" href="/opportunities/${esc(item.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(item.opportunityId)}')">
-                          ${esc(item.address || item.opportunityId)}
-                        </a>
-                        <div class="priority-meta-row">
-                          ${(item.reasons || []).map(r => `<span class="reason-tag">${esc(r)}</span>`).join("")}
-                        </div>
-                      </div>
-                      <div class="priority-row-right">
-                        <span class="status-indicator-pill">needs review</span>
-                      </div>
-                    </div>
-                  `).join("")}
-                </div>
-              `).join("") : `<div class="empty-state">No listings require attention. All systems nominal.</div>`}
-            </div>
-          </div>
-
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Pipeline Pulse</h2>
-            <div class="funnel-stage-container">
-              ${Object.keys(stageCounts).map(stage => `
-                <div class="funnel-stage-item">
-                  <span class="funnel-stage-name">${esc(formatStage(stage))}</span>
-                  <span class="funnel-stage-val">${stageCounts[stage]}</span>
-                </div>
-              `).join("")}
-            </div>
-          </div>
-        </div>
-
-        <!-- Sidebar Column -->
-        <div class="bridge-side-col">
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Active Opportunities</h2>
-            <div class="active-deals-list">
-              ${[...state.opportunities]
-                .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-                .slice(0, 5)
-                .map(opp => `
-                  <div class="active-deal-row">
-                    <a class="active-deal-title" href="/opportunities/${esc(opp.id)}" onclick="window.routeTo(event, '/opportunities/${esc(opp.id)}')">
-                      ${esc(opp.address)}
-                    </a>
-                    <div class="active-deal-meta">
-                      <span class="stage-tag">${esc(formatStage(opp.stage))}</span>
-                      <span class="date-tag">${esc(opp.updatedAt.slice(0, 10))}</span>
-                    </div>
-                  </div>
-                `).join("")}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-  const card = (n, l) => `<div class="card"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`;
-
-  const KANBAN_COLUMNS = [
-    { key: "intake", title: "Intake", stages: ["new_lead", "needs_review"], defaultStage: "new_lead" },
-    { key: "qualifying", title: "Qualifying", stages: ["attempting_contact", "contacted", "qualified", "appointment_scheduled"], defaultStage: "attempting_contact" },
-    { key: "evaluation", title: "Evaluation", stages: ["property_review", "strategy_development"], defaultStage: "property_review" },
-    { key: "negotiation", title: "Negotiation", stages: ["offer_preparation", "offer_approval_required", "offer_presented", "negotiating"], defaultStage: "offer_preparation" },
-    { key: "contracting", title: "Contracting", stages: ["under_contract", "due_diligence", "closing_scheduled"], defaultStage: "under_contract" },
-    { key: "settle", title: "Archived & Settle", stages: ["closed", "nurture", "disqualified", "lost", "archived"], defaultStage: "closed" }
-  ];
-
-  function getColumnKey(stage) {
-    const col = KANBAN_COLUMNS.find(c => c.stages.includes(stage));
-    return col ? col.key : "intake";
-  }
-
-  function renderKanbanBoard(opps) {
-    const groups = {};
-    KANBAN_COLUMNS.forEach(c => { groups[c.key] = []; });
-    opps.forEach(o => {
-      const colKey = getColumnKey(o.stage);
-      groups[colKey].push(o);
-    });
-
-    const columnsHtml = KANBAN_COLUMNS.map(col => {
-      const cards = groups[col.key];
-      const cardsHtml = cards.map(o => {
-        let underwritingLabel = "";
-        let underwritingClass = "underwriting-unavailable";
-        if (o.underwriting && o.underwriting.mao != null) {
-          underwritingLabel = `Victor MAO: ${money(o.underwriting.mao)}`;
-          underwritingClass = "underwriting-victor";
-        } else if (o.underwriting && (o.underwriting.status === "insufficient_evidence" || o.underwriting.arv == null)) {
-          underwritingLabel = "Underwriting: Insufficient Evidence";
-          underwritingClass = "underwriting-unavailable";
-        } else {
-          underwritingLabel = "Underwriting: unavailable";
-        }
-
-        const isHighPriority = o.provenanceState === "unresolved" || o.status === "stalled";
-        const priorityClass = isHighPriority ? "board-card-priority-high" : "";
-
+    // Founder-friendly Today rows, in a stable order.
+    const ROW_ORDER = ["NEEDS YOU", "NEXT", "RISK", "STALLED", "CHANGED", "NEW", "EXIT EXECUTION"];
+    const ROW_LABEL = {
+      "NEEDS YOU": (n) => `${n} seller${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} attention`,
+      "NEXT": (n) => `${n} next action${n === 1 ? "" : "s"}`,
+      "RISK": (n) => `${n} deal${n === 1 ? "" : "s"} at risk`,
+      "STALLED": (n) => `${n} stalled deal${n === 1 ? "" : "s"}`,
+      "CHANGED": (n) => `${n} recent update${n === 1 ? "" : "s"}`,
+      "NEW": (n) => `${n} new lead${n === 1 ? "" : "s"}`,
+      "EXIT EXECUTION": (n) => `${n} exit item${n === 1 ? "" : "s"} in motion`,
+    };
+    const SECTION_LABEL = {
+      "NEEDS YOU": "Needs attention",
+      "NEXT": "Next action",
+      "RISK": "At risk",
+      "STALLED": "Stalled",
+      "CHANGED": "Updated",
+      "NEW": "New",
+      "EXIT EXECUTION": "Exit",
+    };
+    const todayRows = sections
+      .slice()
+      .sort((a, c) => ROW_ORDER.indexOf(a.title) - ROW_ORDER.indexOf(c.title))
+      .map((sec, i) => {
+        const n = sec.items.length;
+        const label = (ROW_LABEL[sec.title] || ((m) => `${m} in ${sec.title.toLowerCase()}`))(n);
+        const items = sec.items.slice(0, 8).map((item) => `
+          <a class="today-item-link" href="/opportunities/${esc(item.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(item.opportunityId)}')">
+            ${esc(item.label || item.address || "Opportunity")}
+            <span class="today-item-reasons">${esc((item.reasons || []).slice(0, 2).join(" · "))}</span>
+          </a>`).join("");
+        const more = sec.items.length > 8 ? `<div class="muted" style="font-size:12px">+ ${sec.items.length - 8} more</div>` : "";
         return `
-          <div class="board-card ${priorityClass}" draggable="true" data-opp-id="${esc(o.id)}" data-stage="${esc(o.stage)}">
-            <div class="board-card-header">
-              <span class="board-card-id"><a href="/opportunities/${esc(o.id)}" onclick="window.routeTo(event, '/opportunities/${esc(o.id)}')">${esc(o.id)}</a></span>
-              <span class="board-card-badge prov-${esc(o.provenanceState)}">${esc(o.provenanceState)}</span>
+          <div class="today-row" data-today-row="${i}">
+            <button class="today-row-main" data-today-toggle="${i}" aria-expanded="false">
+              <span class="today-count">${n}</span>
+              <span class="today-label">${esc(label)}</span>
+              <span class="today-chevron" aria-hidden="true">›</span>
+            </button>
+            <div class="today-row-detail" id="today-detail-${i}" hidden>
+              <div class="today-item-list">${items}${more}</div>
+              <button class="linklike" data-today-ask="${esc(sec.title)}">Ask Piper to summarize</button>
             </div>
-            
-            <div class="board-card-body">
-              <span class="board-card-address">${esc(o.property.address)}</span>
-              <div class="board-card-sub">Seller: ${esc(o.sellerDisplayName)}</div>
-            </div>
-
-            <div class="board-card-footer">
-              <span class="board-card-underwriting ${underwritingClass}">${esc(underwritingLabel)}</span>
-              <span class="board-card-stage-pill">${esc(formatStage(o.stage))}</span>
-            </div>
-          </div>
-        `;
+          </div>`;
       }).join("");
 
-      return `
-        <div class="board-column" data-col-key="${esc(col.key)}">
-          <div class="column-header">
-            <span class="column-title">${esc(col.title)}</span>
-            <span class="column-count">${cards.length}</span>
-          </div>
-          <div class="column-cards">
-            ${cardsHtml || `<div class="muted" style="text-align: center; padding: 20px; font-size: 11px;">Drag here</div>`}
-          </div>
-        </div>
-      `;
-    }).join("");
+    const focusItems = (sections || [])
+      .flatMap((sec) => sec.items.map((item) => ({ ...item, section: sec.title })))
+      .slice(0, 4);
+    const focusHtml = focusItems.length
+      ? focusItems.map((item) => `
+          <a class="fp-focus-item" href="/opportunities/${esc(item.opportunityId)}"
+             onclick="window.routeTo(event, '/opportunities/${esc(item.opportunityId)}')">
+            <span class="fp-focus-type">${esc(SECTION_LABEL[item.section] || item.section)}</span>
+            <strong>${esc(item.label || item.address || "Opportunity")}</strong>
+            <span>${esc((item.reasons || []).slice(0, 1).join(" · ") || "Open record")}</span>
+          </a>`).join("")
+      : `<div class="fp-empty">Nothing urgent. Piper is watching the pipeline.</div>`;
 
-    return `<div class="board-container">${columnsHtml}</div>`;
+    // PIPER-FIRST Home: Piper + must-knows on the left, context on the right.
+    view.innerHTML = `
+      <div class="fp-home-grid">
+        <section class="fp-piper-pane" aria-label="Piper">
+          <div class="fp-piper-identity">
+            <div>
+              <div class="fp-piper-word">Piper</div>
+              <div class="fp-piper-kicker">Acquisition super agent</div>
+            </div>
+            <button type="button" id="fp-voice-output-home" class="fp-voice-output" aria-pressed="true" title="Piper voice on">Voice on</button>
+          </div>
+
+          <h1 class="fp-hero-greet">What do you need, Genaro?</h1>
+
+          <form class="fp-hero-ask" id="fp-ask-form">
+            <div class="fp-ask-row">
+              <input id="fp-ask-input" type="text" autocomplete="off"
+                placeholder="Talk to Piper about any seller or deal…" aria-label="Ask Piper" />
+              <button type="button" class="fp-mic-btn" id="fp-mic-btn"
+                title="Talk to Piper" aria-label="Talk to Piper">🎙</button>
+              <button type="submit" class="fp-ask-btn" aria-label="Ask Piper">▲</button>
+            </div>
+            <div id="fp-voice-note" class="fp-voice-note" aria-live="polite"></div>
+          </form>
+
+          <div class="fp-suggest">
+            <button type="button" data-hint="Who needs my attention?">Who needs my attention?</button>
+            <button type="button" data-hint="What changed today?">What changed today?</button>
+            <button type="button" data-hint="What am I forgetting?">What am I forgetting?</button>
+          </div>
+
+          <div class="fp-mustknow">
+            <div class="fp-mustknow-head">
+              <span>Must know</span>
+              <a href="/tasks" data-nav>See tasks</a>
+            </div>
+            <div class="fp-card">${todayRows || `<div class="fp-empty">Nothing needs your attention right now.</div>`}</div>
+          </div>
+        </section>
+
+        <aside class="fp-show-pane" aria-label="What Piper is showing you">
+          <div class="fp-show-head">
+            <div>
+              <span class="fp-show-eyebrow" id="fp-show-eyebrow">Piper is watching</span>
+              <h2 id="fp-show-title">${esc(b?.headline || "Pipeline is under control.")}</h2>
+            </div>
+            <button type="button" class="fp-show-ask" data-hint="Give me the short version of what matters right now.">Ask why</button>
+          </div>
+
+          <div class="fp-focus-list" id="fp-show-content">${focusHtml}</div>
+
+          <div class="fp-show-footer">
+            <a href="/opportunities" data-nav>Open full pipeline</a>
+          </div>
+        </aside>
+      </div>
+    `;
+
+    // Hero input -> Piper overlay conversation (the shared Piper flow).
+    const form = document.getElementById("fp-ask-form");
+    const input = document.getElementById("fp-ask-input");
+    const askPiper = async (text) => {
+      const t = (text || "").trim();
+      if (!t) { if (input) input.focus(); return; }
+      if (input) input.value = "";
+      openPiperDrawer();
+      await window.submitPiperText(t);
+    };
+    if (form && input) {
+      form.addEventListener("submit", (e) => { e.preventDefault(); askPiper(input.value); });
+    }
+    if (PiperVoice) {
+      PiperVoice.bindHomeControls();
+      PiperVoice.speakBriefOnce(b?.headline || "Pipeline is under control.");
+    }
+    view.querySelectorAll("[data-hint]").forEach((btn) => btn.addEventListener("click", () => askPiper(btn.getAttribute("data-hint"))));
+    // Today rows: expand inline, or hand the section to Piper.
+    view.querySelectorAll("[data-today-toggle]").forEach((btn) => btn.addEventListener("click", () => {
+      const i = btn.getAttribute("data-today-toggle");
+      const detail = document.getElementById("today-detail-" + i);
+      const open = detail.hidden;
+      detail.hidden = !open;
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    }));
+    view.querySelectorAll("[data-today-ask]").forEach((btn) => btn.addEventListener("click", async () => {
+      openPiperDrawer();
+      await window.submitPiperText("Summarize: " + btn.getAttribute("data-today-ask"));
+    }));
   }
 
-  function wireKanbanDragAndDrop() {
-    const cards = view.querySelectorAll(".board-card");
-    const columns = view.querySelectorAll(".board-column");
 
-    cards.forEach(card => {
-      card.addEventListener("dragstart", (e) => {
-        card.classList.add("dragging");
-        e.dataTransfer.setData("text/plain", card.dataset.oppId);
-      });
-      card.addEventListener("dragend", () => {
-        card.classList.remove("dragging");
-      });
-    });
+  // Opens the Piper overlay conversation if it is closed.
+  function openPiperDrawer() {
+    const drawer = document.getElementById("piper-drawer");
+    if (drawer && drawer.classList.contains("hidden")) {
+      document.getElementById("piper-toggle").click();
+    }
+  }
 
-    columns.forEach(col => {
-      col.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        col.classList.add("drag-over");
-      });
-      col.addEventListener("dragleave", () => {
-        col.classList.remove("drag-over");
-      });
-      col.addEventListener("drop", async (e) => {
-        e.preventDefault();
-        col.classList.remove("drag-over");
-        const oppId = e.dataTransfer.getData("text/plain");
-        if (!oppId) return;
+  // On Home, Piper's right-side workspace changes with the conversation.
+  // It shows only grounded records returned by Piper, never a second dashboard.
+  function showPiperResultOnHome(data) {
+    const title = document.getElementById("fp-show-title");
+    const eyebrow = document.getElementById("fp-show-eyebrow");
+    const content = document.getElementById("fp-show-content");
+    if (!title || !content || !data) return;
 
-        const card = view.querySelector(`.board-card[data-opp-id="${oppId}"]`);
-        if (!card) return;
+    const answer = String(data.answer || "").trim();
+    if (answer) title.textContent = answer;
+    if (eyebrow) eyebrow.textContent = "Piper found this";
 
-        const originalStage = card.dataset.stage;
-        const colKey = col.dataset.colKey;
-        const targetCol = KANBAN_COLUMNS.find(c => c.key === colKey);
-        if (!targetCol) return;
-
-        const targetStage = targetCol.defaultStage;
-        if (originalStage === targetStage) return;
-
-        const currentStageLabel = formatStage(originalStage);
-        const proposedStageLabel = formatStage(targetStage);
-        
-        const title = `Proposed stage change: ${currentStageLabel} → ${proposedStageLabel} [AWAITING APPROVAL]`;
-        
-        window.showCustomConfirm(
-          `PIPELINE has no stage-change endpoint, so the record cannot be moved from here.<br/><br/>Record a proposed stage change as a Next Action instead?<br/><br/><strong>"${title}"</strong>`,
-          "Proposed Stage Change Approval",
-          async () => {
-            try {
-              const res = await pfetch("/api/v1/operator/next-actions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ opportunityId: oppId, title }),
-              });
-              const body = await res.json();
-              if (body.ok) {
-                window.showCustomAlert(`Stage change proposed: ${currentStageLabel} → ${proposedStageLabel}. Persisted as a Next Action waiting for approval.`, "Proposal Recorded");
-                opportunities();
-              } else {
-                window.showCustomAlert(`Could not save next action: ${body.error}`, "Error Recording Proposal");
-              }
-            } catch {
-              window.showCustomAlert("Could not reach PIPELINE.", "Network Error");
-            }
+    const items = (data.items || []).slice(0, 4);
+    content.innerHTML = items.length
+      ? items.map((item) => {
+          const label = esc(item.label || "Opportunity");
+          const reason = esc((item.reasons || []).slice(0, 1).join(" · ") || "Relevant to Piper's answer");
+          if (!item.opportunityId) {
+            return `<div class="fp-focus-item fp-focus-static">
+              <span class="fp-focus-type">Relevant</span>
+              <strong>${label}</strong>
+              <span>${reason}</span>
+            </div>`;
           }
-        );
-      });
+          const id = esc(item.opportunityId);
+          return `<a class="fp-focus-item" href="/opportunities/${id}"
+             onclick="window.routeTo(event, '/opportunities/${id}')">
+            <span class="fp-focus-type">Relevant</span>
+            <strong>${label}</strong>
+            <span>${reason}</span>
+          </a>`;
+        }).join("")
+      : `<div class="fp-empty fp-answer-empty">That answer did not require opening a record.</div>`;
+  }
+
+  // Founder shell: Piper is an overlay, never a permanent rail.
+  // Manages the backdrop, the close button, and Escape; neutralizes any
+  // persisted rail state from the old console layout.
+  function initFpDrawer() {
+    const drawer = document.getElementById("piper-drawer");
+    const toggle = document.getElementById("piper-toggle");
+    const closeBtn = document.getElementById("piper-close-btn");
+    const widget = document.getElementById("piper-widget");
+    document.body.classList.remove("has-collapsed-piper", "has-expanded-piper");
+    if (widget) widget.classList.remove("collapsed", "expanded");
+    // The drawer toggle is class-based: normalize the initial hidden
+    // attribute into the hidden class so open/close stays consistent.
+    if (drawer) {
+      drawer.removeAttribute("hidden");
+      drawer.classList.add("hidden");
+    }
+    const syncBackdrop = () => {
+      const open = drawer && !drawer.classList.contains("hidden");
+      let bd = document.querySelector(".fp-piper-backdrop");
+      if (open && !bd) {
+        bd = document.createElement("div");
+        bd.className = "fp-piper-backdrop";
+        bd.addEventListener("click", () => { if (toggle) toggle.click(); });
+        document.body.appendChild(bd);
+      } else if (!open && bd) {
+        bd.remove();
+      }
+    };
+    if (toggle) toggle.addEventListener("click", () => setTimeout(syncBackdrop, 0));
+    if (closeBtn) closeBtn.addEventListener("click", () => {
+      if (drawer) drawer.classList.add("hidden");
+      syncBackdrop();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && drawer && !drawer.classList.contains("hidden")) {
+        drawer.classList.add("hidden");
+        syncBackdrop();
+      }
     });
   }
 
-  window.setViewMode = (mode) => {
-    localStorage.setItem("pipeline_view_mode", mode);
-    opportunities();
-  };
 
-  window.toggleFixtures = (checked) => {
-    localStorage.setItem("pipeline_show_fixtures", checked ? "true" : "false");
-    opportunities();
-  };
-
+  // ============ PIPELINE (founder view) ============
+  // Compact 8-stage visualization. No dense kanban, no data tables on mobile.
   async function opportunities() {
     loading();
     state.activeOppId = null;
+    state.activeOpp = null;
     updatePiperContext();
     const params = new URLSearchParams(location.search);
-    const qs = new URLSearchParams();
-    for (const k of ["stage", "provenanceState", "classification", "status", "page", "pageSize", "q"]) if (params.get(k)) qs.set(k, params.get(k));
-    const currentView = localStorage.getItem("pipeline_view_mode") || "board";
-    if (currentView === "board" && !qs.has("pageSize")) {
-      qs.set("pageSize", "100");
-    }
-    let body;
-    try { body = await api("/api/v1/opportunities?" + qs.toString()); }
-    catch (e) { return errorState("Could not load opportunities: " + e.message); }
-    
+    const fstage = params.get("fstage") || "";
+    const q = (params.get("q") || "").trim();
+    const focusSearch = params.get("focus") === "search";
     const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
-    state.opportunities = showFixtures ? body.data : body.data.filter(o => !o.isFixture);
-    const pg = body.meta.pagination;
-    const currentTotal = state.opportunities.length;
-    
-    let viewHtml = `
-      <div class="view-header-row">
-        <div>
-          <h1>Opportunities</h1>
-          <p class="sub">${currentTotal} record(s) active${!showFixtures && body.data.some(o => o.isFixture) ? " (demo fixtures hidden)" : ""}</p>
-        </div>
-        <div class="toggle-group" style="display:flex; align-items:center; gap:16px;">
-          <button class="primary" onclick="window.openNewOpportunityModal()" style="font-size: 12px; padding: 6px 12px;">＋ New Opportunity</button>
-          <label class="switch-label" style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; user-select:none;">
-            <input type="checkbox" id="show-fixtures-checkbox" ${showFixtures ? 'checked' : ''} onchange="window.toggleFixtures(this.checked)">
-            <span class="muted" style="font-weight: 500;">Show Demo Fixtures</span>
-          </label>
-          <button class="toggle-btn ${currentView === 'board' ? 'active' : ''}" onclick="window.setViewMode('board')">Board</button>
-          <button class="toggle-btn ${currentView === 'table' ? 'active' : ''}" onclick="window.setViewMode('table')">Table</button>
-        </div>
+
+    let body;
+    try { body = await api("/api/v1/opportunities?pageSize=100"); }
+    catch (e) { return errorState("Could not load the pipeline: " + e.message); }
+    let opps = (body.data || []).filter((o) => showFixtures || !o.isFixture);
+    if (q) {
+      const needle = q.toLowerCase();
+      opps = opps.filter((o) => [o.sellerDisplayName, o.property && o.property.address, o.id]
+        .some((h) => h && String(h).toLowerCase().includes(needle)));
+    }
+    const inStage = fstage && FOUNDER_STAGES.some((s) => s.key === fstage)
+      ? opps.filter((o) => toFounderStage(o.stage) === fstage) : opps;
+    state.opportunities = opps;
+
+    const counts = {};
+    FOUNDER_STAGES.forEach((s) => { counts[s.key] = 0; });
+    opps.forEach((o) => { counts[toFounderStage(o.stage)] += 1; });
+
+    const chips = FOUNDER_STAGES.map((s) => `
+      <button class="fchip ${fstage === s.key ? "active" : ""}"
+        onclick="window.routeTo(event, '/opportunities${q ? "?q=" + encodeURIComponent(q) + "&" : "?"}fstage=${s.key}')">
+        ${esc(s.label)} · ${counts[s.key]}
+      </button>`).join("");
+
+    const groups = FOUNDER_STAGES.map((s) => {
+      const members = inStage.filter((o) => toFounderStage(o.stage) === s.key)
+        .sort((a, b) => String(b.lastActivity || "").localeCompare(String(a.lastActivity || "")));
+      if (!members.length) return "";
+      const cards = members.map((o) => `
+        <a class="pcard" href="/opportunities/${esc(o.id)}" onclick="window.routeTo(event, '/opportunities/${esc(o.id)}')">
+          <span class="pcard-name">${esc(o.sellerDisplayName || "Unknown seller")}</span>
+          <span class="pcard-prop">${esc((o.property && o.property.address) || "No property recorded")}</span>
+          <span class="pcard-meta">${esc(founderStageLabel(toFounderStage(o.stage)))}${o.lastActivity ? " · " + esc(String(o.lastActivity).slice(0, 10)) : ""}</span>
+        </a>`).join("");
+      return `
+        <section class="pgroup" aria-label="${esc(s.label)}">
+          <h3 class="pgroup-title">${esc(s.label)} <span class="pgroup-count">${members.length}</span></h3>
+          <div class="pgroup-cards">${cards}</div>
+        </section>`;
+    }).join("");
+
+    view.innerHTML = `
+      <div class="ph-pipeline">
+        <header class="ph-header">
+          <div>
+            <div class="ph-title">Pipeline</div>
+            <div class="ph-sub">${opps.length} seller${opps.length === 1 ? "" : "s"}${fstage ? " · " + esc(founderStageLabel(fstage)) : ""}${q ? ` · “${esc(q)}”` : ""}</div>
+          </div>
+          <button class="ph-action primary" onclick="window.openNewOpportunityModal()">＋ New Seller</button>
+        </header>
+        <form class="ph-search" id="ph-search-form">
+          <input id="ph-search-input" type="search" placeholder="Search sellers, properties…" value="${esc(q)}" aria-label="Search pipeline" />
+          ${q || fstage ? `<button type="button" class="linklike" onclick="window.routeTo(event, '/opportunities')">Clear</button>` : ""}
+        </form>
+        <div class="fchip-row">${chips}</div>
+        ${groups || `<div class="empty-state">No sellers match.</div>`}
       </div>
-      ${filterBar(params)}
     `;
-    
-    if (state.opportunities.length === 0) {
-      viewHtml += empty("No opportunities match these filters.");
-    } else if (currentView === "table") {
-      viewHtml += `
-        <div class="table-wrap"><table>
-          <thead><tr>
-            <th>ID</th><th>Seller</th><th>Property</th><th>Stage</th><th>Provenance</th><th>Classification</th><th>Status</th><th>Operator</th><th>Last activity</th>
-          </tr></thead>
-          <tbody>${state.opportunities.map(oppRow).join("")}</tbody>
-        </table></div>
-        <div class="pager">
-          <button class="secondary" ${pg.page <= 1 ? "disabled" : ""} data-page="${pg.page - 1}">Prev</button>
-          <span class="muted">Page ${pg.page} / ${pg.totalPages}</span>
-          <button class="secondary" ${pg.page >= pg.totalPages ? "disabled" : ""} data-page="${pg.page + 1}">Next</button>
-        </div>
-      `;
-    } else {
-      viewHtml += renderKanbanBoard(state.opportunities);
-    }
-    
-    view.innerHTML = viewHtml;
 
-    view.querySelectorAll(".pager [data-page]").forEach((b) => b.addEventListener("click", () => {
-      const p = new URLSearchParams(location.search); p.set("page", b.dataset.page); navigate("/opportunities?" + p.toString());
-    }));
-    wireFilters();
-    if (currentView === "board") {
-      wireKanbanDragAndDrop();
-      view.querySelectorAll(".board-card").forEach(bindTiltEffect);
-    }
-  }
-  const oppRow = (o) => `<tr>
-      <td><a href="/opportunities/${esc(o.id)}" data-nav>${esc(o.id)}</a></td>
-      <td>${esc(o.sellerDisplayName)}</td>
-      <td>${o.propertyRef ? esc(o.propertyRef) : '<span class="muted">— missing —</span>'}</td>
-      <td>${esc(formatStage(o.stage))}</td>
-      <td>${badge("prov", o.provenanceState)}</td>
-      <td>${badge("cls", o.classification)}</td>
-      <td>${badge("st", o.status)}</td>
-      <td>${esc(o.assignedOperator)}</td>
-      <td>${esc((o.lastActivity || "").slice(0, 10))}</td></tr>`;
-
-  function filterBar(params) {
-    const opt = (val, cur) => `<option value="${esc(val)}" ${cur === val ? "selected" : ""}>${esc(formatStage(val))}</option>`;
-    const sel = (name, values) => `<label>${name}<select data-filter="${name}">${["", ...values].map((v) => opt(v, params.get(name) || "")).join("")}</select></label>`;
-    return `<div class="filters">
-      ${sel("stage", ["new_lead", "needs_review", "attempting_contact", "contacted", "qualified", "appointment_scheduled", "property_review", "strategy_development", "offer_preparation", "offer_approval_required", "offer_presented", "negotiating", "under_contract", "due_diligence", "closing_scheduled", "closed", "nurture", "disqualified", "lost", "archived"])}
-      ${sel("provenanceState", ["original", "recovered", "unresolved"])}
-      ${sel("classification", ["retail_listing", "wholesale_target", "investment_rehab", "land_hold", "disqualified", "unknown"])}
-      ${sel("status", ["active", "closed"])}
-      <label>Search<input type="search" data-search placeholder="Address, seller, ID…" value="${esc(params.get("q") || "")}" style="min-width: 180px;" /></label>
-      <label>&nbsp;<button class="secondary" data-clear>Clear</button></label>
-    </div>`;
-  }
-  function wireFilters() {
-    view.querySelectorAll("[data-filter]").forEach((s) => s.addEventListener("change", () => {
-      const p = new URLSearchParams(location.search); const v = s.value;
-      v ? p.set(s.dataset.filter, v) : p.delete(s.dataset.filter); p.delete("page");
-      navigate("/opportunities?" + p.toString());
-    }));
-    const search = view.querySelector("[data-search]");
-    if (search) {
+    const form = document.getElementById("ph-search-form");
+    const input = document.getElementById("ph-search-input");
+    if (focusSearch && input) input.focus();
+    if (form && input) {
       let t = null;
-      search.addEventListener("input", () => {
+      input.addEventListener("input", () => {
         clearTimeout(t);
         t = setTimeout(() => {
-          const p = new URLSearchParams(location.search);
-          const v = search.value.trim();
-          v ? p.set("q", v) : p.delete("q"); p.delete("page");
-          navigate("/opportunities?" + p.toString());
+          const v = input.value.trim();
+          const p = new URLSearchParams();
+          if (v) p.set("q", v);
+          if (fstage) p.set("fstage", fstage);
+          navigate("/opportunities" + (p.toString() ? "?" + p.toString() : ""));
         }, 450);
       });
-      search.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+      form.addEventListener("submit", (e) => e.preventDefault());
     }
-    const clr = view.querySelector("[data-clear]"); if (clr) clr.addEventListener("click", () => navigate("/opportunities"));
   }
+
+  // ============ PEOPLE ============
+  // Simple seller directory derived from live opportunities.
+  async function people() {
+    loading();
+    state.activeOppId = null;
+    state.activeOpp = null;
+    updatePiperContext();
+    const params = new URLSearchParams(location.search);
+    const q = (params.get("q") || "").trim().toLowerCase();
+    let body;
+    try { body = await api("/api/v1/opportunities?pageSize=100"); }
+    catch (e) { return errorState("Could not load sellers: " + e.message); }
+    const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
+    let opps = (body.data || []).filter((o) => showFixtures || !o.isFixture);
+    if (q) {
+      opps = opps.filter((o) => [o.sellerDisplayName, o.property && o.property.address]
+        .some((h) => h && String(h).toLowerCase().includes(q)));
+    }
+    opps.sort((a, b) => String(a.sellerDisplayName || "").localeCompare(String(b.sellerDisplayName || "")));
+    const rows = opps.map((o) => {
+      const phone = o.contact && o.contact.channel !== "email" ? o.contact.value : null;
+      return `
+      <a class="person-row" href="/opportunities/${esc(o.id)}" onclick="window.routeTo(event, '/opportunities/${esc(o.id)}')">
+        <span class="person-name">${esc(o.sellerDisplayName || "Unknown seller")}</span>
+        <span class="person-prop">${esc((o.property && o.property.address) || "No property recorded")}</span>
+        <span class="person-meta">
+          <span class="fstage-tag">${esc(founderStageLabel(toFounderStage(o.stage)))}</span>
+          ${phone ? `<span class="person-phone">${esc(phone)}</span>` : ""}
+        </span>
+      </a>`;
+    }).join("");
+
+    view.innerHTML = `
+      <div class="ph-people">
+        <header class="ph-header">
+          <div>
+            <div class="ph-title">People</div>
+            <div class="ph-sub">${opps.length} seller${opps.length === 1 ? "" : "s"}</div>
+          </div>
+        </header>
+        <form class="ph-search" id="ph-people-search" onsubmit="return false;">
+          <input id="ph-people-input" type="search" placeholder="Search sellers…" value="${esc(params.get("q") || "")}" aria-label="Search sellers" />
+        </form>
+        <div class="person-list">${rows || `<div class="empty-state">No sellers found.</div>`}</div>
+      </div>
+    `;
+    const input = document.getElementById("ph-people-input");
+    if (input) {
+      let t = null;
+      input.addEventListener("input", () => {
+        clearTimeout(t);
+        t = setTimeout(() => {
+          const v = input.value.trim();
+          navigate("/people" + (v ? "?q=" + encodeURIComponent(v) : ""));
+        }, 450);
+      });
+    }
+  }
+
+  // ============ TASKS ============
+  // Follow-ups and next actions across the pipeline, grouped by urgency.
+  async function tasks() {
+    loading();
+    state.activeOppId = null;
+    state.activeOpp = null;
+    updatePiperContext();
+    let items = [];
+    try {
+      const res = await operatorGet("next-actions", null);
+      items = res.nextActions || res.data || [];
+    } catch (e) { return errorState("Could not load follow-ups: " + e.message); }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const open = items.filter((t) => (t.status || "open") !== "done");
+    const done = items.filter((t) => (t.status || "open") === "done");
+    const overdue = open.filter((t) => t.dueDate && String(t.dueDate).slice(0, 10) < today)
+      .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
+    const dueToday = open.filter((t) => t.dueDate && String(t.dueDate).slice(0, 10) === today);
+    const upcoming = open.filter((t) => !t.dueDate || String(t.dueDate).slice(0, 10) > today)
+      .sort((a, b) => String(a.dueDate || "9999").localeCompare(String(b.dueDate || "9999")));
+
+    const sellerName = (id) => {
+      const o = (state.opportunities || []).find((x) => x.id === id);
+      return o ? o.sellerDisplayName : null;
+    };
+    const row = (t) => `
+      <div class="task-row">
+        <div class="task-main">
+          <span class="task-title">${esc(t.title || "Follow-up")}</span>
+          ${t.opportunityId ? `<a class="task-seller" href="/opportunities/${esc(t.opportunityId)}" onclick="window.routeTo(event, '/opportunities/${esc(t.opportunityId)}')">${esc(sellerName(t.opportunityId) || "Open seller")}</a>` : ""}
+          ${t.details ? `<div class="task-details">${esc(t.details)}</div>` : ""}
+        </div>
+        <div class="task-side">
+          ${t.dueDate ? `<span class="task-due">${esc(String(t.dueDate).slice(0, 10))}</span>` : `<span class="task-due muted">no date</span>`}
+          ${(t.status || "open") !== "done" ? `<button class="linklike" data-task-done="${esc(t.id)}">Done</button>` : ""}
+        </div>
+      </div>`;
+    const group = (title, list) => list.length ? `
+      <section class="ph-panel"><h2 class="ph-panel-title">${title} <span class="pgroup-count">${list.length}</span></h2>
+      <div class="task-list">${list.map(row).join("")}</div></section>` : "";
+
+    view.innerHTML = `
+      <div class="ph-tasks">
+        <header class="ph-header">
+          <div>
+            <div class="ph-title">Tasks</div>
+            <div class="ph-sub">${open.length} open follow-up${open.length === 1 ? "" : "s"}</div>
+          </div>
+          <button class="ph-action" onclick="window.askPiperFor('What am I forgetting?')">Ask Piper</button>
+        </header>
+        ${group("Overdue", overdue)}
+        ${group("Due today", dueToday)}
+        ${group("Upcoming", upcoming)}
+        ${group("Done", done.slice(0, 10))}
+        ${!open.length ? `<div class="empty-state">No open follow-ups. Ask Piper “What am I forgetting?”</div>` : ""}
+      </div>
+    `;
+    view.querySelectorAll("[data-task-done]").forEach((btn) => btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-task-done");
+      try {
+        await pfetch("/api/v1/operator/next-actions/" + encodeURIComponent(id), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "done" }),
+        });
+        tasks();
+      } catch { window.showCustomAlert("Could not mark done.", "Tasks"); }
+    }));
+  }
+
+  // Ask Piper something from anywhere, opening the drawer first.
+  window.askPiperFor = async (question) => {
+    openPiperDrawer();
+    await window.submitPiperText(question);
+  };
+
+  // ============ ADMIN (dev surface, out of the founder path) ============
+  async function admin() {
+    loading();
+    state.activeOppId = null;
+    state.activeOpp = null;
+    updatePiperContext();
+    const showFixtures = localStorage.getItem("pipeline_show_fixtures") === "true";
+    view.innerHTML = `
+      <div class="ph-admin">
+        <header class="ph-header">
+          <div><div class="ph-title">Admin</div><div class="ph-sub">Developer and data tooling. Not part of the founder experience.</div></div>
+        </header>
+        <section class="ph-panel"><h2 class="ph-panel-title">Data &amp; system</h2>
+          <div class="admin-links">
+            <a href="/system" data-nav>System status</a>
+            <a href="/data-quality" data-nav>Data quality</a>
+            <a href="/provenance" data-nav>Provenance</a>
+            <a href="/classifications" data-nav>Classifications</a>
+          </div>
+        </section>
+        <section class="ph-panel"><h2 class="ph-panel-title">Demo fixtures</h2>
+          <label class="switch-label"><input type="checkbox" id="admin-fixtures" ${showFixtures ? "checked" : ""} />
+          <span>Show demo fixtures</span></label>
+        </section>
+      </div>
+    `;
+    const cb = document.getElementById("admin-fixtures");
+    if (cb) cb.addEventListener("change", () => {
+      localStorage.setItem("pipeline_show_fixtures", cb.checked ? "true" : "false");
+    });
+  }
+
+  window.setViewMode = (mode) => { localStorage.setItem("pipeline_view_mode", mode); };
+  window.toggleFixtures = (checked) => {
+    localStorage.setItem("pipeline_show_fixtures", checked ? "true" : "false");
+  };
 
   async function opportunityDetail(id) {
     loading();
@@ -888,15 +975,15 @@
       `;
     };
 
-    // Show authoritative Victor underwriting if available
+    // Show authoritative underwriting if available
     let victorHtml = "";
     if (o.underwriting) {
       if (o.underwriting.status === "insufficient_evidence" || o.underwriting.arv === null || o.underwriting.arv === undefined) {
         victorHtml = `
           <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <h2 style="margin:0; font-size: 16px;">Victor / Deal Scout — Underwriting</h2>
-              <span class="badge" style="background: rgba(255, 68, 68, 0.1); color: #ff4444; border-color: #ff4444;">Victor</span>
+              <h2 style="margin:0; font-size: 16px;">Underwriting</h2>
+              
             </div>
             <div style="margin-bottom: 16px;">
               <strong style="color: #ff4444; display: block; font-size: 14px; margin-bottom: 4px;">INSUFFICIENT COMPARABLE EVIDENCE</strong>
@@ -949,8 +1036,8 @@
         victorHtml = `
           <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <h2 style="margin:0; font-size: 16px;">Victor / Deal Scout — Underwriting</h2>
-              <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Victor</span>
+              <h2 style="margin:0; font-size: 16px;">Underwriting</h2>
+              
             </div>
             <dl class="kv" style="font-size: 13px; margin-bottom: 12px;">
               <dt>ARV Target</dt><dd>${money(arv)}</dd>
@@ -969,7 +1056,7 @@
       }
     }
           let offersHtml = "";
-    // Offers need deal math: Victor underwriting or founder-recorded assumptions.
+    // Offers need deal math: recorded underwriting or founder-recorded assumptions.
     const dealMath = o.underwriting || (assumptions && assumptions.mao != null
       ? { status: "completed", mao: assumptions.mao, arv: assumptions.arv, rehab: assumptions.rehab,
           evidence: { comps: [] }, operatorAssumption: true }
@@ -984,7 +1071,7 @@
           recText = "Hold. Insufficient comparable sales evidence is available for this property. Do not prepare an offer at this time.";
           recActionHtml = `<div style="color: #ff4444; font-weight: 600; font-size: 13px; margin-top: 8px;">HOLD / INSUFFICIENT EVIDENCE</div>`;
         } else if (dealMath.operatorAssumption) {
-          recText = `Operator assumptions recorded (not Victor underwriting). MAO ${money(dealMath.mao)} is a working estimate — verify before presenting.`;
+          recText = `Operator assumptions recorded (not formal underwriting). MAO ${money(dealMath.mao)} is a working estimate — verify before presenting.`;
         } else {
           const compsCount = dealMath.evidence?.comps?.length;
           const compLabel = compsCount !== undefined ? `${compsCount} comps` : "Comparable count unavailable";
@@ -997,7 +1084,7 @@
               <div id="prepare-offer-form" style="display: none; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px; margin-top: 12px; width: 100%;">
                 <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase;">Prepare Offer terms</h4>
                 <div style="font-size: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
-                  <div><strong>${dealMath.operatorAssumption ? "Operator Assumptions (working MAO)" : "Victor Analysis (Victor MAO)"}:</strong> ${money(dealMath.mao)}</div>
+                  <div><strong>${dealMath.operatorAssumption ? "Operator Assumptions (working MAO)" : "Recorded Analysis (recorded MAO)"}:</strong> ${money(dealMath.mao)}</div>
                   <div><strong>Piper Recommended Opening Price:</strong> ${money(Math.round(dealMath.mao))}</div>
                   <div class="muted" style="margin-top: 4px;">(Recommendation is based on Cash Purchase under standard 75% rule pricing guidelines)</div>
                 </div>
@@ -1169,7 +1256,7 @@
               <dt>Internal Notes</dt><dd style="font-style: italic; opacity: 0.8;">${esc(activeVer.internalNotes || "—")}</dd>
             </dl>
             <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; font-size: 12px; margin-top: 12px;">
-              <div style="font-weight: 600; margin-bottom: 4px; opacity: 0.8;">Victor Underwriting Snapshot</div>
+              <div style="font-weight: 600; margin-bottom: 4px; opacity: 0.8;">Underwriting Snapshot</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
                 <span>ARV: ${money(activeVer.underwritingArvSnapshot)}</span>
                 <span>Rehab: ${money(activeVer.underwritingRehabSnapshot)}</span>
@@ -1185,7 +1272,8 @@
       }
     }
 
-    const outreachHtml = buildOutreachHtml(o);
+    // Outreach panel was retired from the founder view; keep the slot empty.
+    const outreachHtml = "";
 
     let heroImgUrl = "";
     let heroImgBadge = "";
@@ -1229,157 +1317,135 @@
       `;
     }
 
-    // Render columns
+    // ---- Priority: derived from the live Piper brief (CRM-grounded, not stored) ----
+    let needsAttention = false;
+    try {
+      const br = await api("/api/v1/piper/brief?excludeFixtures=true").catch(() => null);
+      const secs = (br && br.data && br.data.sections) || [];
+      needsAttention = secs.some((s) => ["Needs You", "Risk"].includes(s.title) &&
+        (s.items || []).some((it) => it.opportunityId === o.id));
+    } catch { needsAttention = false; }
+
+    const contact = o.contact || {};
+    const sellerPhone = contact.channel && contact.channel !== "email" ? contact.value : null;
+    const founderStage = toFounderStage(stageVal);
+
+    // Render columns — PIPER-FIRST seller view
     view.innerHTML = `
-      <p class="back-link"><a href="/opportunities" data-nav onclick="window.routeTo(event, '/opportunities')">← Back to Opportunities</a></p>
-      
-      <!-- Property Hero -->
-      <div class="deal-hero" style="display: flex; gap: 24px; align-items: center;">
-        ${heroImageHtml}
-        <div class="deal-hero-main" style="flex: 1;">
-          <div class="deal-hero-badge">${esc(o.id)}</div>
-          <h1>${esc(o.property.address)}</h1>
-          <div class="deal-hero-sub">
-            Seller Contact: <strong>${esc(o.sellerDisplayName)}</strong> · Assigned Operator: <strong>${esc(o.assignedOperator)}</strong>
+      <p class="back-link"><a href="/opportunities" data-nav onclick="window.routeTo(event, '/opportunities')">← Back to Pipeline</a></p>
+
+      <div class="seller-card">
+        <div class="seller-top">
+          <div class="seller-id">
+            <h1 class="seller-name">${esc(o.sellerDisplayName || "Unknown seller")}</h1>
+            <div class="seller-prop">${esc((o.property && o.property.address) || "No property recorded")}</div>
+            <div class="seller-phone">${sellerPhone
+              ? `<a href="tel:${esc(sellerPhone)}">${esc(sellerPhone)}</a>`
+              : `<span class="muted">Phone not recorded</span>`}</div>
           </div>
+          <span class="priority-pill ${needsAttention ? "high" : ""}">${needsAttention ? "Needs attention" : "Normal"}</span>
         </div>
-        <div class="deal-hero-actions">
-          <div class="stage-control-group">
-            <label for="detail-stage-select">Current Stage</label>
-            <select id="detail-stage-select" onchange="window.saveStageChange('${o.id}')">
-              ${["new_lead", "needs_review", "attempting_contact", "contacted", "qualified", "appointment_scheduled", "property_review", "strategy_development", "offer_preparation", "offer_approval_required", "offer_presented", "negotiating", "under_contract", "due_diligence", "closing_scheduled", "closed", "nurture", "disqualified", "lost", "archived"].map(st => `
-                <option value="${st}" ${st === stageVal ? 'selected' : ''}>${esc(formatStage(st))}</option>
-              `).join("")}
-            </select>
-          </div>
+        <div class="seller-stage-row">
+          <label for="detail-stage-select">Stage</label>
+          <select id="detail-stage-select" onchange="window.saveFounderStage('${o.id}')">
+            ${FOUNDER_STAGES.map((s) => `
+              <option value="${s.key}" ${s.key === founderStage ? "selected" : ""}>${esc(s.label)}</option>`).join("")}
+          </select>
         </div>
-      </div>
-
-      <!-- Decision Strip -->
-      <div class="decision-strip">
-        <div class="decision-item">
-          <span class="decision-label">Status</span>
-          <span class="decision-val active-status">${esc(o.status)}</span>
+        <div class="seller-actions" role="group" aria-label="Seller actions">
+          <button class="sact" onclick="window.piperCallSeller('${o.id}')">Call <span class="sact-tag">prep</span></button>
+          <button class="sact" onclick="window.piperTextSeller('${o.id}')">Text <span class="sact-tag">draft</span></button>
+          <button class="sact" onclick="window.focusSellerNote()">Add Note</button>
+          <button class="sact" onclick="window.toggleFollowUpForm('${o.id}')">Follow Up</button>
+          <button class="sact primary" onclick="window.scrollToOffer()">Offer</button>
         </div>
-        <div class="decision-item">
-          <span class="decision-label">Classification</span>
-          <span class="decision-val">${badge("cls", o.classification)}</span>
-        </div>
-        <div class="decision-item">
-          <span class="decision-label">Provenance State</span>
-          <span class="decision-val">${badge("prov", o.provenance.state)}</span>
-        </div>
-        <div class="decision-item">
-          <span class="decision-label">Underwriting Status</span>
-          <span class="decision-val ${isWarning ? 'bad-val' : 'good-val'}">
-            ${isWarning ? 'Exceeds MAO' : 'Under MAO'}
-          </span>
-        </div>
-      </div>
-
-      <!-- Split Columns -->
-      <div class="deal-room-grid">
-        <!-- Left Column: Deal Intelligence Canvas -->
-        <div class="deal-room-main">
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Acquisitions Checklist</h2>
-            <div class="checklist-box" id="detail-tasks-box">Loading…</div>
-          </div>
-
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Next Actions Queue</h2>
-            <div id="detail-next-actions">Loading…</div>
-          </div>
-
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Call Logs & Notes</h2>
-            <form class="log-form" onsubmit="window.submitSellerLog(event, '${o.id}')">
-              <input type="text" id="detail-log-input" placeholder="Type new seller update..." required />
-              <button type="submit">Add Log</button>
-            </form>
-            <div class="logs-list" id="detail-logs-list">Loading…</div>
-          </div>
-        </div>
-
-        <!-- Right Column: Economics Desk & Evidence Canvas -->
-        <div class="deal-room-side">
-          <!-- Victor Underwriting -->
-          ${victorHtml}
-          ${offersHtml}
-          ${outreachHtml}
-
-          <!-- Operator Underwriting Assumptions (server-persisted) -->
-          <div class="bridge-panel scratchpad-panel" id="detail-underwriting-section">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 8px;">
-              <h2 style="margin:0; font-size: 14px;">Operator Underwriting Assumptions</h2>
-              <span class="scratchpad-badge">Server · not Victor</span>
-            </div>
-            <p class="muted" style="font-size: 11px; margin: 0 0 10px;">Working estimates you own. These are <strong>not</strong> Victor/Deal Scout underwriting — verify independently before presenting an offer.</p>
-            <div class="form-grid-compact">
-              <div class="form-group-compact">
-                <label>ARV Target</label>
-                <input type="number" id="detail-arv" value="${arvVal}" oninput="window.recalcMao()" />
-              </div>
-              <div class="form-group-compact">
-                <label>Est Rehab</label>
-                <input type="number" id="detail-rehab" value="${rehabVal}" oninput="window.recalcMao()" />
-              </div>
-              <div class="form-group-compact">
-                <label>Fee</label>
-                <input type="number" id="detail-fee" value="${feeVal}" oninput="window.recalcMao()" />
-              </div>
-              <div class="form-group-compact">
-                <label>Holding</label>
-                <input type="number" id="detail-holding" value="${holdingVal}" oninput="window.recalcMao()" />
-              </div>
-              <div class="form-group-compact">
-                <label>Asking Price</label>
-                <input type="number" id="detail-asking" value="${askingVal}" oninput="window.recalcMao()" />
-              </div>
-            </div>
-
-            <div class="calc-output-compact">
-              <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
-                <span>Maximum Allowable Offer:</span>
-                <strong id="detail-mao-val" style="color: var(--ok); font-family: var(--mono);">${money(mao)}</strong>
-              </div>
-              <div id="detail-mao-alert" class="alert-box-compact ${isWarning ? 'warn' : 'ok'}">
-                ${isWarning ? 'Exceeds standard 75% MAO threshold' : '75% purchase rule satisfied'}
-              </div>
-            </div>
-
-            ${calcChartHtml(arvVal, rehabVal, feeVal, holdingVal, askingVal, mao, isWarning)}
-
-            <div class="form-group-compact" style="margin-top: 10px;">
-              <label>Basis for these numbers</label>
-              <input type="text" id="detail-basis" value="${esc(basisVal)}" placeholder="e.g. comp pull on 9/17, contractor walk-through" />
-            </div>
-            <div style="margin-top: 14px; text-align: right;">
-              <button class="primary" onclick="window.saveDetailUnderwriting('${o.id}')">Save Assumptions to PIPELINE</button>
-            </div>
-          </div>
-
-          <!-- Evidence & Provenance Canvas -->
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Provenance & Evidence</h2>
-            <dl class="kv-compact">
-              <dt>Message ID</dt><dd class="code-val">${esc(o.provenance.resolvedSourceMessageId || "unresolved")}</dd>
-              <dt>Original Source</dt><dd class="code-val">${esc(o.provenance.originalSourceMessageId || "—")}</dd>
-              <dt>Recovered Source</dt><dd class="code-val">${esc(o.provenance.recoveredSourceMessageId || "—")}</dd>
-              <dt>Method</dt><dd>${esc(o.provenance.recoveryMethod || "—")}</dd>
-              <dt>Confidence</dt><dd>${esc(o.provenance.recoveryConfidence || "—")}</dd>
-            </dl>
-          </div>
-
-          <!-- Historical timeline / Offers: unified seller timeline -->
-          <div class="bridge-panel">
-            <h2 class="bridge-section-header">Seller Timeline</h2>
-            <div id="detail-timeline"><div class="state">Loading timeline…</div></div>
+        <div class="followup-inline" id="followup-inline" hidden>
+          <input type="text" id="followup-title" placeholder="Follow up about…" value="Follow up with ${esc(o.sellerDisplayName || "seller")}" />
+          <input type="date" id="followup-date" />
+          <div class="followup-inline-actions">
+            <button class="primary" onclick="window.submitQuickFollowUp('${o.id}')">Save</button>
+            <button class="linklike" onclick="window.toggleFollowUpForm()">Cancel</button>
           </div>
         </div>
       </div>
+
+      <div class="piper-summary">
+        <div class="piper-summary-head"><span class="piper-summary-mark" aria-hidden="true">P</span><span>Piper summary</span></div>
+        <div id="seller-piper-summary-body"><div class="state">Reading the record…</div></div>
+      </div>
+
+      <div class="num-strip">
+        <div class="num"><span class="num-label">Asking</span><span class="num-val">${askingVal ? money(askingVal) : "not recorded"}</span></div>
+        <div class="num"><span class="num-label">MAO</span><span class="num-val">${money(mao)}</span></div>
+        <div class="num"><span class="num-label">ARV</span><span class="num-val">${arvVal ? money(arvVal) : "not recorded"}</span></div>
+        <div class="num"><span class="num-label">Deal math</span><span class="num-val ${isWarning ? "bad" : "good"}">${isWarning ? "Over MAO" : "Within MAO"}</span></div>
+      </div>
+
+      <div class="ph-panel">
+        <h2 class="ph-panel-title">Timeline</h2>
+        <div id="detail-timeline"><div class="state">Loading timeline…</div></div>
+      </div>
+
+      <div class="ph-panel" id="seller-offers">
+        <h2 class="ph-panel-title">Offers</h2>
+        ${offersHtml || `<div class="empty-state">No offers recorded.</div>`}
+      </div>
+
+      <div class="ph-panel" id="seller-notes">
+        <h2 class="ph-panel-title">Notes</h2>
+        <form class="log-form" onsubmit="window.submitSellerLog(event, '${o.id}')">
+          <input type="text" id="detail-log-input" placeholder="Add a note…" required />
+          <button type="submit">Add Note</button>
+        </form>
+        <div class="logs-list" id="detail-logs-list">Loading…</div>
+      </div>
+
+      <details class="deal-tools">
+        <summary>Deal tools</summary>
+        <div class="ph-panel"><h2 class="ph-panel-title">Checklist</h2><div id="detail-tasks-box">Loading…</div></div>
+        <div class="ph-panel"><h2 class="ph-panel-title">Follow-ups</h2><div id="detail-next-actions">Loading…</div></div>
+        <div class="ph-panel">
+          <h2 class="ph-panel-title">Working numbers</h2>
+          <p class="muted" style="font-size:12px">Your working estimates. Verify before presenting an offer.</p>
+          <div class="form-grid-compact">
+            <div class="form-group-compact"><label>ARV Target</label><input type="number" id="detail-arv" value="${arvVal}" oninput="window.recalcMao()" /></div>
+            <div class="form-group-compact"><label>Est Rehab</label><input type="number" id="detail-rehab" value="${rehabVal}" oninput="window.recalcMao()" /></div>
+            <div class="form-group-compact"><label>Fee</label><input type="number" id="detail-fee" value="${feeVal}" oninput="window.recalcMao()" /></div>
+            <div class="form-group-compact"><label>Holding</label><input type="number" id="detail-holding" value="${holdingVal}" oninput="window.recalcMao()" /></div>
+            <div class="form-group-compact"><label>Asking Price</label><input type="number" id="detail-asking" value="${askingVal}" oninput="window.recalcMao()" /></div>
+          </div>
+          <div class="calc-output-compact">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+              <span>Maximum Allowable Offer:</span>
+              <strong id="detail-mao-val" style="color:var(--ok)">${money(mao)}</strong>
+            </div>
+            <div id="detail-mao-alert" class="alert-box-compact ${isWarning ? "warn" : "ok"}">
+              ${isWarning ? "Exceeds standard 75% MAO threshold" : "75% purchase rule satisfied"}
+            </div>
+          </div>
+          <div class="form-group-compact" style="margin-top:10px;"><label>Basis for these numbers</label>
+            <input type="text" id="detail-basis" value="${esc(basisVal)}" placeholder="e.g. comp pull, contractor walk-through" /></div>
+          <div style="margin-top:12px;text-align:right;">
+            <button class="primary" onclick="window.saveDetailUnderwriting('${o.id}')">Save Assumptions</button>
+          </div>
+        </div>
+        ${victorHtml}
+        ${outreachHtml}
+        <div class="ph-panel"><h2 class="ph-panel-title">Record</h2>
+          <dl class="kv-compact">
+            <dt>Source</dt><dd>${esc(o.provenance.state)}</dd>
+            <dt>Recovery</dt><dd>${esc(o.provenance.recoveryMethod || "—")}</dd>
+            <dt>Confidence</dt><dd>${esc(o.provenance.recoveryConfidence || "—")}</dd>
+          </dl>
+        </div>
+      </details>
     `;
 
+    renderChecklist(o.id);
+    renderNotes(o.id);
+    renderNextActions(o.id);
+    renderTimeline(o.id);
+    renderPiperSummary(o.id, { askingVal, mao, arvVal });
     renderChecklist(o.id);
     renderNotes(o.id);
     renderNextActions(o.id);
@@ -1406,12 +1472,157 @@
     offer: "◈", checklist: "✓", call: "☎", text: "✉",
     email: "✉", interaction: "•", communication: "✉", piper: "⦿",
   };
+  async function fetchTimelineEvents(oppId) {
+    try {
+      const { timeline } = await operatorGet("timeline", oppId);
+      return (timeline && timeline.events) || [];
+    } catch { return []; }
+  }
+
+  // Deterministic, CRM-grounded seller briefing. No LLM, no invention:
+  // every sentence comes from the record, otherwise it says "not recorded".
+  async function renderPiperSummary(oppId, nums) {
+    const host = document.getElementById("seller-piper-summary-body");
+    if (!host) return;
+    const o = state.activeOpp;
+    if (!o) { host.innerHTML = `<div class="empty-state">Record not loaded.</div>`; return; }
+    try {
+      const [events, naRes] = await Promise.all([
+        fetchTimelineEvents(oppId),
+        operatorGet("next-actions", oppId).catch(() => ({ nextActions: [] })),
+      ]);
+      const contactTypes = new Set(["call", "text", "email", "interaction", "communication", "note"]);
+      const contacts = events.filter((e) => contactTypes.has(e.type) && e.at)
+        .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      const lastContact = contacts.length ? String(contacts[0].at).slice(0, 10) : null;
+
+      const offers = o.offers || [];
+      let offerTxt = "No offers recorded.";
+      if (offers.length) {
+        const offer = offers[0];
+        const v = (offer.versions || []).find((x) => x.id === offer.activeVersionId) || (offer.versions || [])[0];
+        if (v) {
+          offerTxt = `Latest offer ${money(v.purchasePrice)} (${String(v.strategyType || "offer").replace(/_/g, " ")})`
+            + (v.createdAt ? ` on ${String(v.createdAt).slice(0, 10)}` : "") + ".";
+        }
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const open = ((naRes && naRes.nextActions) || []).filter((n) => (n.status || "open") !== "done")
+        .sort((a, b) => String(a.dueDate || "9999").localeCompare(String(b.dueDate || "9999")));
+      let fuTxt = "No follow-up scheduled.";
+      if (open.length) {
+        const d = String(open[0].dueDate || "").slice(0, 10);
+        const overdue = d && d < today;
+        fuTxt = `Next follow-up${d ? ` ${d}` : ""}${overdue ? " — overdue" : ""}: ${open[0].title || "follow up"}.`;
+      }
+
+      const seller = o.sellerDisplayName || "Unknown seller";
+      const prop = (o.property && o.property.address) || "no property recorded";
+      const fmtDate = (d) => {
+        if (!d) return "not recorded";
+        const dt = new Date(d + "T12:00:00");
+        return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      };
+      host.innerHTML = `
+        <p class="piper-summary-text"><strong>${esc(seller)}</strong> · ${esc(prop)}.</p>
+        <p class="piper-summary-text">Last contact ${fmtDate(lastContact)}. Asking ${nums.askingVal ? money(nums.askingVal) : "not recorded"}.</p>
+        <p class="piper-summary-text">${esc(offerTxt)} Working MAO ${money(nums.mao)}.</p>
+        <p class="piper-summary-text">${esc(fuTxt)}</p>`;
+    } catch {
+      host.innerHTML = `<div class="state error">Could not read the record.</div>`;
+    }
+  }
+
+  // Founder picks one of 8 stages; the backend records the bucket's entry stage.
+  // History is never rewritten — this is the same stage endpoint as before.
+  window.saveFounderStage = async (oppId) => {
+    const select = document.getElementById("detail-stage-select");
+    const founderKey = select ? select.value : null;
+    if (!founderKey || !FOUNDER_STAGE_DEFAULTS[founderKey]) return;
+    const target = FOUNDER_STAGE_DEFAULTS[founderKey];
+    const current = state.activeOpp ? state.activeOpp.stage : null;
+    if (target === current) return;
+    const closed = ["closed", "nurture", "disqualified", "lost", "archived"];
+    let reason = null;
+    if (closed.includes(current) && !closed.includes(target)) {
+      reason = window.prompt("Reopening a closed record — reason (required):");
+      if (!reason || !reason.trim()) { if (select) select.value = toFounderStage(current); return; }
+    }
+    try {
+      const res = await pfetch(`/api/v1/opportunities/${encodeURIComponent(oppId)}/stage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: target, reason }),
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error || "stage_move_failed");
+      window.showCustomAlert(`Stage moved to ${esc(founderStageLabel(founderKey))}.`, "Stage Updated");
+      opportunityDetail(oppId);
+    } catch (e) {
+      window.showCustomAlert("Could not move stage: " + esc(e.message), "Stage Move Failed");
+      if (select && current) select.value = toFounderStage(current);
+    }
+  };
+
+  // Call / Text route through Piper's governed preparation tools.
+  // prepare_call is plan-only and draft_sms is draft-only — Piper says so honestly.
+  window.piperCallSeller = async (oppId) => {
+    const o = state.activeOpp;
+    const name = (o && o.sellerDisplayName) || "this seller";
+    const prop = (o && o.property && o.property.address) || "";
+    openPiperDrawer();
+    await window.submitPiperText(`Prepare a call to ${name}${prop ? " about " + prop : ""}. Preparation only — do not dial.`);
+  };
+  window.piperTextSeller = async (oppId) => {
+    const o = state.activeOpp;
+    const name = (o && o.sellerDisplayName) || "this seller";
+    openPiperDrawer();
+    await window.submitPiperText(`Draft a text message to ${name}. Draft only — do not send.`);
+  };
+  window.focusSellerNote = () => {
+    const panel = document.getElementById("seller-notes");
+    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    const input = document.getElementById("detail-log-input");
+    if (input) setTimeout(() => input.focus(), 350);
+  };
+  window.toggleFollowUpForm = () => {
+    const el = document.getElementById("followup-inline");
+    if (el) el.hidden = !el.hidden;
+  };
+  window.submitQuickFollowUp = async (oppId) => {
+    const title = (document.getElementById("followup-title") || {}).value || "Follow up";
+    const dueDate = (document.getElementById("followup-date") || {}).value || null;
+    try {
+      const res = await pfetch("/api/v1/operator/next-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: oppId, title, dueDate }),
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error || "save_failed");
+      window.showCustomAlert("Follow-up saved.", "Follow Up");
+      opportunityDetail(oppId);
+    } catch (e) {
+      window.showCustomAlert("Could not save follow-up: " + esc(e.message), "Follow Up");
+    }
+  };
+  window.scrollToOffer = () => {
+    const form = document.getElementById("prepare-offer-form");
+    if (form) {
+      window.togglePrepareOfferForm(true);
+      form.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const panel = document.getElementById("seller-offers");
+    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   async function renderTimeline(oppId) {
     const host = document.getElementById("detail-timeline");
     if (!host) return;
     try {
-      const { timeline } = await operatorGet("timeline", oppId);
-      const events = timeline.events || [];
+      const events = await fetchTimelineEvents(oppId);
       if (!events.length) {
         host.innerHTML = `<div class="empty-state">No events recorded yet.</div>`;
         return;
@@ -1623,7 +1834,7 @@
     };
     try {
       await operatorPost("underwriting", payload);
-      window.showCustomAlert("Saved to PIPELINE. These are your working estimates — not Victor underwriting.", "Assumptions Saved");
+      window.showCustomAlert("Saved to PIPELINE. These are your working estimates.", "Assumptions Saved");
       opportunityDetail(oppId);
     } catch (e) {
       window.showCustomAlert("Could not save assumptions: " + esc(e.message), "Save Failed");
@@ -1819,7 +2030,7 @@
       }
     } catch (e) {
       const msg = e.message === "active_offer_required" ? "No active offer to review — prepare an offer draft first."
-        : e.message === "underwriting_required" ? "No underwriting on file — record operator assumptions or wait for Victor analysis."
+        : e.message === "underwriting_required" ? "No underwriting on file — record your working assumptions."
         : e.message;
       if (box) box.innerHTML = `<span style="color: #ff4444;">${esc(msg)}</span>`;
     }
@@ -2059,6 +2270,7 @@
         renderPiperHistory();
 
         let reply;
+        let spokenReply = "";
         try {
           const res = await pfetch("/api/v1/piper/ask", {
             method: "POST",
@@ -2075,6 +2287,8 @@
             state.piperRunId = body.data.runId;
             setPiperState(body.data.state, body.data.stateLabel);
             reply = renderPiperAnswer(body.data);
+            spokenReply = String(body.data.answer || "").trim();
+            showPiperResultOnHome(body.data);
             executeWorkspaceDirective(body.data.directive);
           } else {
             setPiperState("failed");
@@ -2088,6 +2302,7 @@
         state.piperMessages = state.piperMessages.filter((m) => !m.pending);
         state.piperMessages.push({ sender: "bot", text: reply });
         renderPiperHistory();
+        if (spokenReply && PiperVoice) PiperVoice.speak(spokenReply);
     }
 
     if (piperChatForm) {
@@ -2099,43 +2314,244 @@
       });
     }
 
-    // ---- Voice-prep shell (P2 directive, P7 detail) ----
-    // The microphone UI exists so the layout is settled, but voice input is
-    // NOT wired: no speech service is provisioned, no media is captured, and
-    // no claim is made that voice works. The state machine below models the
-    // future flow (idle -> requesting -> listening -> transcribing ->
-    // submitting -> idle) and stays parked in `unavailable` until a founder
-    // approves a provider. Transcripts, when they exist, will enter through
-    // submitPiperText — the same contract as typed input — so text and voice
-    // share one conversation state.
-    const PiperVoice = {
-      enabled: false, // no speech provider; founder has not approved one
-      state: "unavailable",
-      setState(next) {
-        this.state = next;
-        const btn = document.getElementById("piper-voice-btn");
-        if (btn) {
-          btn.dataset.voiceState = next;
-          btn.title = next === "unavailable"
-            ? "Voice input arrives in a future update — no speech service is connected."
-            : `Voice: ${next}`;
-        }
-        const note = document.getElementById("piper-voice-note");
-        if (note) note.textContent = next === "unavailable" ? "Voice input is not available yet." : "";
+    // ---- Piper browser voice layer ----
+    // Zero-cost voice path: browser speech recognition for input and the best
+    // natural female system voice available on this Windows machine for output.
+    // Both voice and typing use submitPiperText(), so context and approvals stay identical.
+    PiperVoice = {
+      state: "idle",
+      outputEnabled: localStorage.getItem("piper_voice_output") !== "off",
+      recognition: null,
+      selectedVoice: null,
+      listeningOrigin: null,
+
+      supportsInput() {
+        return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
       },
-      // Future entry point: a transcript from any speech service lands here.
+
+      supportsOutput() {
+        return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+      },
+
+      chooseVoice() {
+        if (!this.supportsOutput()) return null;
+        const voices = window.speechSynthesis.getVoices() || [];
+        const english = voices.filter((v) => /^en([-_]|$)/i.test(v.lang || ""));
+        const pool = english.length ? english : voices;
+        const preferred = [
+          /Microsoft Ava Multilingual Online \(Natural\)/i,
+          /Microsoft Emma Multilingual Online \(Natural\)/i,
+          /Microsoft Jenny Online \(Natural\)/i,
+          /Microsoft Aria Online \(Natural\)/i,
+          /Microsoft Ava Online \(Natural\)/i,
+          /Microsoft Sonia Online \(Natural\)/i,
+          /Samantha/i,
+          /Google.*US English.*Female/i,
+        ];
+        for (const rx of preferred) {
+          const match = pool.find((v) => rx.test(v.name || ""));
+          if (match) return match;
+        }
+        // Never fall back to a random/male/robotic voice. Piper only speaks when
+        // the browser exposes a plausibly natural female English voice.
+        const femaleHint = /(Ava|Emma|Jenny|Aria|Sonia|Samantha|Michelle|Ana|Libby|Mia|Sara|Sarah|Jane|Joanna|Female)/i;
+        return pool.find((v) => /Online \(Natural\)/i.test(v.name || "") && femaleHint.test(v.name || ""))
+          || pool.find((v) => femaleHint.test(v.name || ""))
+          || null;
+      },
+
+      refreshVoice() {
+        this.selectedVoice = this.chooseVoice();
+        this.syncButtons();
+      },
+
+      setState(next, note = "") {
+        this.state = next;
+        const btns = [
+          document.getElementById("piper-voice-btn"),
+          document.getElementById("fp-mic-btn"),
+        ].filter(Boolean);
+        btns.forEach((btn) => {
+          btn.dataset.voiceState = next;
+          btn.classList.toggle("listening", next === "listening");
+          btn.title = next === "listening" ? "Listening — tap to stop" : "Talk to Piper";
+        });
+        const text = note || (next === "listening" ? "Listening…" : "");
+        const notes = [
+          document.getElementById("piper-voice-note"),
+          document.getElementById("fp-voice-note"),
+        ].filter(Boolean);
+        notes.forEach((el) => { el.textContent = text; });
+      },
+
+      syncButtons() {
+        const outputBtns = [
+          document.getElementById("piper-voice-output"),
+          document.getElementById("fp-voice-output-home"),
+        ].filter(Boolean);
+        outputBtns.forEach((btn) => {
+          const naturalReady = !!this.selectedVoice;
+          const on = this.outputEnabled && naturalReady;
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+          btn.disabled = !naturalReady;
+          btn.textContent = on
+            ? (btn.id === "fp-voice-output-home" ? "Voice on" : "🔊")
+            : (btn.id === "fp-voice-output-home" ? (naturalReady ? "Voice off" : "Voice unavailable") : "🔇");
+          const voiceName = naturalReady ? ` · ${this.selectedVoice.name}` : "";
+          btn.title = naturalReady
+            ? `Piper voice ${on ? "on" : "off"}${voiceName}`
+            : "A natural Piper voice is not available in this browser.";
+        });
+      },
+
+      toggleOutput() {
+        this.outputEnabled = !this.outputEnabled;
+        localStorage.setItem("piper_voice_output", this.outputEnabled ? "on" : "off");
+        if (!this.outputEnabled && this.supportsOutput()) window.speechSynthesis.cancel();
+        this.syncButtons();
+      },
+
+      speak(text) {
+        if (!this.outputEnabled || !this.supportsOutput()) return;
+        const voice = this.selectedVoice || this.chooseVoice();
+        if (!voice) return;
+        const clean = String(text || "")
+          .replace(/<[^>]*>/g, " ")
+          .replace(/[*_#>`]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (!clean) return;
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(clean);
+        utter.voice = voice;
+        utter.lang = voice.lang || "en-US";
+        utter.rate = 0.98;
+        utter.pitch = 1.0;
+        utter.volume = 1;
+        window.speechSynthesis.speak(utter);
+      },
+
+      speakBriefOnce(text) {
+        if (!text || sessionStorage.getItem("piper_brief_spoken") === "1") return;
+        const voice = this.selectedVoice || this.chooseVoice();
+        if (!voice || !this.outputEnabled) return;
+        sessionStorage.setItem("piper_brief_spoken", "1");
+        window.setTimeout(() => this.speak(`Hey Genaro. ${text}`), 450);
+      },
+
+      ensureRecognition() {
+        if (this.recognition || !this.supportsInput()) return this.recognition;
+        const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new Recognition();
+        recognition.lang = "en-US";
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = () => this.setState("listening", "Listening…");
+        recognition.onresult = (event) => {
+          let interim = "";
+          let finalText = "";
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            const piece = event.results[i][0]?.transcript || "";
+            if (event.results[i].isFinal) finalText += piece;
+            else interim += piece;
+          }
+          const heard = (finalText || interim).trim();
+          if (heard) this.setState("listening", heard);
+          if (finalText.trim()) {
+            const transcript = finalText.trim();
+            const homeInput = document.getElementById("fp-ask-input");
+            if (homeInput) homeInput.value = transcript;
+            if (piperChatInput) piperChatInput.value = transcript;
+          }
+        };
+        recognition.onerror = (event) => {
+          const friendly = event.error === "not-allowed"
+            ? "Microphone permission is blocked."
+            : event.error === "no-speech"
+              ? "I didn’t hear anything."
+              : "Voice input stopped.";
+          this.setState("idle", friendly);
+        };
+        recognition.onend = async () => {
+          const homeInput = document.getElementById("fp-ask-input");
+          const transcript = (piperChatInput?.value || homeInput?.value || "").trim();
+          this.setState("idle", "");
+          if (transcript && this.listeningOrigin) {
+            if (homeInput) homeInput.value = "";
+            if (piperChatInput) piperChatInput.value = "";
+            openPiperDrawer();
+            await submitPiperText(transcript);
+          }
+          this.listeningOrigin = null;
+        };
+        this.recognition = recognition;
+        return recognition;
+      },
+
+      startListening(origin = "drawer") {
+        if (!this.supportsInput()) {
+          this.setState("idle", "Voice input is not supported in this browser. Use Edge or Chrome.");
+          return;
+        }
+        const recognition = this.ensureRecognition();
+        if (this.state === "listening") {
+          try { recognition.stop(); } catch {}
+          return;
+        }
+        this.listeningOrigin = origin;
+        try {
+          recognition.start();
+        } catch {
+          this.setState("idle", "Voice is already starting.");
+        }
+      },
+
+      bindHomeControls() {
+        const mic = document.getElementById("fp-mic-btn");
+        if (mic && !mic.dataset.voiceBound) {
+          mic.dataset.voiceBound = "true";
+          mic.addEventListener("click", () => this.startListening("home"));
+        }
+        const output = document.getElementById("fp-voice-output-home");
+        if (output && !output.dataset.voiceBound) {
+          output.dataset.voiceBound = "true";
+          output.addEventListener("click", () => this.toggleOutput());
+        }
+        this.syncButtons();
+      },
+
+      init() {
+        const drawerMic = document.getElementById("piper-voice-btn");
+        if (drawerMic && !drawerMic.dataset.voiceBound) {
+          drawerMic.dataset.voiceBound = "true";
+          drawerMic.addEventListener("click", () => this.startListening("drawer"));
+        }
+        const output = document.getElementById("piper-voice-output");
+        if (output && !output.dataset.voiceBound) {
+          output.dataset.voiceBound = "true";
+          output.addEventListener("click", () => this.toggleOutput());
+        }
+        if (this.supportsOutput()) {
+          this.refreshVoice();
+          window.speechSynthesis.onvoiceschanged = () => this.refreshVoice();
+        }
+        this.syncButtons();
+        this.setState("idle", "");
+      },
+
       async submitTranscript(transcript) {
-        if (!this.enabled) return;
+        if (!transcript?.trim()) return;
         this.setState("submitting");
         await submitPiperText(transcript);
         this.setState("idle");
       },
     };
+
     window.PiperVoice = PiperVoice;
-    // Expose the shared contract for the future voice path.
     window.submitPiperText = submitPiperText;
-    // Park the shell in `unavailable`: honest label, no capture, no claim.
-    PiperVoice.setState("unavailable");
+    PiperVoice.init();
   }
 
   /**
@@ -2329,41 +2745,40 @@
       const body = await res.json();
       if (!body.ok) return;
       const p = body.data.provider;
-      // Live badges, driven by /status: never a hard-coded model claim.
+      // Founder-facing language stays non-technical: "Piper limited" only.
+      // Elements below may not exist in the founder shell; all null-safe.
       const pill = document.getElementById("piper-provider");
       const pillText = document.getElementById("piper-provider-text");
       if (pill && pillText) {
         pill.classList.toggle("connected", !!p.connected);
-        pillText.textContent = p.connected && p.model
-          ? `Piper · ${p.model}`
-          : "Piper limited — no model";
+        pillText.textContent = p.connected ? "Piper ready" : "Piper limited";
         pill.title = p.connected
-          ? `Piper intelligence: ${p.provider || "model"} (${p.model})`
-          : "No language model is connected. Piper answers from stored PIPELINE state only.";
+          ? "Piper is connected to her local intelligence layer."
+          : "Piper is working from Pipeline records with reduced conversational capability.";
       }
       const sidePill = document.getElementById("sidebar-active-provider");
       if (sidePill) {
         sidePill.classList.toggle("limited", !p.connected);
-        sidePill.textContent = p.connected && p.model
-          ? `Piper · ${p.model}`
-          : "Piper limited";
+        sidePill.textContent = p.connected ? "Piper ready" : "Piper limited";
         sidePill.title = p.connected
-          ? `Piper intelligence: ${p.provider || "model"} (${p.model})`
-          : "No language model is connected. Piper answers from stored PIPELINE state only.";
+          ? "Piper is connected to her local intelligence layer."
+          : "Piper is working from Pipeline records with reduced conversational capability.";
       }
       const footerMode = document.getElementById("footer-mode");
       if (footerMode) {
-        footerMode.textContent = p.connected && p.model
-          ? `Piper intelligence: ${p.model}`
-          : "Piper limited — no model";
+        footerMode.textContent = p.connected ? "Piper ready" : "Piper limited";
       }
-      setPiperState(p.connected ? "idle" : "not_connected",
-        p.connected ? "" : "No model provider is configured. Piper answers from stored PIPELINE state only.");
+      const founderStatus = document.getElementById("fp-piper-status");
+      if (founderStatus) {
+        founderStatus.textContent = p.connected ? "Piper ready" : "Piper limited";
+        founderStatus.title = p.connected
+          ? "Piper is connected to her local intelligence layer."
+          : "Piper is working from Pipeline records with reduced conversational capability.";
+      }
+      setPiperState("idle", "");
       const disc = document.getElementById("piper-disclosure");
-      if (disc && !p.connected) {
-        disc.textContent = "No language model is connected. Piper answers deterministically from stored PIPELINE state; actions are written only after you approve them.";
-      } else if (disc && p.connected) {
-        disc.textContent = "";
+      if (disc) {
+        disc.textContent = "Piper works from your Pipeline records.";
       }
     } catch { /* status is best-effort */ }
   }
@@ -2421,17 +2836,8 @@
     else if (action === "verify") query = "Show provenance and classification";
     else if (action === "unresolved") query = "Which records are unresolved?";
     else if (action === "attention") query = "What needs my attention?";
-    else if (action === "why") query = state.activeOppId ? "Show me why this deal needs attention" : "Show me why";
-
-    if (action === "underwriting") {
-      const id = state.activeOppId || (state.opportunities[0] && state.opportunities[0].id);
-      if (id) { navigate("/opportunities/" + encodeURIComponent(id)); }
-      setTimeout(() => {
-        const target = document.getElementById("detail-underwriting-section");
-        if (target) { target.classList.add("highlight-target"); target.scrollIntoView({ behavior: "smooth", block: "center" }); }
-      }, 300);
-      return;
-    }
+    else if (action === "changed") query = "What changed today?";
+    else if (action === "forgetting") query = "What am I forgetting?";
     if (piperChatInput) {
       piperChatInput.value = query;
       piperChatForm.dispatchEvent(new Event("submit"));
@@ -2443,29 +2849,21 @@
     const activeOppCard = document.getElementById("piper-active-deal-card");
     
     if (state.activeOppId) {
-      const o = state.activeOpp || state.opportunities.find(x => x.id === state.activeOppId);
-      const text = `focused on deal #${state.activeOppId.slice(0, 8)}`;
-      piperContextText.textContent = text;
-      
+      const o = state.activeOpp || (state.opportunities || []).find(x => x.id === state.activeOppId);
+      const label = o ? (o.sellerDisplayName || (o.property && o.property.address) || "this deal") : "this deal";
+      piperContextText.textContent = `Looking at ${label} — ask me anything about it.`;
       if (o && activeOppCard) {
-        const mao = o.underwriting && o.underwriting.mao != null ? o.underwriting.mao : null;
-        
         activeOppCard.innerHTML = `
           <div class="active-deal-header">
             <span class="deal-icon">✦</span>
             <div class="deal-meta">
-              <span class="deal-address">${esc(o.property.address)}</span>
-              <span class="deal-apn">APN: ${esc(o.property.apn || "Unknown")}</span>
+              <span class="deal-address">${esc((o.property && o.property.address) || label)}</span>
             </div>
           </div>
           <div class="active-deal-metrics">
             <div class="metric-mini">
               <span class="lbl">Stage</span>
-              <span class="val stage-badge s-${esc(o.stage)}">${esc(formatStage(o.stage))}</span>
-            </div>
-            <div class="metric-mini">
-              <span class="lbl">MAO (75%)</span>
-              <span class="val">${mao != null ? money(mao) : "—"}</span>
+              <span class="val stage-badge">${esc(founderStageLabel(toFounderStage(o.stage)))}</span>
             </div>
           </div>
         `;
@@ -2474,7 +2872,7 @@
         activeOppCard.classList.add("hidden");
       }
     } else {
-      piperContextText.textContent = `view ${location.pathname}`;
+      piperContextText.textContent = "Piper is ready — ask about any seller or deal.";
       if (activeOppCard) {
         activeOppCard.innerHTML = "";
         activeOppCard.classList.add("hidden");
@@ -2500,15 +2898,22 @@
 
   // ---- router ----
   function render() {
+    // Local development never blocks the founder behind an operator-secret gate.
+    // Production keeps the existing auth boundary.
+    const localDev = state.systemStatus?.runtimeMode === "development";
+    if (!localDev && !window.hasOperatorSecret()) { showUnlock(); return; }
     const path = location.pathname;
     document.querySelectorAll("[data-nav]").forEach((a) => {
-      if (a.closest(".nav")) a.setAttribute("aria-current", a.getAttribute("href") === path ? "page" : "false");
+      if (a.closest(".fp-nav, .fp-tabbar")) a.setAttribute("aria-current", a.getAttribute("href") === path ? "page" : "false");
     });
     const detail = path.match(/^\/opportunities\/([^/]+)$/);
     let p;
     if (path === "/" || path === "/index.html") p = overview();
     else if (path === "/opportunities") p = opportunities();
     else if (detail) p = opportunityDetail(decodeURIComponent(detail[1]));
+    else if (path === "/people") p = people();
+    else if (path === "/tasks") p = tasks();
+    else if (path === "/admin") p = admin();
     else if (path === "/provenance") p = provenance();
     else if (path === "/classifications") p = classifications();
     else if (path === "/data-quality") p = dataQuality();
@@ -2531,263 +2936,77 @@
   (async () => {
     await refreshMode();
     initPiperWidget();
-    initOperatorAccess();
-    render();
-    // Keep every provider claim honest: sidebar pill, footer, and Piper
-    // drawer all come from /api/v1/piper/status. Best-effort; the static
-    // defaults already state "limited".
-    refreshPiperStatus();
+    initFpDrawer();
+    const localDev = state.systemStatus?.runtimeMode === "development";
+    if (localDev || window.hasOperatorSecret()) enterApp();
+    else showUnlock();
   })();
 
-  // Operator access entry: founder-operator secret, sessionStorage only.
-  function initOperatorAccess() {
-    const btn = document.getElementById("operator-access-btn");
-    if (!btn) return;
-    const paint = () => {
-      const has = window.hasOperatorSecret();
-      btn.textContent = has ? "Operator: unlocked" : "Operator: locked";
-      btn.setAttribute("aria-pressed", has ? "true" : "false");
-      btn.classList.toggle("unlocked", has);
-    };
-    btn.addEventListener("click", () => {
-      if (window.hasOperatorSecret()) {
-        if (confirm("Clear the operator secret for this tab?")) {
-          window.clearOperatorSecret();
-          paint();
-        }
-        return;
-      }
-      openOperatorLoginDialog();
-    });
-    const origSet = window.setOperatorSecret;
-    window.setOperatorSecret = (s) => { origSet(s); paint(); };
-    const origClear = window.clearOperatorSecret;
-    window.clearOperatorSecret = () => { origClear(); paint(); };
-    paint();
-  }
-
-  // Masked operator login (P2 hardening). Replaces the unmasked
-  // window.prompt() flow. The secret is typed into a password field (never
-  // displayed), never written to logs, and never persisted by this dialog —
-  // on success it is handed to the existing sessionStorage mechanism
-  // (window.setOperatorSecret), preserving current authorization behavior.
-  // The candidate is validated against a live authenticated endpoint before
-  // it is accepted, so a wrong secret produces an honest failure message.
-  // The exact entered value is submitted and stored (no trimming), matching
-  // the server's exact-match operator-secret contract.
-  function openOperatorLoginDialog() {
-    if (document.getElementById("operator-login-backdrop")) return;
-    const backdrop = document.createElement("div");
-    backdrop.className = "custom-modal-backdrop";
-    backdrop.id = "operator-login-backdrop";
-
-    const modal = document.createElement("div");
-    modal.className = "custom-modal";
-    modal.setAttribute("role", "dialog");
-    modal.setAttribute("aria-modal", "true");
-    modal.setAttribute("aria-labelledby", "operator-login-title");
-    modal.innerHTML = `
-      <div class="custom-modal-header" id="operator-login-title">OPERATOR ACCESS</div>
-      <div class="custom-modal-body">
-        <p class="muted" style="margin-top:0">Enter the founder-operator secret. It stays in this tab only and is never written to disk or logs.</p>
-        <label class="field-label" for="operator-login-secret">Operator secret</label>
-        <input type="password" id="operator-login-secret" class="text-input" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" />
-        <div class="field-error" id="operator-login-error" role="alert" hidden></div>
-      </div>
-      <div class="custom-modal-actions">
-        <button class="primary" id="operator-login-submit">Unlock</button>
-        <button class="secondary" id="operator-login-cancel">Cancel</button>
-      </div>
-    `;
-
-    backdrop.appendChild(modal);
-    document.body.appendChild(backdrop);
-
-    const input = modal.querySelector("#operator-login-secret");
-    const errBox = modal.querySelector("#operator-login-error");
-    const submitBtn = modal.querySelector("#operator-login-submit");
-
-    const close = () => {
-      input.value = "";
-      if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
-      const btn = document.getElementById("operator-access-btn");
-      if (btn) btn.focus();
-    };
-    const fail = (msg) => {
-      errBox.textContent = msg;
-      errBox.hidden = false;
-      input.value = "";
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Unlock";
-      input.focus();
-    };
-    const submit = async () => {
-      const candidate = input.value;
-      if (!candidate.length) { fail("Enter the operator secret to continue."); return; }
-      errBox.hidden = true;
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Verifying…";
-      try {
-        // A live authenticated probe: 401/403 means the secret was rejected.
-        // Any other response proves the bearer was accepted (auth runs first).
-        const res = await fetch("/api/v1/piper/status", {
-          headers: { Authorization: "Bearer " + candidate },
-        });
-        if (res.status === 401 || res.status === 403) {
-          fail("Secret not accepted. Check the value and try again.");
+  // Founder unlock gate: a clean full-screen unlock before the experience
+  // loads. After unlock, no auth control remains in the founder UI.
+  // The secret stays in sessionStorage only, validated against a live
+  // authenticated endpoint before it is accepted.
+  function showUnlock() {
+    const shell = document.getElementById("fp-shell");
+    const u = document.getElementById("fp-unlock");
+    if (shell) shell.hidden = true;
+    if (!u) return;
+    u.hidden = false;
+    const form = document.getElementById("fp-unlock-form");
+    if (form && !form.dataset.wired) {
+      form.dataset.wired = "true";
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const input = document.getElementById("fp-unlock-secret");
+        const errBox = document.getElementById("fp-unlock-error");
+        const submitBtn = document.getElementById("fp-unlock-submit");
+        const candidate = input.value;
+        if (!candidate.length) {
+          errBox.textContent = "Enter the operator secret to continue.";
+          errBox.hidden = false;
           return;
         }
-        if (!res.ok) { fail("Could not verify the secret right now. Try again."); return; }
-        window.setOperatorSecret(candidate);
-        close();
-      } catch {
-        fail("Could not reach PIPELINE. Check the connection and try again.");
-      }
-    };
-
-    modal.querySelector("#operator-login-cancel").addEventListener("click", close);
-    backdrop.addEventListener("mousedown", (e) => { if (e.target === backdrop) close(); });
-    submitBtn.addEventListener("click", submit);
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); submit(); }
-      else if (e.key === "Escape") { e.preventDefault(); close(); }
-    });
-    input.focus();
-  }
-  function buildOutreachHtml(o) {
-    const contact = o.contact || { status: "MISSING", value: null, channel: null };
-    const hasContact = contact.status !== "MISSING" && contact.value;
-    
-    // Get active approved offer version
-    const hasApprovedOffer = o.offers && o.offers.length > 0 && o.offers[0].status === "approved";
-    const activeOffer = o.offers && o.offers.length > 0 ? o.offers[0] : null;
-    const activeVer = activeOffer ? activeOffer.versions.find(v => v.id === activeOffer.activeVersionId) : null;
-    const isApproved = activeVer && activeVer.versionStatus === "approved";
-
-    let contactStatusColor = "#ff4444";
-    if (contact.status === "VERIFIED") contactStatusColor = "var(--ok)";
-    else if (contact.status === "SOURCE_SUPPLIED") contactStatusColor = "var(--accent)";
-
-    let contactCard = `
-      <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; font-size: 12px; margin-bottom: 12px;">
-        <div style="font-weight:600; margin-bottom: 4px; display: flex; justify-content: space-between;">
-          <span>Recipient Contact Card</span>
-          <span style="color: ${contactStatusColor}; font-weight: 700;">${esc(contact.status)}</span>
-        </div>
-        ${hasContact ? `
-          <div style="display: grid; grid-template-columns: 80px 1fr; gap: 4px; font-size: 11px;">
-            <span class="muted">Name:</span><span>${esc(contact.displayName || "N/A")}</span>
-            <span class="muted">Channel:</span><span>${esc(contact.channel || "N/A")}</span>
-            <span class="muted">Value:</span><span>${esc(contact.value || "N/A")}</span>
-            <span class="muted">Person ID:</span><span>${esc(contact.personId || "N/A")}</span>
-          </div>
-        ` : `
-          <div style="color: #ff4444; font-size: 11px;">⚠️ No verified or source-supplied contact details available for this seller.</div>
-        `}
-      </div>
-    `;
-
-    let actionHtml = "";
-    if (!isApproved) {
-      actionHtml = `<div class="muted" style="font-size: 11px;">Prepare and approve an offer version before drafting outreach.</div>`;
-    } else if (!hasContact) {
-      actionHtml = `<div class="muted" style="font-size: 11px; color: #ff4444;">Drafting and sending outreach is blocked because seller contact information is missing.</div>`;
-    } else {
-      // We have contact + approved offer.
-      // Check if there is an active draft.
-      const activeDraft = o.communications ? o.communications.find(c => ["drafted", "authorized", "send_attempted"].includes(c.status)) : null;
-
-      if (activeDraft) {
-        let statusColor = "var(--accent)";
-        if (activeDraft.status === "authorized") statusColor = "var(--ok)";
-        
-        let buttonsHtml = "";
-        if (activeDraft.status === "drafted") {
-          buttonsHtml = `
-            <button class="primary" style="background: var(--ok); color: #000; font-size: 11px; padding: 4px 8px;" onclick="window.authorizeOutreach('${esc(activeDraft.id)}', '${esc(o.id)}')">Authorize Outreach</button>
-          `;
-        } else if (activeDraft.status === "authorized") {
-          buttonsHtml = `
-            <button class="primary" style="background: var(--accent); color: #000; font-size: 11px; padding: 4px 8px;" onclick="window.sendOutreach('${esc(activeDraft.id)}', '${esc(o.id)}')">Send Outreach</button>
-          `;
+        errBox.hidden = true;
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Unlocking…";
+        try {
+          // A live authenticated probe: 401/403 means the secret was rejected.
+          const res = await fetch("/api/v1/piper/status", {
+            headers: { Authorization: "Bearer " + candidate },
+          });
+          if (res.status === 401 || res.status === 403) {
+            throw new Error("Secret not accepted. Check the value and try again.");
+          }
+          if (!res.ok) throw new Error("Could not verify the secret right now. Try again.");
+          input.value = "";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Unlock";
+          window.setOperatorSecret(candidate); // triggers render()
+          enterApp();
+        } catch (err) {
+          errBox.textContent = err.message || "Could not unlock. Try again.";
+          errBox.hidden = false;
+          input.value = "";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Unlock";
+          input.focus();
         }
-
-        actionHtml = `
-          <div style="background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.03); padding: 8px; border-radius: 4px;">
-            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px;">
-              <strong>ACTIVE OUTREACH PIPELINE</strong>
-              <span style="color: ${statusColor}; font-weight:700;">${activeDraft.status.toUpperCase()}</span>
-            </div>
-            <div style="font-size: 11px; border: 1px solid rgba(255,255,255,0.05); padding: 6px; background:#111; color:#fff; border-radius:4px; font-family: var(--mono); white-space: pre-wrap; margin-bottom: 8px;">${esc(activeDraft.contentText)}</div>
-            <div style="display:flex; gap:8px;">
-              ${buttonsHtml}
-            </div>
-          </div>
-        `;
-      } else {
-        // Let operator create a draft outreach.
-        const defaultText = `Hello ${contact.displayName || "Owner"},\n\nWe would like to make an offer of ${money(activeVer.purchasePrice)} for your property at ${o.property.address || "Wichita Property"} with ${activeVer.inspectionDays} inspection days and ${activeVer.closingDays} closing days.\n\nBest regards,\nOperator`;
-
-        actionHtml = `
-          <div id="create-outreach-form">
-            <div class="form-group-compact" style="margin-bottom: 8px;">
-              <label>Subject</label>
-              <input type="text" id="outreach-subject" value="Offer for ${o.property.address || "Wichita Property"}" style="width:100%; background:#111; color:#fff; border:1px solid #333; padding:4px;" />
-            </div>
-            <div class="form-group-compact" style="margin-bottom: 8px;">
-              <label>Outreach Message</label>
-              <textarea id="outreach-content" style="width:100%; height:80px; background:#111; color:#fff; border:1px solid #333; padding:4px; font-family: var(--mono); font-size:11px;">${esc(defaultText)}</textarea>
-            </div>
-            <button class="primary" style="background: var(--ok); color: #000; font-size: 11px; padding: 4px 8px;" onclick="window.createOutreachDraft('${esc(o.id)}', '${esc(activeVer.id)}', '${esc(contact.personId)}', '${esc(contact.value)}', '${esc(contact.channel)}')">Create Outreach Draft</button>
-          </div>
-        `;
-      }
+      });
     }
-
-    // History timeline
-    let historyHtml = "";
-    if (o.communications && o.communications.length > 0) {
-      historyHtml = `
-        <div style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
-          <h4 style="margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8;">Outreach Audit History</h4>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            ${o.communications.map(c => {
-              let statusColor = "var(--accent)";
-              if (c.status === "failed") statusColor = "#ff4444";
-              else if (c.status === "sent" || c.status === "delivered") statusColor = "var(--ok)";
-
-              const latestEvent = c.events[c.events.length - 1];
-              const outcomeText = latestEvent?.outcome ? ` - Outcome: ${latestEvent.outcome}` : "";
-
-              return `
-                <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); padding: 8px; border-radius: 4px; font-size: 11px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <strong>${c.direction.toUpperCase()} (${esc(c.recipientChannel.toUpperCase())})</strong>
-                    <span style="color: ${statusColor}; font-weight:700;">${c.status.toUpperCase()}</span>
-                  </div>
-                  <div style="font-style: italic; margin-bottom: 4px; color: #fff;">"${esc(c.contentText)}"</div>
-                  <div class="muted" style="font-size: 9px; display: flex; justify-content: space-between;">
-                    <span>Ref: ${esc(c.id.slice(0, 8))}...${outcomeText}</span>
-                    <span>${esc(new Date(c.createdAt).toLocaleString())}</span>
-                  </div>
-                </div>
-              `;
-            }).join("")}
-          </div>
-        </div>
-      `;
-    }
-
-    return `
-      <div class="panel" style="border-left: 2px solid var(--accent); background: var(--accent-sf); margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <h2 style="margin:0; font-size: 16px;">Seller Outreach & Audit Gate</h2>
-          <span class="badge" style="background: var(--accent-sf); color: var(--accent); border-color: var(--accent);">Outreach</span>
-        </div>
-        ${contactCard}
-        ${actionHtml}
-        ${historyHtml}
-      </div>
-    `;
+    setTimeout(() => {
+      const i = document.getElementById("fp-unlock-secret");
+      if (i && !u.hidden) i.focus();
+    }, 60);
   }
+
+  function enterApp() {
+    const u = document.getElementById("fp-unlock");
+    const shell = document.getElementById("fp-shell");
+    if (u) u.hidden = true;
+    if (shell) shell.hidden = false;
+    render();
+    // Keep the status chip honest: best-effort; the static default is "limited".
+    refreshPiperStatus();
+  }
+
 })();

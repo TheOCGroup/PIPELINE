@@ -37,6 +37,7 @@ const STATIC = {
   "/reactor-runtime-fixes.css": "text/css; charset=utf-8",
   "/reactor-tone-lock.css": "text/css; charset=utf-8",
   "/ocg-os-command.css": "text/css; charset=utf-8",
+  "/piper-simple.css": "text/css; charset=utf-8",
   "/ocg-os-command.js": "application/javascript; charset=utf-8",
   "/ocg-os-deal-story.js": "application/javascript; charset=utf-8",
   "/ocg-os-work-room.js": "application/javascript; charset=utf-8",

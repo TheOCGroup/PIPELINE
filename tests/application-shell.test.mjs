@@ -30,21 +30,43 @@ test("/version returns 0.1.0 and identifies as OCG PIPELINE, not OCG ONE", async
   assert.equal(body.schemaVersion, "1");
 });
 
-test("static PIPELINE page loads inside the OCG OS shell without losing subsystem identity", async (t) => {
+test("static PIPELINE page loads as the Piper-first founder shell", async (t) => {
   const db = makeTempDb();
   const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath));
   t.after(() => { app.close(); db.cleanup(); });
   const res = await fetch(`${baseUrl}/`);
   assert.equal(res.status, 200);
   const html = await res.text();
-  assert.match(html, /OCG OS/);
   assert.match(html, /OCG PIPELINE/);
-  assert.match(html, /PIPELINE \/ Seller Operations/);
-  assert.match(html, /OCG OS Director/);
+  assert.match(html, /Acquisitions powered by Piper/);
   assert.match(html, /Piper/);
-  assert.match(html, /ocg-os-command\.js/);
-  assert.match(html, /ocg-os-deal-story\.js/);
-  assert.match(html, /Overview/);
+  assert.match(html, /Piper limited/);
+  // Founder nav is Home / Pipeline / People / Tasks — nothing else.
+  assert.match(html, /data-fpnav="home"/);
+  assert.match(html, /data-fpnav="pipeline"/);
+  assert.match(html, /data-fpnav="people"/);
+  assert.match(html, /data-fpnav="tasks"/);
+  assert.doesNotMatch(html, /Work Room/);
+  // No console chrome in the founder shell.
+  assert.doesNotMatch(html, /PIPELINE \/ Seller Operations/);
+  assert.doesNotMatch(html, /OCG OS Director/);
+  assert.doesNotMatch(html, /id="operator-access-btn"/);
+  assert.doesNotMatch(html, /Operator: locked/);
+  assert.doesNotMatch(html, /class="admin-link"/);
+  assert.doesNotMatch(html, /ocg-os-work-room\.js/);
+  assert.doesNotMatch(html, /ocg-os-command\.js/);
+  assert.doesNotMatch(html, /ocg-os-deal-story\.js/);
+  assert.doesNotMatch(html, /ocg-os-hierarchy-lock\.js/);
+  // Clean unlock gate before the experience loads.
+  assert.match(html, /id="fp-unlock"/);
+  assert.match(html, /id="fp-unlock-form"/);
+  // Piper conversation is an overlay, hidden by default — never a rail.
+  assert.match(html, /id="piper-drawer" class="piper-drawer" hidden/);
+  assert.match(html, /id="piper-close-btn"/);
+  // No technical provider/model language on the founder screen.
+  assert.doesNotMatch(html, /No language model is connected/);
+  assert.doesNotMatch(html, /deterministic/i);
+  assert.match(html, /piper-simple\.css/);
 });
 
 test("OCG OS command-center assets are served with real content and governed data sources", async (t) => {
@@ -89,6 +111,48 @@ test("OCG OS command-center assets are served with real content and governed dat
   assert.match(cssText, /\.ocg-deal-story/);
   assert.match(cssText, /\.ocg-story-stage/);
   assert.doesNotMatch(cssText, /<!doctype html>/i);
+});
+
+test("Piper-first stylesheet is served as CSS, not the SPA fallback", async (t) => {
+  const db = makeTempDb();
+  const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath));
+  t.after(() => { app.close(); db.cleanup(); });
+
+  const css = await fetch(`${baseUrl}/piper-simple.css`);
+  assert.equal(css.status, 200);
+  assert.match(css.headers.get("content-type") || "", /text\/css/);
+  const cssText = await css.text();
+  assert.doesNotMatch(cssText, /<!doctype html>/i);
+  assert.match(cssText, /\.ph-/);
+});
+
+test("Piper founder shell uses a human identity, split workspace, and real voice controls instead of an orb", async (t) => {
+  const db = makeTempDb();
+  const { app, baseUrl } = await startApp(createApp, testConfig(db.dbPath));
+  t.after(() => { app.close(); db.cleanup(); });
+
+  const html = await (await fetch(`${baseUrl}/`)).text();
+  assert.match(html, /class="fp-unlock-piper"/);
+  assert.match(html, /class="piper-toggle-mark"/);
+  assert.match(html, /id="piper-voice-btn"/);
+  assert.match(html, /id="piper-voice-output"/);
+  assert.doesNotMatch(html, /class="piper-orb-mini"/);
+  assert.doesNotMatch(html, /class="status-orb"/);
+
+  const appJs = await (await fetch(`${baseUrl}/app.js`)).text();
+  assert.match(appJs, /class="fp-home-grid"/);
+  assert.match(appJs, /class="fp-piper-word">Piper/);
+  assert.match(appJs, /class="fp-show-pane"/);
+  assert.match(appJs, /SpeechRecognition/);
+  assert.match(appJs, /SpeechSynthesisUtterance/);
+  assert.match(appJs, /Microsoft Ava Multilingual Online/);
+  assert.match(appJs, /speakBriefOnce/);
+  assert.doesNotMatch(appJs, /Microsoft Zira/);
+
+  const cssText = await (await fetch(`${baseUrl}/piper-simple.css`)).text();
+  assert.match(cssText, /\.fp-home-grid/);
+  assert.match(cssText, /\.fp-piper-word/);
+  assert.match(cssText, /\.fp-show-pane/);
 });
 
 test("unknown API routes return a deterministic 404 with no internals", async (t) => {
