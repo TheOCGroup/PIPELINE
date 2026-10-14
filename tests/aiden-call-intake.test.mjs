@@ -107,3 +107,40 @@ test("separate inbox token permits read only and does not grant webhook write", 
     await rm(folder,{recursive:true,force:true});
   }
 });
+
+
+test("archive, restore and delete persist, without deleting original call evidence", async () => {
+  const folder=await mkdtemp(join(tmpdir(),"aiden-actions-"));
+  const prevIntake=process.env.AIDEN_CALL_INTAKE_TOKEN;
+  const prevFile=process.env.AIDEN_CALL_RECORD_FILE;
+  process.env.AIDEN_CALL_INTAKE_TOKEN="test-call-token-private-archive-1234567";
+  process.env.AIDEN_CALL_RECORD_FILE=join(folder,"records.jsonl");
+  const ctx={config:{dbPath:join(folder,"db")}};
+  const server=createServer((req,res)=>{
+    if(req.headers.authorization==="Bearer TEST_INBOX")req.aidenInboxAuth=true;
+    return handleAidenCallIntegration(req,res,ctx);
+  });
+  try{
+    await new Promise(ok=>server.listen(0,"127.0.0.1",ok));
+    const url="http://127.0.0.1:"+server.address().port;
+    const record={id:"call-123",message:"Callback needed"};
+    const posted=await fetch(url,{method:"POST",headers:{authorization:"Bearer test-call-token-private-archive-1234567","content-type":"application/json"},body:JSON.stringify(record)});
+    assert.equal(posted.status,200);
+    const headers={authorization:"Bearer TEST_INBOX","content-type":"application/json"};
+    const act=async(action)=>fetch(url,{method:"PATCH",headers,body:JSON.stringify({id:"call-123",action})});
+    const get=async()=> (await (await fetch(url,{headers})).json()).messages;
+    assert.equal((await act("archive")).status,200);
+    assert.equal((await get())[0].inboxStatus,"archived");
+    assert.equal((await act("restore")).status,200);
+    assert.equal((await get())[0].inboxStatus,"inbox");
+    assert.equal((await act("delete")).status,200);
+    assert.equal((await get()).length,0);
+    assert.match(await readFile(join(folder,"records.jsonl"),"utf8"),/call-123/);
+    assert.equal((await act("restore")).status,409);
+  }finally{
+    await new Promise(ok=>server.close(ok));
+    if(prevIntake===undefined)delete process.env.AIDEN_CALL_INTAKE_TOKEN;else process.env.AIDEN_CALL_INTAKE_TOKEN=prevIntake;
+    if(prevFile===undefined)delete process.env.AIDEN_CALL_RECORD_FILE;else process.env.AIDEN_CALL_RECORD_FILE=prevFile;
+    await rm(folder,{recursive:true,force:true});
+  }
+});
