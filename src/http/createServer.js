@@ -30,7 +30,7 @@ import { authorizePiperIntake } from "./routes/piperIntakeAuthorization.js";
 import { handleOperatorRoutes } from "./routes/operatorRoutes.js";
 import { handlePiperRoutes } from "./routes/piperRoutes.js";
 import { handleWorkRoomRoutes } from "./routes/workRoomRoutes.js";
-import { handleAidenCallIntegration } from "./routes/aidenCallIntegration.js";
+import { handleAidenCallIntegration, authorizeAidenInboxBearer } from "./routes/aidenCallIntegration.js";
 
 const STATIC = {
   "/app.js": "application/javascript; charset=utf-8",
@@ -53,6 +53,11 @@ if(path.startsWith("/api/")){
  if(path==="/api/integrations/aiden-call/records") return handleAidenCallIntegration(req,res,ctx);
  if(path==="/api/integrations/deal-findr/intake"){if(req.method!=="POST")return sendJson(res,405,{ok:false,error:"method_not_allowed"},{Allow:"POST"});const authorization=authorizePiperIntake(req,ctx.config);if(!authorization.ok)return sendJson(res,authorization.status,{ok:false,error:authorization.error});return handleDealFindrIntake(req,res,ctx);}
  if(path==="/api/v1"||path.startsWith("/api/v1/")){
+  if(path==="/api/v1/aiden/messages" && req.method==="GET" && authorizeAidenInboxBearer(req)){
+    req.aidenInboxAuth=true;
+    return handleAidenCallIntegration(req,res,ctx);
+  }
+
   if(path==="/api/v1/auth/session"){if(req.method!=="GET"&&req.method!=="HEAD")return sendJson(res,405,{ok:false,error:"method_not_allowed"},{Allow:"GET, HEAD"});return handleGetSession(req,res,ctx);}
   if(path==="/api/v1/auth/logout"){if(req.method!=="POST")return sendJson(res,405,{ok:false,error:"method_not_allowed"},{Allow:"POST"});return handlePostLogout(req,res,ctx);}
   if(path==="/api/v1/opportunities/convert")return handleConvertLead(req,res,ctx);

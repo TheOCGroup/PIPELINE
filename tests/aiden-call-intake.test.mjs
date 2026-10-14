@@ -74,3 +74,36 @@ test("operator inbox: authorized GET, unauthenticated GET rejected, webhook POST
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+test("separate inbox token permits read only and does not grant webhook write", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "aiden-inbox-token-"));
+  const priorInbox = process.env.AIDEN_INBOX_ACCESS_TOKEN;
+  const priorIntake = process.env.AIDEN_CALL_INTAKE_TOKEN;
+  const priorFile = process.env.AIDEN_CALL_RECORD_FILE;
+  const inbox = "test-private-inbox-read-only-token-2026";
+  const intake = "test-call-ingest-only-token-2026abcdef";
+  process.env.AIDEN_INBOX_ACCESS_TOKEN = inbox;
+  process.env.AIDEN_CALL_INTAKE_TOKEN = intake;
+  process.env.AIDEN_CALL_RECORD_FILE = join(folder, "calls.jsonl");
+  const ctx={config:{dbPath:join(folder,"db")}};
+  const { authorizeAidenInboxBearer } = await import("../src/http/routes/aidenCallIntegration.js");
+  const server=createServer((req,res)=>{
+    if(req.method==="GET" && authorizeAidenInboxBearer(req))req.aidenInboxAuth=true;
+    return handleAidenCallIntegration(req,res,ctx);
+  });
+  try{
+    await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+    const base="http://127.0.0.1:"+server.address().port;
+    const headers={authorization:"Bearer "+inbox};
+    const ok=await fetch(base,{headers});
+    assert.equal(ok.status,200);
+    const attemptedWrite=await fetch(base,{method:"POST",headers:{"content-type":"application/json",...headers},body:JSON.stringify({id:"should-not-write",message:"invalid"})});
+    assert.equal(attemptedWrite.status,401);
+  }finally{
+    await new Promise(resolve=>server.close(resolve));
+    if(priorInbox===undefined)delete process.env.AIDEN_INBOX_ACCESS_TOKEN;else process.env.AIDEN_INBOX_ACCESS_TOKEN=priorInbox;
+    if(priorIntake===undefined)delete process.env.AIDEN_CALL_INTAKE_TOKEN;else process.env.AIDEN_CALL_INTAKE_TOKEN=priorIntake;
+    if(priorFile===undefined)delete process.env.AIDEN_CALL_RECORD_FILE;else process.env.AIDEN_CALL_RECORD_FILE=priorFile;
+    await rm(folder,{recursive:true,force:true});
+  }
+});
