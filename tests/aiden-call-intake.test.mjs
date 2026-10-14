@@ -144,3 +144,31 @@ test("archive, restore and delete persist, without deleting original call eviden
     await rm(folder,{recursive:true,force:true});
   }
 });
+
+test("remembered inbox cookie authenticates reads without storing bearer in browser", async()=>{
+  const previous=process.env.AIDEN_INBOX_ACCESS_TOKEN;
+  const token="long-unique-private-inbox-test-token-1234";
+  process.env.AIDEN_INBOX_ACCESS_TOKEN=token;
+  const {issueInboxSession,authorizeInboxCookie}=await import("../src/http/routes/aidenCallIntegration.js");
+  const server=createServer((req,res)=>{
+    if(req.url==="/session")return issueInboxSession(req,res);
+    return res.end(JSON.stringify({authorized:authorizeInboxCookie(req)}));
+  });
+  try{
+    await new Promise(ok=>server.listen(0,"127.0.0.1",ok));
+    const url="http://127.0.0.1:"+server.address().port;
+    assert.equal((await fetch(url+"/session",{method:"POST"})).status,401);
+    const login=await fetch(url+"/session",{method:"POST",headers:{authorization:"Bearer "+token}});
+    assert.equal(login.status,200);
+    const cookie=login.headers.get("set-cookie");
+    assert.match(cookie,/HttpOnly/);
+    assert.match(cookie,/Secure/);
+    const valid=await fetch(url,{headers:{cookie:cookie.split(";")[0]}});
+    assert.equal((await valid.json()).authorized,true);
+    const bad=await fetch(url,{headers:{cookie:"aiden_inbox=1111111111."+"0".repeat(64)}});
+    assert.equal((await bad.json()).authorized,false);
+  }finally{
+    await new Promise(ok=>server.close(ok));
+    if(previous===undefined)delete process.env.AIDEN_INBOX_ACCESS_TOKEN;else process.env.AIDEN_INBOX_ACCESS_TOKEN=previous;
+  }
+});
