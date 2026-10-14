@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual, createHmac } from "node:crypto";
 
 const MAX_BYTES = 256 * 1024;
 const target = (ctx) => resolve(process.env.AIDEN_CALL_RECORD_FILE || resolve(dirname(ctx.config.dbPath), "aiden-call-records.jsonl"));
@@ -17,6 +17,22 @@ export function authorizeAidenInboxBearer(req) {
   const supplied = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   return secret.length >= 32 && supplied.length === secret.length &&
     timingSafeEqual(Buffer.from(secret), Buffer.from(supplied));
+}
+const YEAR_SECONDS=31536000;
+function signedExpiry(exp){return createHmac("sha256",process.env.AIDEN_INBOX_ACCESS_TOKEN||"").update("aiden-inbox-v1:"+exp).digest("hex")}
+export function issueInboxSession(req,res){
+  if(req.method!=="POST"||!authorizeAidenInboxBearer(req))return send(res,401,{ok:false,error:"unauthorized"});
+  const exp=Math.floor(Date.now()/1000)+YEAR_SECONDS;
+  res.setHeader("Set-Cookie","aiden_inbox="+exp+"."+signedExpiry(exp)+"; Path=/api/v1/aiden; Max-Age="+YEAR_SECONDS+"; HttpOnly; Secure; SameSite=Lax");
+  return send(res,200,{ok:true,remembered:true});
+}
+export function authorizeInboxCookie(req){
+  if((process.env.AIDEN_INBOX_ACCESS_TOKEN||"").length<32)return false;
+  const raw=String(req.headers.cookie||"").split(";").map(x=>x.trim()).find(x=>x.startsWith("aiden_inbox="))?.slice(12);
+  if(!raw)return false;
+  const [exp,mac]=raw.split(".");
+  if(!/^\d{10}$/.test(exp)||!/^[a-f0-9]{64}$/.test(mac)||Number(exp)<=Date.now()/1000)return false;
+  return timingSafeEqual(Buffer.from(mac),Buffer.from(signedExpiry(exp)));
 }
 function send(res, status, data) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
