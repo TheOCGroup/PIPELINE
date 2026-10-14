@@ -24,7 +24,7 @@ async function readBody(req) {
   return JSON.parse(text);
 }
 export async function handleAidenCallIntegration(req, res, ctx) {
-  if (!auth(req)) return send(res, 401, { ok: false, error: "unauthorized" });
+  if (!auth(req) && !(req.method === "GET" && (req.operatorAuth || req.pipelineSession))) return send(res, 401, { ok: false, error: "unauthorized" });
   if (req.method === "POST") {
     let record;
     try { record = await readBody(req); }
