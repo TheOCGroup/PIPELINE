@@ -35,6 +35,7 @@ import { handleAidenCallIntegration, authorizeAidenInboxBearer } from "./routes/
 const STATIC = {
   "/app.js": "application/javascript; charset=utf-8",
   "/aiden-inbox.html": "text/html; charset=utf-8",
+  "/ocg-corporate-logo.png": "image/png",
   "/styles.css": "text/css; charset=utf-8",
   "/reactor-runtime-fixes.css": "text/css; charset=utf-8",
   "/reactor-tone-lock.css": "text/css; charset=utf-8",
