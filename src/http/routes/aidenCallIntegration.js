@@ -11,6 +11,12 @@ function auth(req) {
   if (secret.length < 32 || supplied.length !== secret.length) return false;
   return timingSafeEqual(Buffer.from(secret), Buffer.from(supplied));
 }
+export function authorizeAidenInboxBearer(req) {
+  const secret = process.env.AIDEN_INBOX_ACCESS_TOKEN || "";
+  const supplied = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  return secret.length >= 32 && supplied.length === secret.length &&
+    timingSafeEqual(Buffer.from(secret), Buffer.from(supplied));
+}
 function send(res, status, data) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
   res.end(JSON.stringify(data));
@@ -24,7 +30,7 @@ async function readBody(req) {
   return JSON.parse(text);
 }
 export async function handleAidenCallIntegration(req, res, ctx) {
-  if (!auth(req) && !(req.method === "GET" && (req.operatorAuth || req.pipelineSession))) return send(res, 401, { ok: false, error: "unauthorized" });
+  if (!auth(req) && !(req.method === "GET" && (req.operatorAuth || req.pipelineSession || req.aidenInboxAuth))) return send(res, 401, { ok: false, error: "unauthorized" });
   if (req.method === "POST") {
     let record;
     try { record = await readBody(req); }
