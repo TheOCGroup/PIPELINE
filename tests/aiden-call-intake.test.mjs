@@ -192,7 +192,7 @@ test("recording playback requires inbox authorization and configured R2 signing"
     assert.equal((await fetch(base)).status,401);
     const r=await fetch(base,{headers:{authorization:"Bearer TEST_OPERATOR"}});
     assert.equal(r.status,503);
-    assert.equal((await r.json()).error,"recording_storage_unavailable");
+    assert.equal((await r.json()).error,"recording_provider_unavailable");
   } finally {
     await new Promise(resolve=>server.close(resolve));
     if(previousFile===undefined)delete process.env.AIDEN_CALL_RECORD_FILE;else process.env.AIDEN_CALL_RECORD_FILE=previousFile;
