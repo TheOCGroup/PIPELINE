@@ -172,3 +172,31 @@ test("remembered inbox cookie authenticates reads without storing bearer in brow
     if(previous===undefined)delete process.env.AIDEN_INBOX_ACCESS_TOKEN;else process.env.AIDEN_INBOX_ACCESS_TOKEN=previous;
   }
 });
+
+test("recording playback requires inbox authorization and configured R2 signing", async () => {
+  const {handleAidenRecordingPlayback}=await import("../src/http/routes/aidenCallIntegration.js");
+  const folder=await mkdtemp(join(tmpdir(),"aiden-recording-test-"));
+  const file=join(folder,"calls.jsonl");
+  const previousFile=process.env.AIDEN_CALL_RECORD_FILE;
+  const previousAccount=process.env.AIDEN_R2_ACCOUNT_ID;
+  process.env.AIDEN_CALL_RECORD_FILE=file;
+  delete process.env.AIDEN_R2_ACCOUNT_ID;
+  const ctx={config:{dbPath:join(folder,"pipeline.db")}};
+  const server=createServer((req,res)=>{
+    if(req.headers.authorization==="Bearer TEST_OPERATOR")req.operatorAuth={actor:"test"};
+    return handleAidenRecordingPlayback(req,res,ctx,new URL(req.url,"http://localhost"));
+  });
+  try {
+    await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+    const base="http://127.0.0.1:"+server.address().port+"/?id=unknown";
+    assert.equal((await fetch(base)).status,401);
+    const r=await fetch(base,{headers:{authorization:"Bearer TEST_OPERATOR"}});
+    assert.equal(r.status,503);
+    assert.equal((await r.json()).error,"recording_storage_unavailable");
+  } finally {
+    await new Promise(resolve=>server.close(resolve));
+    if(previousFile===undefined)delete process.env.AIDEN_CALL_RECORD_FILE;else process.env.AIDEN_CALL_RECORD_FILE=previousFile;
+    if(previousAccount===undefined)delete process.env.AIDEN_R2_ACCOUNT_ID;else process.env.AIDEN_R2_ACCOUNT_ID=previousAccount;
+    await rm(folder,{recursive:true,force:true});
+  }
+});

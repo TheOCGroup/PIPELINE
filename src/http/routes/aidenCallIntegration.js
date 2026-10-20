@@ -1,6 +1,8 @@
 import { appendFile, mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { timingSafeEqual, createHmac } from "node:crypto";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const MAX_BYTES = 256 * 1024;
 const target = (ctx) => resolve(process.env.AIDEN_CALL_RECORD_FILE || resolve(dirname(ctx.config.dbPath), "aiden-call-records.jsonl"));
@@ -61,6 +63,38 @@ async function updateState(ctx,id,action) {
     return {ok:true,id,status:state[id].status};
   });
   stateWriteQueue=change;return change;
+}
+export async function handleAidenRecordingPlayback(req, res, ctx, url) {
+  if (req.method !== "GET") return send(res,405,{ok:false,error:"method_not_allowed"});
+  if (!(req.operatorAuth || req.pipelineSession || req.aidenInboxAuth)) return send(res,401,{ok:false,error:"unauthorized"});
+  const id=url.searchParams.get("id")||"";
+  if(!id||id.length>160) return send(res,400,{ok:false,error:"invalid_id"});
+  const account=process.env.AIDEN_R2_ACCOUNT_ID||"";
+  const accessKeyId=process.env.AIDEN_R2_ACCESS_KEY_ID||"";
+  const secretAccessKey=process.env.AIDEN_R2_SECRET_ACCESS_KEY||"";
+  if(!/^[a-f0-9]{32}$/i.test(account)||!accessKeyId||!secretAccessKey) return send(res,503,{ok:false,error:"recording_storage_unavailable"});
+  let raw="";
+  try {raw=await readFile(target(ctx),"utf8");}catch(e){if(e.code!=="ENOENT") throw e;}
+  const states=await readState(ctx);
+  if(states[id]?.status==="deleted") return send(res,404,{ok:false,error:"not_found"});
+  const record=raw.split(/\r?\n/).filter(Boolean).map(line=>{try{return JSON.parse(line)}catch{return null}}).find(x=>x?.id===id);
+  if(!record||typeof record.recordingUrl!=="string") return send(res,404,{ok:false,error:"not_found"});
+  let source;
+  try{source=new URL(record.recordingUrl)}catch{return send(res,422,{ok:false,error:"invalid_recording_source"})}
+  if(source.protocol!=="https:"||source.hostname!==account+".r2.cloudflarestorage.com"||source.search||source.hash||source.username||source.password)
+    return send(res,422,{ok:false,error:"invalid_recording_source"});
+  const segments=source.pathname.split("/").slice(1);
+  const bucket=segments.shift();
+  let key;
+  try{key=segments.map(decodeURIComponent).join("/")}catch{return send(res,422,{ok:false,error:"invalid_recording_source"})}
+  if(!bucket||!key||key.includes("..")||!/^[a-z0-9][a-z0-9-]*$/.test(bucket))
+    return send(res,422,{ok:false,error:"invalid_recording_source"});
+  try{
+    const client=new S3Client({region:"auto",endpoint:"https://"+account+".r2.cloudflarestorage.com",credentials:{accessKeyId,secretAccessKey}});
+    const signed=await getSignedUrl(client,new GetObjectCommand({Bucket:bucket,Key:key}),{expiresIn:60});
+    res.writeHead(302,{Location:signed,"cache-control":"no-store","referrer-policy":"no-referrer"});
+    res.end();
+  }catch{return send(res,502,{ok:false,error:"recording_signing_failed"})}
 }
 export async function handleAidenCallIntegration(req, res, ctx) {
   if (!auth(req) && !(["GET","PATCH"].includes(req.method) && (req.operatorAuth || req.pipelineSession || req.aidenInboxAuth))) return send(res, 401, { ok: false, error: "unauthorized" });
