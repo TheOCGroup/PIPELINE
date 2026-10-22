@@ -1,0 +1,10 @@
+{
+  "agentId": "piper",
+  "enVoice": "af_heart",
+  "enAlternate": "af_bella",
+  "esVoice": "ef_dora",
+  "speed": 1.0,
+  "fallbackProvider": "gemini-live",
+  "rolloutEnv": "OCG_PIPER_KOKORO_TTS_ENABLED",
+  "notes": "Audition candidate only. Piper's live Gemini Live voice stays until the founder approves audible quality and this lane flips the rollout flag."
+}
