@@ -18,3 +18,9 @@ own canonical product — this one lives here, in PIPELINE (Piper's canonical pr
 - Promotion rule: the alternate may not be promoted to primary until
   primary-voice uniqueness is re-verified across all five OCG profiles
   and any displaced agent is re-auditioned (TED review, 2026-10-21).
+
+**Spanish identity (known v1 limitation):** G, Aiden, TED, and ORION all share
+the same Spanish voice (em_alex) — a Spanish-speaking caller hears the same
+voice under different names. Piper alone has a distinct Spanish voice
+(ef_dora). Splitting Spanish identities is a founder decision pending the
+listening session.
