@@ -54,7 +54,9 @@ Short form:
   (migration 025). Operator estimates are never labelled as VICTOR output.
 - **Audit trail (IMPLEMENTED):** `operational_audit_events` (008),
   append-only classification history, immutable seller communications and
-  communication events (013, trigger-enforced), immutable offer versions.
+  communication events (013, trigger-enforced), and offer versions whose
+  terms/deletion are trigger-protected once pending or approved (005 —
+  state-scoped immutability, not blanket immutability).
 - **Ownership controls (IMPLEMENTED):** founder-operator Bearer auth
   (fail-closed), session + CSRF on cookie writes, roles
   viewer / operator / manager / administrator (`src/auth/authorization.js`),

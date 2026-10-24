@@ -24,9 +24,11 @@ address. A duplicate never creates a second opportunity; it reconciles onto the
 existing record and writes a `DEAL_FINDR_DUPLICATE_RECONCILED` audit event.
 
 **Output:** one `seller_opportunities` row (stage `new_lead`), one
-`seller_opportunity_sources` row with source type `deal_finder_intake` (or
-`manual_entry` for founder-entered records), provenance + classification rows,
-and an operational audit event. Seller contact details are persisted only via
+`seller_opportunity_sources` row with source type `deal_finder_intake`,
+provenance + classification rows, and an operational audit event. (Records
+with source type `manual_entry` are created through the operator route, not
+this intake; VICTOR packages arrive as `deal_scout_handoff` — see §2.)
+Seller contact details are persisted only via
 `sellerContactService` and linked as participants.
 
 ## 2. VICTOR — underwriting handoff
@@ -74,7 +76,8 @@ disqualified, lost, archived`
 - Seller record: participants / contacts linked to the opportunity.
 - Communication history: `seller_communications` + lifecycle events —
   immutable, trigger-enforced (migration 013).
-- Offer history: `seller_offer_versions` — immutable versions, each citing its
+- Offer history: `seller_offer_versions` — versions whose terms/deletion are
+  trigger-protected once pending or approved (migration 005), each citing its
   underwriting source; approval passes the server-side Investment Committee
   gate (migration 014) — an offer cannot be approved without committee
   clearance.
@@ -85,11 +88,17 @@ disqualified, lost, archived`
   aggregated by the seller timeline.
 
 **PIPER tool governance (IMPLEMENTED, `src/services/piper/toolRegistry.js`):**
-read tools (`get_operating_brief`, `find_opportunities`, `get_opportunity`,
-`get_outreach_state`) execute immediately; write tools (`create_next_action`,
-`add_note`, `log_interaction`, `prepare_offer`, `modify_offer`,
-`prepare_outreach_draft`) are recorded as proposals and execute **only after
-operator approval**, through the same repository path the UI uses.
+the registry defines **20 tools — 12 read, 8 write**. Read tools
+(`get_operating_brief`, `find_opportunities`, `get_opportunity`,
+`get_outreach_state`, `find_seller`, `get_seller_summary`,
+`get_seller_timeline`, `get_last_contact`, `get_offer_history`, `get_tasks`,
+`search_pipeline`, `prepare_call`) execute immediately. Write tools
+(`create_next_action`, `add_note`, `log_interaction`, `prepare_offer`,
+`modify_offer`, `prepare_outreach_draft`, `draft_sms`, `draft_email`) are
+recorded as proposals and execute **only after operator approval**, through
+the same repository path the UI uses. (Corrected 2026-10-24 per QUINCEY
+finding U1/CA1 on commit `8be726f`: an earlier version of this section listed
+only the original 10 tools.)
 Production currently reports `piperProvider: "none"` — PIPER is LIMITED and
 must be described that way until a provider is connected and verified.
 

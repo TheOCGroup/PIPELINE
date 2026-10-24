@@ -38,9 +38,11 @@ The mobile slice is a separate system (Aiden Mobile, local-only Hunter Drive
 work at time of writing). It must integrate as a **client of the HUNTER
 intake**, not as a PIPELINE module:
 
-- Submit discovered properties to the same intake contract (§1), with
-  `source_type = deal_finder_intake`, a stable per-device `sourceRecordId`,
-  and provenance metadata (APN, capture method, GPS-vs-typed-address flag).
+- Submit discovered properties to the same intake contract (§1), with a
+  stable per-device `sourceRecordId` and provenance metadata (APN, capture
+  method, GPS-vs-typed-address flag). The intake assigns the source type
+  (`deal_finder_intake`) **server-side**; clients do not set it — this item
+  describes the record the server will create, not a payload field.
 - Mobile never writes to the PIPELINE database, never receives the operator
   secret, and uses a dedicated, revocable intake credential scoped to intake
   only.
