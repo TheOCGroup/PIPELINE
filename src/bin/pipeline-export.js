@@ -71,6 +71,7 @@ async function runExport() {
     "seller_appointments",
     "seller_interactions",
     "seller_offers",
+    "opportunity_underwriting_refs",
     "seller_offer_versions",
     "seller_offer_approval_links",
     "seller_opportunity_outcomes"

@@ -254,6 +254,25 @@ async function runImport() {
       );
     }
 
+    // Import underwriting references (migration 027: offer versions link
+    // to these rows, so they must land before the versions import).
+    console.log("Migrating underwriting references...");
+    for (const row of payload.data.opportunity_underwriting_refs || []) {
+      const get = (k) => getValue(row, k);
+      db.prepare(`
+        INSERT INTO opportunity_underwriting_refs (
+          id, opportunity_id, source_system, source_agent, source_project_id,
+          source_underwriting_id, source_version_id, analysis_status,
+          arv, rehab, mao, confidence, limitations, evidence_summary_json, analyzed_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        get("id"), get("opportunity_id"), get("source_system"), get("source_agent"), get("source_project_id"),
+        get("source_underwriting_id"), get("source_version_id"), get("analysis_status") || get("status"),
+        get("arv"), get("rehab"), get("mao"), get("confidence"), get("limitations"),
+        get("evidence_summary_json"), get("analyzed_at"), get("created_at")
+      );
+    }
+
     // Import offer versions
     console.log("Migrating offer versions...");
     for (const row of payload.data.seller_offer_versions) {
