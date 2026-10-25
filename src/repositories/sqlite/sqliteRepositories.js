@@ -1,4 +1,5 @@
 import { resolveProvenance } from "../../domain/provenance/provenanceModel.js";
+import { resolveSnapshotFigures } from "./snapshotResolution.js";
 import { statusForStage, opportunityProvenanceState } from "../../domain/opportunities/opportunityModel.js";
 
 /**
@@ -53,10 +54,10 @@ export class SqliteOpportunityRepository {
           underwritingSourceType: v.underwriting_source_type,
           underwritingSourceId: v.underwriting_source_id,
           underwritingVersionId: v.underwriting_version_id,
-          underwritingArvSnapshot: v.underwriting_arv_snapshot,
-          underwritingRehabSnapshot: v.underwriting_rehab_snapshot,
-          underwritingMaoSnapshot: v.underwriting_mao_snapshot,
-          underwritingConfidence: v.underwriting_confidence,
+          underwritingArvSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).arv,
+          underwritingRehabSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).rehab,
+          underwritingMaoSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).mao,
+          underwritingConfidence: resolveSnapshotFigures(this.db, o.opportunity_id, v).confidence,
           underwritingLimitations: v.underwriting_limitations,
           underwritingTimestamp: v.underwriting_timestamp,
           ocgOneApprovalId: v.ocg_one_approval_id,

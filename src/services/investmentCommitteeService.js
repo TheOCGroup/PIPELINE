@@ -6,7 +6,12 @@ function parseJson(value, fallback) {
 }
 
 function finite(value) {
-  return Number.isFinite(Number(value)) ? Number(value) : null;
+  // Unknown stays unknown: null/undefined/blank are NOT zero. (Number(null)
+  // is 0, which previously fabricated figures — e.g. "DSCR 0.00" — from
+  // missing evidence.)
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 export class InvestmentCommitteeService {
@@ -43,10 +48,13 @@ export class InvestmentCommitteeService {
     const hold = evidence && typeof evidence.hold === "object" && evidence.hold ? evidence.hold : {};
 
     const purchasePrice = finite(version.purchase_price);
-    const arv = finite(underwriting.arv ?? version.underwriting_arv_snapshot);
-    const rehab = finite(underwriting.rehab ?? version.underwriting_rehab_snapshot);
-    const mao = finite(underwriting.mao ?? version.underwriting_mao_snapshot);
-    const confidence = finite(underwriting.confidence ?? version.underwriting_confidence);
+    // The underwriting reference is authoritative. The offer version's
+    // snapshot columns are a point-in-time copy whose NOT NULL storage
+    // sentinel (0) must never substitute for an unknown reference figure.
+    const arv = finite(underwriting.arv);
+    const rehab = finite(underwriting.rehab);
+    const mao = finite(underwriting.mao);
+    const confidence = finite(underwriting.confidence);
     const dscr = finite(hold.dscr);
     const monthlyDebtService = finite(hold.monthlyDebtService);
     const noi = finite(hold.noi);
@@ -71,7 +79,10 @@ export class InvestmentCommitteeService {
       decision = "kill";
     }
 
-    if (confidence === null || confidence < 0.55) {
+    if (confidence === null) {
+      risks.push("Underwriting confidence is unavailable.");
+      if (decision !== "kill") decision = "hold";
+    } else if (confidence < 0.55) {
       risks.push("Underwriting confidence is below the committee minimum.");
       if (decision !== "kill") decision = "hold";
     } else if (confidence < 0.7) {
@@ -107,6 +118,19 @@ export class InvestmentCommitteeService {
       noi,
       monthlyDebtService,
     };
+
+    const priorStageRow = this.db
+      .prepare("SELECT pipeline_stage FROM seller_opportunities WHERE id = ?")
+      .get(opportunityId);
+    const priorStage = priorStageRow ? priorStageRow.pipeline_stage : null;
+    const targetStage =
+      decision === "kill"
+        ? "offer_approval_required"
+        : decision === "hold"
+          ? "strategy_development"
+          : decision === "revise"
+            ? "offer_preparation"
+            : null;
 
     this.db.prepare("BEGIN TRANSACTION").run();
     try {
@@ -154,6 +178,34 @@ export class InvestmentCommitteeService {
           WHERE id = ?
         `).run(actor, opportunityId);
       }
+
+      // Attest every workflow stage transition this review causes, and the
+      // review itself, in the same transaction — the timeline and the audit
+      // log must never show a stage the record was never attested entering.
+      if (targetStage && priorStage && targetStage !== priorStage) {
+        this.db.prepare(`
+          INSERT INTO seller_stage_events (id, opportunity_id, prior_stage, new_stage, changed_by, reason)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(randomUUID(), opportunityId, priorStage, targetStage, actor, `investment_committee_${decision}`);
+      }
+      this.db.prepare(`
+        INSERT INTO operational_audit_events (id, event_timestamp, event_type, actor_id, payload_json, correlation_id)
+        VALUES (?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 'INVESTMENT_COMMITTEE_REVIEW', ?, ?, ?)
+      `).run(
+        randomUUID(),
+        actor,
+        JSON.stringify({
+          opportunityId,
+          reviewId: id,
+          offerId: offer.id,
+          offerVersionId: version.id,
+          underwritingRefId: underwriting.id,
+          decision,
+          fromStage: priorStage,
+          toStage: targetStage || priorStage,
+        }),
+        randomUUID()
+      );
 
       this.db.prepare("COMMIT").run();
     } catch (err) {

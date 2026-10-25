@@ -152,17 +152,20 @@ export async function buildSellerTimeline(ctx, opportunityId) {
       /* operator surface unavailable */
     }
 
-    // 5. Offers.
+    // 5. Offers — one event per version, worded with the state AT THE TIME
+    // of the event. (Previously a single event at creation carried the
+    // offer's CURRENT status, so a version created as a draft already read
+    // "Offer rejected" before any decision existed.)
     try {
       for (const o of operator.listOffers(opportunityId) || []) {
-        const latest = (o.versions || [])[0];
-        const price =
-          latest && Number.isFinite(Number(latest.purchasePrice))
-            ? ` — $${Number(latest.purchasePrice).toLocaleString("en-US")}`
-            : "";
-        events.push(
-          ev("offer", o.createdAt, `Offer ${prettyStage(o.status || "draft")}${price}`, o.createdBy)
-        );
+        for (const v of o.versions || []) {
+          const price =
+            v && Number.isFinite(Number(v.purchasePrice))
+              ? ` — $${Number(v.purchasePrice).toLocaleString("en-US")}`
+              : "";
+          const label = v.versionNumber > 1 ? `Offer revised (v${v.versionNumber})` : "Offer drafted";
+          events.push(ev("offer", v.createdAt, `${label}${price}`, v.createdBy || o.createdBy));
+        }
       }
     } catch {
       /* operator surface unavailable */
@@ -226,6 +229,49 @@ export async function buildSellerTimeline(ctx, opportunityId) {
     }
   } catch {
     /* piper tables absent in some builds */
+  }
+
+  // 10. Decision and refusal events from the operational audit log —
+  // committee reviews, refused approvals, and duplicate-intake
+  // reconciliations are part of this record's history, with the actor and
+  // timestamp they actually happened at.
+  try {
+    const AUDIT_TIMELINE = {
+      INVESTMENT_COMMITTEE_REVIEW: (p) => ({
+        type: "committee_review",
+        summary: `Investment committee decision: ${p.decision || "recorded"}`,
+      }),
+      OFFER_APPROVAL_REFUSED: () => ({
+        type: "offer_approval_refused",
+        summary: "Offer approval refused — committee approval required",
+      }),
+      OFFER_APPROVED: () => ({ type: "offer", summary: "Offer approved" }),
+      OFFER_REJECTED: () => ({ type: "offer", summary: "Offer rejected" }),
+      OFFER_HELD: () => ({ type: "offer", summary: "Offer held (returned to draft)" }),
+      DEAL_FINDR_DUPLICATE_RECONCILED: () => ({
+        type: "intake_duplicate",
+        summary: "Duplicate intake reconciled — no new record created",
+      }),
+    };
+    const rows = db
+      .prepare(
+        `SELECT event_timestamp, event_type, actor_id, payload_json
+         FROM operational_audit_events
+         WHERE event_type IN (${Object.keys(AUDIT_TIMELINE).map(() => "?").join(",")})
+           AND payload_json LIKE ?
+         ORDER BY event_timestamp ASC`
+      )
+      .all(...Object.keys(AUDIT_TIMELINE), `%${opportunityId}%`);
+    for (const r of rows) {
+      let payload = {};
+      try { payload = JSON.parse(r.payload_json || "{}"); } catch { payload = {}; }
+      if (payload.opportunityId && payload.opportunityId !== opportunityId) continue;
+      if (payload.existingOpportunityId && payload.existingOpportunityId !== opportunityId) continue;
+      const render = AUDIT_TIMELINE[r.event_type](payload);
+      events.push(ev(render.type, r.event_timestamp, render.summary, r.actor_id));
+    }
+  } catch {
+    /* audit table absent in some builds */
   }
 
   // Newest first; undated events sink to the bottom. Cap the list.
