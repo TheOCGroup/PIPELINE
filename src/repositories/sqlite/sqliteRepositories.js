@@ -54,6 +54,7 @@ export class SqliteOpportunityRepository {
           underwritingSourceType: v.underwriting_source_type,
           underwritingSourceId: v.underwriting_source_id,
           underwritingVersionId: v.underwriting_version_id,
+          underwritingRefId: v.underwriting_ref_id ?? null,
           underwritingArvSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).arv,
           underwritingRehabSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).rehab,
           underwritingMaoSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).mao,
