@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { resolveSnapshotFigures } from "./snapshotResolution.js";
 
 const now = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
@@ -184,10 +185,10 @@ export class SqliteOperatorRepository {
           underwritingSourceType: v.underwriting_source_type,
           underwritingSourceId: v.underwriting_source_id,
           underwritingVersionId: v.underwriting_version_id,
-          underwritingArvSnapshot: v.underwriting_arv_snapshot,
-          underwritingRehabSnapshot: v.underwriting_rehab_snapshot,
-          underwritingMaoSnapshot: v.underwriting_mao_snapshot,
-          underwritingConfidence: v.underwriting_confidence,
+          underwritingArvSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).arv,
+          underwritingRehabSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).rehab,
+          underwritingMaoSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).mao,
+          underwritingConfidence: resolveSnapshotFigures(this.db, o.opportunity_id, v).confidence,
           underwritingLimitations: v.underwriting_limitations,
           underwritingTimestamp: v.underwriting_timestamp,
           ocgOneApprovalId: v.ocg_one_approval_id,
@@ -251,8 +252,8 @@ export class SqliteOperatorRepository {
       versionId, offerId, nextVersionNumber, strategy, price, em, insp, cls,
       typeof cont === "string" ? cont : JSON.stringify(cont), notes,
       uw.source_system === "deal-scout" ? "victor_analysis" : uw.source_system === "operator_assumption" ? "operator_assumption" : "deal_scout_project",
-      uw.source_underwriting_id || "unknown", uw.source_version_id || "1",
-      uw.arv || 0, uw.rehab || 0, uw.mao || 0, uw.confidence || 0, uw.limitations || "",
+      uw.source_underwriting_id || uw.source_project_id || uw.id, uw.source_version_id || "1",
+      uw.arv ?? 0, uw.rehab ?? 0, uw.mao ?? 0, uw.confidence ?? null, uw.limitations || "", // arv/rehab/mao columns are NOT NULL (005): 0 is a storage sentinel for "unknown" — read models resolve figures via the underwriting ref (snapshotResolution.js) and never present the sentinel as a figure
       uw.analyzed_at || now(), actor
     );
 
@@ -261,6 +262,8 @@ export class SqliteOperatorRepository {
       SET active_version_id = ?, current_version = ?
       WHERE id = ?
     `).run(versionId, nextVersionNumber, offerId);
+
+    this._audit("OFFER_PREPARED", actor, { opportunityId, offerId, versionId, versionNumber: nextVersionNumber });
 
     return this.listOffers(opportunityId).find(o => o.id === offerId);
   }
@@ -282,15 +285,21 @@ export class SqliteOperatorRepository {
         ORDER BY created_at DESC, rowid DESC
         LIMIT 1
       `).get(offer.active_version_id);
-      if (!clearance) throw new Error("committee_approval_required");
+      if (!clearance) {
+        this._audit("OFFER_APPROVAL_REFUSED", actor, { opportunityId: offer.opportunity_id, offerId, versionId: offer.active_version_id, reason: "committee_approval_required" });
+        throw new Error("committee_approval_required");
+      }
       this.db.prepare("UPDATE seller_offers SET status = 'approved', updated_at = ? WHERE id = ?").run(now(), offerId);
       this.db.prepare("UPDATE seller_offer_versions SET version_status = 'approved' WHERE id = ?").run(offer.active_version_id);
+      this._audit("OFFER_APPROVED", actor, { opportunityId: offer.opportunity_id, offerId, versionId: offer.active_version_id });
     } else if (action === "decline") {
       this.db.prepare("UPDATE seller_offers SET status = 'rejected', updated_at = ? WHERE id = ?").run(now(), offerId);
       this.db.prepare("UPDATE seller_offer_versions SET version_status = 'rejected' WHERE id = ?").run(offer.active_version_id);
+      this._audit("OFFER_REJECTED", actor, { opportunityId: offer.opportunity_id, offerId, versionId: offer.active_version_id, via: "operator_decision" });
     } else if (action === "hold") {
       this.db.prepare("UPDATE seller_offers SET status = 'draft', updated_at = ? WHERE id = ?").run(now(), offerId);
       this.db.prepare("UPDATE seller_offer_versions SET version_status = 'draft' WHERE id = ?").run(offer.active_version_id);
+      this._audit("OFFER_HELD", actor, { opportunityId: offer.opportunity_id, offerId, versionId: offer.active_version_id });
     } else if (action === "modify") {
       const nextVerNum = offer.current_version + 1;
       const nextVerId = "ver_" + offerId.substring(4) + "_" + nextVerNum;
@@ -318,8 +327,8 @@ export class SqliteOperatorRepository {
       `).run(
         nextVerId, offerId, nextVerNum, strategy, price, em, insp, cls, cont, notes,
         uw.source_system === "deal-scout" ? "victor_analysis" : uw.source_system === "operator_assumption" ? "operator_assumption" : "deal_scout_project",
-        uw.source_underwriting_id || "unknown", uw.source_version_id || "1",
-        uw.arv || 0, uw.rehab || 0, uw.mao || 0, uw.confidence || 0, uw.limitations || "",
+        uw.source_underwriting_id || uw.source_project_id || uw.id, uw.source_version_id || "1",
+        uw.arv ?? 0, uw.rehab ?? 0, uw.mao ?? 0, uw.confidence ?? null, uw.limitations || "", // arv/rehab/mao columns are NOT NULL (005): 0 is a storage sentinel for "unknown" — read models resolve figures via the underwriting ref (snapshotResolution.js) and never present the sentinel as a figure
         uw.analyzed_at || now(), actor
       );
 
@@ -330,6 +339,7 @@ export class SqliteOperatorRepository {
         SET active_version_id = ?, current_version = ?, status = 'draft'
         WHERE id = ?
       `).run(nextVerId, nextVerNum, offerId);
+      this._audit("OFFER_REVISED", actor, { opportunityId: offer.opportunity_id, offerId, versionId: nextVerId, versionNumber: nextVerNum });
     }
 
     return this.listOffers(offer.opportunity_id).find(o => o.id === offerId);
@@ -366,6 +376,13 @@ export class SqliteOperatorRepository {
       return ["send_attempted", "canceled"].includes(nextEvent);
     }
     return false;
+  }
+
+  _audit(eventType, actor, payload) {
+    this.db.prepare(`
+      INSERT INTO operational_audit_events (id, event_timestamp, event_type, actor_id, payload_json, correlation_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(randomUUID(), now(), eventType, actor || "local-operator", JSON.stringify(payload), randomUUID());
   }
 
   _addCommunicationEvent(commId, eventType, actorId, providerRef = null, outcome = null, metadataJson = null) {
