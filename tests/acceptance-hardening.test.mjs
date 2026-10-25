@@ -157,6 +157,36 @@ test("U3: committee review attests its stage transition and appears in the timel
   }
 });
 
+test("UA3/UA4 residuals: whitespace figures stay unknown; committee kill attests the rejection", () => {
+  const tempDb = makeTempDb();
+  const app = createApp(testConfig(tempDb.dbPath, { dataSource: "empty" }));
+  try {
+    const { opportunityId } = seedNullEvidenceDeal(app, "ua");
+    // Whitespace-typed figures in the evidence JSON must not become 0,
+    // while a real low DSCR in a second field still drives a kill.
+    app.db.prepare("UPDATE opportunity_underwriting_refs SET evidence_summary_json = ? WHERE opportunity_id = ?")
+      .run(JSON.stringify({ hold: { strategy: "DSCR", dscr: " ", noi: " ", monthlyDebtService: " " } }), opportunityId);
+    const offer = prepareDraft(app, opportunityId);
+    const review = app.services.investmentCommittee.reviewActiveOffer({ opportunityId, actor: "founder-operator" });
+    assert.equal(review.metrics.dscr, null);
+    assert.equal(review.metrics.noi, null);
+    assert.ok(offer.id);
+    // UA4: a committee kill (driven here by price > MAO on a valued ref)
+    // attests the offer rejection under its own event type.
+    const db = app.db;
+    db.prepare("UPDATE opportunity_underwriting_refs SET mao = 50000, confidence = 0.9 WHERE opportunity_id = ?").run(opportunityId);
+    const offer2 = app.services.operator.prepareOffer({ opportunityId, proposedPrice: 90000, strategyType: "cash_purchase", earnestMoney: 1000, inspectionDays: 7, closingDays: 30, internalNotes: "ua4 kill-path draft", actor: "founder-operator" });
+    assert.ok(offer2.id);
+    const review2 = app.services.investmentCommittee.reviewActiveOffer({ opportunityId, actor: "founder-operator" });
+    assert.equal(review2.decision, "kill");
+    const rej = db.prepare("SELECT * FROM operational_audit_events WHERE event_type = 'OFFER_REJECTED'").get();
+    assert.ok(rej, "committee kill writes OFFER_REJECTED");
+    assert.match(rej.payload_json, /investment_committee/);
+  } finally {
+    tempDb.cleanup();
+  }
+});
+
 test("real zeros and real DSCR values survive intact (no over-correction)", () => {
   const tempDb = makeTempDb();
   const app = createApp(testConfig(tempDb.dbPath, { dataSource: "empty" }));

@@ -9,7 +9,8 @@ function finite(value) {
   // Unknown stays unknown: null/undefined/blank are NOT zero. (Number(null)
   // is 0, which previously fabricated figures — e.g. "DSCR 0.00" — from
   // missing evidence.)
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -158,6 +159,10 @@ export class InvestmentCommitteeService {
       } else if (decision === "kill") {
         this.db.prepare("UPDATE seller_offer_versions SET version_status = 'rejected' WHERE id = ?").run(version.id);
         this.db.prepare("UPDATE seller_offers SET status = 'rejected', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?").run(offer.id);
+        this.db.prepare(`
+          INSERT INTO operational_audit_events (id, event_timestamp, event_type, actor_id, payload_json, correlation_id)
+          VALUES (?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 'OFFER_REJECTED', ?, ?, ?)
+        `).run(randomUUID(), actor, JSON.stringify({ opportunityId, offerId: offer.id, versionId: version.id, via: "investment_committee", reviewId: id }), randomUUID());
         this.db.prepare(`
           UPDATE seller_opportunities
           SET opportunity_status = 'on_hold', pipeline_stage = 'offer_approval_required', updated_by = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
