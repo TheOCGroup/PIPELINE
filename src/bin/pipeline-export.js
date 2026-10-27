@@ -3,9 +3,12 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
-const SOURCE_DB_PATH = "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\ocg-one-pipeline-3e\\database\\ocg_one.db";
-const BACKUP_DB_PATH = "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\ocg_one_snapshot.db";
-const EXPORT_JSON_PATH = "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\pipeline_export.json";
+// UA-027-1: paths are portable — positional args win, then env, then the
+// historical founder-machine defaults (unchanged behavior when neither
+// is supplied). Usage: node pipeline-export.js [sourceDb] [snapshotDb] [exportJson]
+const SOURCE_DB_PATH = process.argv[2] || process.env.PIPELINE_EXPORT_SOURCE_DB || "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\ocg-one-pipeline-3e\\database\\ocg_one.db";
+const BACKUP_DB_PATH = process.argv[3] || process.env.PIPELINE_EXPORT_SNAPSHOT_DB || "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\ocg_one_snapshot.db";
+const EXPORT_JSON_PATH = process.argv[4] || process.env.PIPELINE_EXPORT_JSON || "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\pipeline_export.json";
 
 function getFileHash(filePath) {
   if (!existsSync(filePath)) return null;
@@ -34,7 +37,7 @@ async function runExport() {
     const { rmSync } = await import("node:fs");
     try { rmSync(BACKUP_DB_PATH, { force: true }); } catch {}
     
-    srcDb.exec(`VACUUM INTO '${BACKUP_DB_PATH}'`);
+    srcDb.exec(`VACUUM INTO '${BACKUP_DB_PATH.replaceAll("'", "''")}'`);
     console.log("Snapshot database created successfully.");
   } catch (err) {
     console.error(`Failed to create snapshot database: ${err.message}`);

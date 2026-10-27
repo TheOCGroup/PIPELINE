@@ -170,17 +170,29 @@ if (isMain) {
     console.error("usage: node src/bin/pipeline-remediate-027.js <dbPath> [--apply] [--include-immutable]");
     process.exit(2);
   }
-  const db = new DatabaseSync(dbPath);
-  const cols = db.prepare(`PRAGMA table_info(seller_offer_versions)`).all().map((c) => c.name);
-  if (!cols.includes("underwriting_ref_id")) {
-    console.error("database has not been migrated to 027 (no underwriting_ref_id column) — refusing to run");
+  // UA-027-3: fail CLOSED and CLEAN. Structural preflight first, and any
+  // failure anywhere is a one-line refusal with a non-zero exit — never
+  // an uncaught stack trace, and never a partial write (planning always
+  // precedes writes, and apply runs in a single transaction).
+  try {
+    const db = new DatabaseSync(dbPath);
+    const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all().map((r) => r.name);
+    for (const required of ["seller_offer_versions", "seller_offers", "opportunity_underwriting_refs"]) {
+      if (!tables.includes(required)) throw new Error(`required table missing: ${required}`);
+    }
+    const cols = db.prepare(`PRAGMA table_info(seller_offer_versions)`).all().map((c) => c.name);
+    if (!cols.includes("underwriting_ref_id")) {
+      throw new Error("database has not been migrated to 027 (no underwriting_ref_id column)");
+    }
+    if (flags.includes("--apply")) {
+      const manifest = applyRemediation(db, { includeImmutable: flags.includes("--include-immutable") });
+      console.log(JSON.stringify({ mode: "apply", manifest }, null, 2));
+    } else {
+      console.log(JSON.stringify({ mode: "dry-run", manifest: planRemediation(db) }, null, 2));
+    }
+    db.close();
+  } catch (err) {
+    console.error(`remediation refused: ${err.message}`);
     process.exit(1);
   }
-  if (flags.includes("--apply")) {
-    const manifest = applyRemediation(db, { includeImmutable: flags.includes("--include-immutable") });
-    console.log(JSON.stringify({ mode: "apply", manifest }, null, 2));
-  } else {
-    console.log(JSON.stringify({ mode: "dry-run", manifest: planRemediation(db) }, null, 2));
-  }
-  db.close();
 }
