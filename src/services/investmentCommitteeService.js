@@ -9,10 +9,19 @@ function finite(value) {
   // Unknown stays unknown: null/undefined/blank are NOT zero. (Number(null)
   // is 0, which previously fabricated figures — e.g. "DSCR 0.00" — from
   // missing evidence.)
-  if (value === null || value === undefined) return null;
-  if (typeof value === "string" && value.trim() === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  // DUA1: only genuine numerics are figures. Non-scalar values must never
+  // be coerced through Number() — Number([]) is 0, Number(true) is 1,
+  // Number("0x10") is 16: all fabricated figures. A string counts only
+  // when its trimmed form is a plain decimal literal.
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") return null;
+    if (!/^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/.test(trimmed)) return null;
+    const n = Number(trimmed);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }
 
 export class InvestmentCommitteeService {

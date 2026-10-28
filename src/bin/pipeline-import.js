@@ -254,6 +254,25 @@ async function runImport() {
       );
     }
 
+    // Import underwriting references (migration 027: offer versions link
+    // to these rows, so they must land before the versions import).
+    console.log("Migrating underwriting references...");
+    for (const row of payload.data.opportunity_underwriting_refs || []) {
+      const get = (k) => getValue(row, k);
+      db.prepare(`
+        INSERT INTO opportunity_underwriting_refs (
+          id, opportunity_id, source_system, source_agent, source_project_id,
+          source_underwriting_id, source_version_id, analysis_status,
+          arv, rehab, mao, confidence, limitations, evidence_summary_json, analyzed_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        get("id"), get("opportunity_id"), get("source_system"), get("source_agent"), get("source_project_id"),
+        get("source_underwriting_id"), get("source_version_id"), get("analysis_status") || get("status"),
+        get("arv"), get("rehab"), get("mao"), get("confidence"), get("limitations"),
+        get("evidence_summary_json"), get("analyzed_at"), get("created_at")
+      );
+    }
+
     // Import offer versions
     console.log("Migrating offer versions...");
     for (const row of payload.data.seller_offer_versions) {
@@ -263,15 +282,15 @@ async function runImport() {
           id, offer_id, version_number, version_status, strategy_type, purchase_price,
           earnest_money, inspection_days, closing_days, expiration_at, contingencies_json,
           seller_facing_terms, internal_notes, underwriting_source_type, underwriting_source_id,
-          underwriting_version_id, underwriting_arv_snapshot, underwriting_rehab_snapshot,
+          underwriting_version_id, underwriting_ref_id, underwriting_arv_snapshot, underwriting_rehab_snapshot,
           underwriting_mao_snapshot, underwriting_confidence, underwriting_limitations,
           underwriting_timestamp, ocg_one_approval_id, created_by, created_at, superseded_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         get("id"), get("offer_id"), get("version_number"), get("version_status"), get("strategy_type"), get("purchase_price"),
         get("earnest_money"), get("inspection_days"), get("closing_days"), get("expiration_at"), get("contingencies_json"),
         get("seller_facing_terms"), get("internal_notes"), get("underwriting_source_type"), get("underwriting_source_id"),
-        get("underwriting_version_id"), get("underwriting_arv_snapshot"), get("underwriting_rehab_snapshot"),
+        get("underwriting_version_id"), get("underwriting_ref_id") ?? null, get("underwriting_arv_snapshot"), get("underwriting_rehab_snapshot"),
         get("underwriting_mao_snapshot"), get("underwriting_confidence"), get("underwriting_limitations"),
         get("underwriting_timestamp"), get("approval_id") || get("ocg_one_approval_id"), get("created_by"), get("created_at"), get("superseded_by")
       );

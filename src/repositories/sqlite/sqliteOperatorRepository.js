@@ -185,6 +185,7 @@ export class SqliteOperatorRepository {
           underwritingSourceType: v.underwriting_source_type,
           underwritingSourceId: v.underwriting_source_id,
           underwritingVersionId: v.underwriting_version_id,
+          underwritingRefId: v.underwriting_ref_id ?? null,
           underwritingArvSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).arv,
           underwritingRehabSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).rehab,
           underwritingMaoSnapshot: resolveSnapshotFigures(this.db, o.opportunity_id, v).mao,
@@ -244,16 +245,16 @@ export class SqliteOperatorRepository {
       INSERT INTO seller_offer_versions (
         id, offer_id, version_number, version_status, strategy_type, purchase_price,
         earnest_money, inspection_days, closing_days, contingencies_json, internal_notes,
-        underwriting_source_type, underwriting_source_id, underwriting_version_id,
+        underwriting_source_type, underwriting_source_id, underwriting_version_id, underwriting_ref_id,
         underwriting_arv_snapshot, underwriting_rehab_snapshot, underwriting_mao_snapshot,
         underwriting_confidence, underwriting_limitations, underwriting_timestamp, created_by
-      ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       versionId, offerId, nextVersionNumber, strategy, price, em, insp, cls,
       typeof cont === "string" ? cont : JSON.stringify(cont), notes,
       uw.source_system === "deal-scout" ? "victor_analysis" : uw.source_system === "operator_assumption" ? "operator_assumption" : "deal_scout_project",
-      uw.source_underwriting_id || uw.source_project_id || uw.id, uw.source_version_id || "1",
-      uw.arv ?? 0, uw.rehab ?? 0, uw.mao ?? 0, uw.confidence ?? null, uw.limitations || "", // arv/rehab/mao columns are NOT NULL (005): 0 is a storage sentinel for "unknown" — read models resolve figures via the underwriting ref (snapshotResolution.js) and never present the sentinel as a figure
+      uw.source_underwriting_id || uw.source_project_id || uw.id, uw.source_version_id || "1", uw.id,
+      uw.arv ?? null, uw.rehab ?? null, uw.mao ?? null, uw.confidence ?? null, uw.limitations || "", // snapshot columns are nullable since migration 027: unknown figures store as NULL, and the version links its exact underwriting ref (underwriting_ref_id)
       uw.analyzed_at || now(), actor
     );
 
@@ -320,15 +321,15 @@ export class SqliteOperatorRepository {
         INSERT INTO seller_offer_versions (
           id, offer_id, version_number, version_status, strategy_type, purchase_price,
           earnest_money, inspection_days, closing_days, contingencies_json, internal_notes,
-          underwriting_source_type, underwriting_source_id, underwriting_version_id,
+          underwriting_source_type, underwriting_source_id, underwriting_version_id, underwriting_ref_id,
           underwriting_arv_snapshot, underwriting_rehab_snapshot, underwriting_mao_snapshot,
           underwriting_confidence, underwriting_limitations, underwriting_timestamp, created_by
-        ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         nextVerId, offerId, nextVerNum, strategy, price, em, insp, cls, cont, notes,
         uw.source_system === "deal-scout" ? "victor_analysis" : uw.source_system === "operator_assumption" ? "operator_assumption" : "deal_scout_project",
-        uw.source_underwriting_id || uw.source_project_id || uw.id, uw.source_version_id || "1",
-        uw.arv ?? 0, uw.rehab ?? 0, uw.mao ?? 0, uw.confidence ?? null, uw.limitations || "", // arv/rehab/mao columns are NOT NULL (005): 0 is a storage sentinel for "unknown" — read models resolve figures via the underwriting ref (snapshotResolution.js) and never present the sentinel as a figure
+        uw.source_underwriting_id || uw.source_project_id || uw.id, uw.source_version_id || "1", uw.id,
+      uw.arv ?? null, uw.rehab ?? null, uw.mao ?? null, uw.confidence ?? null, uw.limitations || "", // snapshot columns are nullable since migration 027: unknown figures store as NULL, and the version links its exact underwriting ref (underwriting_ref_id)
         uw.analyzed_at || now(), actor
       );
 
