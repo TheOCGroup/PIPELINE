@@ -6,6 +6,16 @@ import { join } from "node:path";
 // UA-027-1: paths are portable — positional args win, then env, then the
 // historical founder-machine defaults (unchanged behavior when neither
 // is supplied). Usage: node pipeline-export.js [sourceDb] [snapshotDb] [exportJson]
+//
+// F-027-EXPORT (fixed): the source database is opened READ-ONLY and its
+// journal mode is never changed. The previous implementation opened the
+// source read-write and executed `PRAGMA journal_mode = WAL` on it,
+// which rewrote a non-WAL source's file header — mutating immutable
+// backup evidence and then aborting on the resulting hash change.
+// VACUUM INTO works from a read-only connection, so no write access to
+// the source is ever needed. The before/after hash and journal-mode
+// checks below are therefore true mutation detectors: any change means
+// something outside this tool touched the source, and the export aborts.
 const SOURCE_DB_PATH = process.argv[2] || process.env.PIPELINE_EXPORT_SOURCE_DB || "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\ocg-one-pipeline-3e\\database\\ocg_one.db";
 const BACKUP_DB_PATH = process.argv[3] || process.env.PIPELINE_EXPORT_SNAPSHOT_DB || "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\ocg_one_snapshot.db";
 const EXPORT_JSON_PATH = process.argv[4] || process.env.PIPELINE_EXPORT_JSON || "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\pipeline_export.json";
@@ -28,17 +38,22 @@ async function runExport() {
   const hashBefore = getFileHash(SOURCE_DB_PATH);
   console.log(`Source DB Hash (before): ${hashBefore}`);
 
-  // 2. Perform online backup using VACUUM INTO
+  // 2. Perform online backup using VACUUM INTO from a READ-ONLY
+  // connection. The source is never opened read-write and its journal
+  // mode is never touched (F-027-EXPORT).
   console.log("Creating consistent snapshot using VACUUM INTO...");
-  const srcDb = new DatabaseSync(SOURCE_DB_PATH);
+  const srcDb = new DatabaseSync(SOURCE_DB_PATH, { readOnly: true });
+  let journalModeBefore;
+  let journalModeAfter;
   try {
-    srcDb.exec("PRAGMA journal_mode = WAL;");
+    journalModeBefore = srcDb.prepare("PRAGMA journal_mode").get()?.journal_mode;
     // SQLite doesn't allow VACUUM INTO if target file already exists, so delete it if present
     const { rmSync } = await import("node:fs");
     try { rmSync(BACKUP_DB_PATH, { force: true }); } catch {}
-    
+
     srcDb.exec(`VACUUM INTO '${BACKUP_DB_PATH.replaceAll("'", "''")}'`);
     console.log("Snapshot database created successfully.");
+    journalModeAfter = srcDb.prepare("PRAGMA journal_mode").get()?.journal_mode;
   } catch (err) {
     console.error(`Failed to create snapshot database: ${err.message}`);
     process.exit(1);
@@ -46,21 +61,25 @@ async function runExport() {
     srcDb.close();
   }
 
-  // 3. Confirm source safety (hash must match)
+  // 3. Confirm source safety (hash and journal mode must be unchanged)
   const hashAfter = getFileHash(SOURCE_DB_PATH);
   console.log(`Source DB Hash (after):  ${hashAfter}`);
   if (hashBefore !== hashAfter) {
     console.error("CRITICAL ERROR: Source database hash changed during backup! Aborting.");
     process.exit(1);
   }
-  console.log("Source safety confirmed. Database was not mutated.");
+  if (journalModeBefore !== journalModeAfter) {
+    console.error(`CRITICAL ERROR: Source database journal mode changed during backup (${journalModeBefore} -> ${journalModeAfter})! Aborting.`);
+    process.exit(1);
+  }
+  console.log(`Source safety confirmed. Database was not mutated (journal mode: ${journalModeAfter}).`);
 
   // 4. Open snapshot DB and run integrity checks
   const snapshotDb = new DatabaseSync(BACKUP_DB_PATH);
   const integrity = snapshotDb.prepare("PRAGMA integrity_check").get()?.integrity_check;
-  const fkCheck = snapshotDb.prepare("PRAGMA foreign_key_check").get();
-  console.log(`Snapshot integrity check: ${integrity}`);
-  if (integrity !== "ok" || fkCheck !== undefined) {
+  const fkViolations = snapshotDb.prepare("PRAGMA foreign_key_check").all();
+  console.log(`Snapshot integrity check: ${integrity} (foreign key violations: ${fkViolations.length})`);
+  if (integrity !== "ok" || fkViolations.length > 0) {
     console.error("CRITICAL ERROR: Snapshot database integrity check failed! Aborting.");
     process.exit(1);
   }

@@ -2,6 +2,42 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync, existsSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 
+// F-027-IMPORT (fixed): seller offers are imported with active_version_id
+// temporarily NULL; the pointers are restored only after the offer
+// versions (and underwriting references) have landed, with exact
+// ownership and version-number verification for each pointer. The
+// previous order inserted offers with their pointers already populated,
+// and the migration-006 ownership trigger correctly rejected the insert
+// because the referenced version rows did not exist yet — the import
+// could never import a database whose offers carry active versions
+// (exactly the production shape). Constraints are NOT weakened: the
+// restore runs through the same BEFORE UPDATE ownership trigger, and
+// any missing, foreign, or version-inconsistent pointer aborts the
+// whole transaction (atomic rollback, fail closed).
+//
+// RECOVERY HONESTY: this tool is a migration aid, not an exact
+// disaster-recovery mechanism. Section 7.5 synthesizes provenance and
+// classification records (new UUIDs and timestamps), and apply mode
+// writes an audit event. File-level SQLite backup/restore remains the
+// approved recovery method for production.
+//
+// F-027-IMPORT-2 (dispositioned): the seller_opportunities insert now
+// carries the opportunity-level underwriting SOURCE columns
+// (underwriting_source_type / _source_id / _version_id). The remaining
+// opportunity-level underwriting columns (target_purchase_price,
+// max_authorized_offer, underwriting_arv/rehab/mao_snapshot,
+// underwriting_confidence, underwriting_limitations,
+// underwriting_timestamp) are DEPRECATED BY SCHEMA DESIGN: migration
+// 006's triggers forbid writing any non-NULL value into them
+// ("Authoritative underwriting snapshots belong on
+// seller_offer_versions"), and every production opportunity row holds
+// NULL there. The import therefore cannot — and must not — write them.
+// If a legacy payload nonetheless carries non-NULL values in those
+// columns, the import prints an explicit per-row warning (never a
+// silent drop): the values remain preserved in the export payload
+// itself, which is the archival record, and a founder data decision is
+// required before they can be represented anywhere in the target.
+
 const DEFAULT_EXPORT_JSON_PATH = "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\pipeline_export.json";
 const DEFAULT_DB_PATH = "C:\\Users\\Genaro\\Documents\\OCG OS\\apps\\pipeline\\pipeline.db";
 
@@ -65,6 +101,15 @@ async function runImport() {
     process.exit(1);
   }
 
+  // Fail closed before opening the target: importing into a path that
+  // does not exist would silently create an empty file (DatabaseSync
+  // creates on open) and then fail mid-transaction. The target must be
+  // an existing, fully migrated database.
+  if (!existsSync(dbPath)) {
+    console.error(`import refused: target database not found: ${dbPath} (create and migrate it first)`);
+    process.exit(1);
+  }
+
   const payload = JSON.parse(readFileSync(exportPath, "utf8"));
 
   // Checksum Verification
@@ -93,6 +138,16 @@ async function runImport() {
   ];
 
   const db = new DatabaseSync(dbPath);
+  // Preflight: every table this tool writes to must already exist
+  // (a partially migrated target fails here, cleanly, before any write).
+  const requiredTables = [...tables, "opportunity_underwriting_refs", "source_provenance", "record_classifications", "classification_history", "operational_audit_events"];
+  const presentTables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name));
+  const missingTables = requiredTables.filter(t => !presentTables.has(t));
+  if (missingTables.length > 0) {
+    db.close();
+    console.error(`import refused: target database is missing required table(s): ${missingTables.join(", ")}`);
+    process.exit(1);
+  }
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec("BEGIN TRANSACTION;");
 
@@ -127,6 +182,18 @@ async function runImport() {
       return val;
     };
     
+    // Deprecated opportunity-level underwriting columns (F-027-IMPORT-2):
+    // migration 006 forbids writing non-NULL values into these columns,
+    // so they are not carried. Warn explicitly — never silently drop —
+    // when a legacy payload carries values there.
+    const DEPRECATED_OPP_UW_COLUMNS = ["target_purchase_price", "max_authorized_offer", "underwriting_arv_snapshot", "underwriting_rehab_snapshot", "underwriting_mao_snapshot", "underwriting_confidence", "underwriting_limitations", "underwriting_timestamp"];
+    for (const row of payload.data.seller_opportunities) {
+      const carried = DEPRECATED_OPP_UW_COLUMNS.filter(c => row[c] !== null && row[c] !== undefined);
+      if (carried.length > 0) {
+        console.error(`WARNING: opportunity ${row.id} carries value(s) in deprecated opportunity-level underwriting column(s) [${carried.join(", ")}] that the target schema (migration 006) forbids writing. They are NOT carried into the target; they remain preserved in this export payload. A founder data decision is required to represent them.`);
+      }
+    }
+
     // Import seller_opportunities
     console.log("Migrating seller_opportunities...");
     for (const row of payload.data.seller_opportunities) {
@@ -137,18 +204,19 @@ async function runImport() {
           qualification_status, contact_status, opportunity_status, data_quality_status,
           seller_motivation_type, seller_motivation_score, timeline_urgency, asking_price,
           seller_expected_price, desired_closing_date, occupancy_status, property_condition_summary,
+          underwriting_source_type, underwriting_source_id, underwriting_version_id,
           assigned_acquisition_manager_id, assigned_underwriter_id, first_contacted_at,
           last_contacted_at, next_scheduled_contact_at, underwriting_completed_at,
           offer_approved_at, offer_presented_at, contract_executed_at, scheduled_closing_at,
           closed_at, archived_at, created_by, updated_by, created_at, updated_at
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        )
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         get("id"), get("tenant_id"), get("opportunity_code"), get("property_id") || get("ocg_one_property_id"), get("pipeline_stage"),
         get("qualification_status"), get("contact_status"), get("opportunity_status"), get("data_quality_status"),
         get("seller_motivation_type"), get("seller_motivation_score"), get("timeline_urgency"), get("asking_price"),
         get("seller_expected_price"), get("desired_closing_date"), get("occupancy_status"), get("property_condition_summary"),
+        get("underwriting_source_type"), get("underwriting_source_id"), get("underwriting_version_id"),
         get("assigned_acquisition_manager_id"), get("assigned_underwriter_id"), get("first_contacted_at"),
         get("last_contacted_at"), get("next_scheduled_contact_at"), get("underwriting_completed_at"),
         get("offer_approved_at"), get("offer_presented_at"), get("contract_executed_at"), get("scheduled_closing_at"),
@@ -239,8 +307,13 @@ async function runImport() {
       );
     }
 
-    // Import offers
+    // Import offers — with active_version_id temporarily NULL
+    // (F-027-IMPORT): the ownership trigger requires the referenced
+    // version row to exist, and versions are imported after offers.
+    // The declared pointers are restored and verified once every
+    // version has landed (see the pointer-restoration step below).
     console.log("Migrating offers...");
+    const intendedPointers = [];
     for (const row of payload.data.seller_offers) {
       const get = (k) => getValue(row, k);
       db.prepare(`
@@ -249,9 +322,16 @@ async function runImport() {
           created_by, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        get("id"), get("opportunity_id"), get("current_version"), get("status"), get("active_version_id"),
+        get("id"), get("opportunity_id"), get("current_version"), get("status"), null,
         get("created_by"), get("created_at"), get("updated_at")
       );
+      if (get("active_version_id") !== null) {
+        intendedPointers.push({
+          offerId: get("id"),
+          activeVersionId: get("active_version_id"),
+          currentVersion: get("current_version")
+        });
+      }
     }
 
     // Import underwriting references (migration 027: offer versions link
@@ -323,6 +403,33 @@ async function runImport() {
         get("related_offer_version_id"), get("reopen_eligibility"), get("created_at")
       );
     }
+
+    // Restore active-version pointers (F-027-IMPORT). Every declared
+    // pointer is verified against the imported versions BEFORE it is
+    // written: the version must exist, must belong to the exact offer,
+    // and its version_number must equal the offer's current_version.
+    // The UPDATE itself passes through the BEFORE UPDATE ownership
+    // trigger. Any inconsistency throws, and the surrounding
+    // transaction rolls the entire import back atomically.
+    console.log("Restoring active-version pointers...");
+    for (const pointer of intendedPointers) {
+      const version = db.prepare(`SELECT offer_id, version_number FROM seller_offer_versions WHERE id = ?`).get(pointer.activeVersionId);
+      if (!version) {
+        throw new Error(`import integrity failure: active version ${pointer.activeVersionId} declared by offer ${pointer.offerId} is missing from the imported versions`);
+      }
+      if (version.offer_id !== pointer.offerId) {
+        throw new Error(`import integrity failure: active version ${pointer.activeVersionId} belongs to offer ${version.offer_id}, not ${pointer.offerId}`);
+      }
+      if (Number(version.version_number) !== Number(pointer.currentVersion)) {
+        throw new Error(`import integrity failure: offer ${pointer.offerId} declares current_version ${pointer.currentVersion} but its active version ${pointer.activeVersionId} has version_number ${version.version_number}`);
+      }
+      db.prepare(`UPDATE seller_offers SET active_version_id = ? WHERE id = ?`).run(pointer.activeVersionId, pointer.offerId);
+    }
+    const fkViolationsAfterRestore = db.prepare(`PRAGMA foreign_key_check`).all();
+    if (fkViolationsAfterRestore.length > 0) {
+      throw new Error(`import integrity failure: ${fkViolationsAfterRestore.length} foreign key violation(s) remain after pointer restoration`);
+    }
+    console.log(`Active-version pointers restored: ${intendedPointers.length} (ownership and version consistency verified).`);
 
     // 7.5 Provenance and classification migration + recovery
     console.log("Running provenance resolution & classification determination...");
@@ -419,6 +526,10 @@ async function runImport() {
       db.exec("ROLLBACK;");
       console.log("[PASS] Dry-run preview complete. Transaction rolled back successfully.");
     }
+
+    console.log("\nNOTE: export/import is a migration aid, not an exact disaster-recovery mechanism.");
+    console.log("Provenance/classification records are synthesized during import (new IDs/timestamps).");
+    console.log("File-level SQLite backup/restore remains the approved production recovery method.");
 
     // Print Parity Statistics
     console.log("\n=== PARITY STATISTICS ===");
