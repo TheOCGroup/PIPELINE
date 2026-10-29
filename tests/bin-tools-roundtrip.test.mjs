@@ -119,8 +119,8 @@ function runImport(json, target, mode = "apply") {
   return spawnSync("node", [IMPORT_CLI, mode, json, target], { encoding: "utf8" });
 }
 
-function freshTarget(dir) {
-  const target = join(dir, "target.db");
+function freshTarget(dir, name = "target.db") {
+  const target = join(dir, name);
   const db = migratedDb(target, { wal: false });
   db.close();
   return target;
@@ -308,6 +308,41 @@ test("F-027-IMPORT-2: deprecated opportunity-level values warn explicitly and ar
   assert.equal(db.prepare("SELECT underwriting_source_id FROM seller_opportunities WHERE id = 'oppA'").get().underwriting_source_id, "srcA", "unguarded source columns ARE carried");
   assert.equal(db.prepare("SELECT COUNT(*) c FROM seller_offer_versions").get().c, 7, "rest of the import unaffected");
   db.close();
+});
+
+test("F-027-IMPORT-2/U1: deprecation warnings are persisted in the MIGRATION_IMPORT audit event", () => {
+  const { dir, path } = buildSource({ wal: true });
+  const { json } = runExport(path, dir);
+  const payload = JSON.parse(readFileSync(json, "utf8"));
+  payload.data.seller_opportunities.find(o => o.id === "oppA").underwriting_arv_snapshot = 150000;
+  payload.data.seller_opportunities.find(o => o.id === "oppB").underwriting_mao_snapshot = 42000;
+  fixChecksum(payload, "seller_opportunities");
+  const legacy = join(dir, "legacy2.json");
+  writeFileSync(legacy, JSON.stringify(payload, null, 2));
+  const target = freshTarget(dir);
+  const imp = runImport(legacy, target);
+  assert.equal(imp.status, 0, imp.stdout + imp.stderr);
+  assert.match(imp.stdout, /Deprecation warnings: 2 opportunity row\(s\) carried deprecated underwriting value\(s\) that were NOT carried/);
+  assert.match(imp.stdout, /recorded in the MIGRATION_IMPORT audit event/);
+  const db = new DatabaseSync(target, { readOnly: true });
+  const evt = db.prepare("SELECT payload_json FROM operational_audit_events WHERE event_type = 'MIGRATION_IMPORT'").get();
+  assert.ok(evt, "audit event exists");
+  const recorded = JSON.parse(evt.payload_json).deprecationWarnings;
+  assert.deepEqual(recorded, [
+    { opportunityId: "oppA", columns: ["underwriting_arv_snapshot"] },
+    { opportunityId: "oppB", columns: ["underwriting_mao_snapshot"] }
+  ]);
+  db.close();
+
+  // A clean payload records an explicit empty warning list.
+  const target2 = freshTarget(dir, "target2.db");
+  const imp2 = runImport(json, target2);
+  assert.equal(imp2.status, 0, imp2.stdout + imp2.stderr);
+  assert.doesNotMatch(imp2.stdout, /Deprecation warnings: [1-9]/);
+  const db2 = new DatabaseSync(target2, { readOnly: true });
+  const evt2 = db2.prepare("SELECT payload_json FROM operational_audit_events WHERE event_type = 'MIGRATION_IMPORT'").get();
+  assert.deepEqual(JSON.parse(evt2.payload_json).deprecationWarnings, []);
+  db2.close();
 });
 
 test("schema governance: migration 006 forbids direct writes to deprecated opportunity underwriting columns", () => {
