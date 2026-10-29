@@ -187,9 +187,11 @@ async function runImport() {
     // so they are not carried. Warn explicitly — never silently drop —
     // when a legacy payload carries values there.
     const DEPRECATED_OPP_UW_COLUMNS = ["target_purchase_price", "max_authorized_offer", "underwriting_arv_snapshot", "underwriting_rehab_snapshot", "underwriting_mao_snapshot", "underwriting_confidence", "underwriting_limitations", "underwriting_timestamp"];
+    const deprecationWarnings = [];
     for (const row of payload.data.seller_opportunities) {
       const carried = DEPRECATED_OPP_UW_COLUMNS.filter(c => row[c] !== null && row[c] !== undefined);
       if (carried.length > 0) {
+        deprecationWarnings.push({ opportunityId: row.id, columns: carried });
         console.error(`WARNING: opportunity ${row.id} carries value(s) in deprecated opportunity-level underwriting column(s) [${carried.join(", ")}] that the target schema (migration 006) forbids writing. They are NOT carried into the target; they remain preserved in this export payload. A founder data decision is required to represent them.`);
       }
     }
@@ -517,7 +519,7 @@ async function runImport() {
         ) VALUES (?, ?, ?, ?, ?, ?)
       `).run(
         randomUUID(), new Date().toISOString(), "MIGRATION_IMPORT", "importer",
-        JSON.stringify({ recordCounts: payload.recordCounts }), "migration-corr-id"
+        JSON.stringify({ recordCounts: payload.recordCounts, deprecationWarnings }), "migration-corr-id"
       );
 
       db.exec("COMMIT;");
@@ -525,6 +527,14 @@ async function runImport() {
     } else {
       db.exec("ROLLBACK;");
       console.log("[PASS] Dry-run preview complete. Transaction rolled back successfully.");
+    }
+
+    // Deprecation warnings must survive an unattended run: they are
+    // printed here on stdout as a count, and on apply they are also
+    // persisted in the MIGRATION_IMPORT audit event payload above
+    // (QUINCEY U1, PR #34 certification).
+    if (deprecationWarnings.length > 0) {
+      console.log(`Deprecation warnings: ${deprecationWarnings.length} opportunity row(s) carried deprecated underwriting value(s) that were NOT carried into the target (details on stderr${isApply ? "; recorded in the MIGRATION_IMPORT audit event" : ""}).`);
     }
 
     console.log("\nNOTE: export/import is a migration aid, not an exact disaster-recovery mechanism.");
