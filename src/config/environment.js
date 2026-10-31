@@ -155,6 +155,14 @@ export function loadConfig(env = process.env) {
     : "";
   const serviceKeyId = env.OCG_ONE_SERVICE_KEY_ID || "";
 
+  // Tenant scope: one deployment serves exactly one tenant. The value comes
+  // only from deployment configuration — never from a request. Writers stamp
+  // it and every read path filters on it (see src/repositories/sqlite/
+  // tenantScope.js). Non-production defaults to the canonical 'ocg-one'.
+  const tenantId = env.PIPELINE_TENANT_ID && String(env.PIPELINE_TENANT_ID).trim()
+    ? String(env.PIPELINE_TENANT_ID).trim()
+    : "ocg-one";
+
   // Data source: 'empty' or 'fixtures'. Default to empty;
   // production defaults to empty and must never silently use fixtures.
   const dataSource = (env.PIPELINE_DATA_SOURCE || "empty").toLowerCase();
@@ -203,11 +211,23 @@ export function loadConfig(env = process.env) {
     throw new Error(`PIPELINE_OPERATOR_SECRET is too weak for production (min ${OPERATOR_SECRET_MIN} chars)`);
   }
 
+  // Fail closed, same predicate style as the operator-secret check above: a
+  // production deployment with writes enabled and OCG ONE integration
+  // disabled must declare its tenant explicitly. Booting a tenant-filtered
+  // build without PIPELINE_TENANT_ID would scope every read to a guessed
+  // value and hide the deployment's own records from its operator.
+  if (appEnv === "production" && !readOnly && !integrationEnabled) {
+    if (!env.PIPELINE_TENANT_ID || !String(env.PIPELINE_TENANT_ID).trim()) {
+      throw new Error("PIPELINE_TENANT_ID is required in production when PIPELINE_READ_ONLY=false and OCG ONE integration is disabled");
+    }
+  }
+
   return {
     host,
     port,
     dbPath,
     env: appEnv,
+    tenantId,
     integrationEnabled,
     readOnly,
     sessionSecret,

@@ -61,12 +61,26 @@ Short form:
   (fail-closed), session + CSRF on cookie writes, roles
   viewer / operator / manager / administrator (`src/auth/authorization.js`),
   PIPER write tools require operator approval before execution.
-- **Tenant isolation (PARTIAL — do not overclaim):** `seller_opportunities`
-  carries `tenant_id` (default `'ocg-one'`, migration 003) and intake/conversion
-  paths store it, but read paths do **not** filter by tenant today. OCG OS is
-  operated single-tenant (Ocasio Collective). Multi-tenant enforcement is a
-  defined-but-unimplemented requirement: before any second tenant, read and
-  write queries must be tenant-scoped and covered by isolation tests.
+- **Tenant isolation (IMPLEMENTED — single-tenant deployment model):**
+  `seller_opportunities` carries `tenant_id` (default `'ocg-one'`, migration
+  003; index `idx_seller_opportunities_tenant`, migration 028). Each
+  deployment serves exactly ONE tenant, configured by `PIPELINE_TENANT_ID`
+  (production boot fails closed when it is unset; non-production default
+  `'ocg-one'`). Opportunity, provenance, and classification root reads are
+  filtered by the configured tenant; operator, investment-committee,
+  transaction-workflow, seller-timeline, agent-work-room, and PIPER read
+  paths assert parent-opportunity ownership before reading or mutating by
+  `opportunity_id`, so an opportunity owned by another tenant behaves exactly
+  like a nonexistent one on every such surface. Intake dedupe (source record,
+  APN, address) matches only within the configured tenant, manual create and
+  S2S conversion stamp the configured tenant, and conversion never accepts a
+  tenant from the request body. This is enforcement for a single-tenant
+  deployment, NOT a multi-tenant platform claim: one process serves one
+  tenant, and isolation is covered by `tests/tenant-isolation.test.mjs`.
+  Data note: production historically carried mixed labels (`'ocg-one'` and
+  `'pipeline'`); normalizing stored rows to the canonical `'ocg-one'` is a
+  separate founder-authorized data step — the code never rewrites stored
+  tenant labels on its own.
 - **Financial labelling (RULE):** every ARV / rehab / MAO / rent / DSCR figure
   stored in PIPELINE is a snapshot attributed to its source
   (`victor_analysis`, `deal_scout_project`, or `operator_assumption`) with its

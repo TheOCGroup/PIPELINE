@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import { sendJson } from "../response.js";
 import { STAGES, CLOSED_STAGES } from "../../domain/stages/stageModel.js";
 import { persistSellerContact } from "../../services/sellerContactService.js";
+import { normalizeTenantId } from "../../repositories/sqlite/tenantScope.js";
 
 const MAX_TEXT = 4000;
 
@@ -75,23 +76,28 @@ function normalizeAddress(address) {
   return address.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function findDuplicate(db, { apn, normalizedAddress }) {
+function findDuplicate(db, { apn, normalizedAddress, tenantId }) {
+  // Tenant-scoped: a record owned by another tenant never matches.
   try {
     if (apn) {
       const byApn = db
         .prepare(
-          `SELECT opportunity_id FROM seller_opportunity_sources
-           WHERE JSON_EXTRACT(provenance_metadata_json, '$.apn') = ?`
+          `SELECT sos.opportunity_id AS opportunity_id FROM seller_opportunity_sources sos
+           JOIN seller_opportunities o ON o.id = sos.opportunity_id
+           WHERE JSON_EXTRACT(sos.provenance_metadata_json, '$.apn') = ?
+             AND o.tenant_id = ?`
         )
-        .get(apn);
+        .get(apn, tenantId);
       if (byApn) return { opportunityId: byApn.opportunity_id, matchType: "apn" };
     }
     const byAddress = db
       .prepare(
-        `SELECT opportunity_id FROM seller_opportunity_sources
-         WHERE LOWER(original_address) = ?`
+        `SELECT sos.opportunity_id AS opportunity_id FROM seller_opportunity_sources sos
+         JOIN seller_opportunities o ON o.id = sos.opportunity_id
+         WHERE LOWER(sos.original_address) = ?
+           AND o.tenant_id = ?`
       )
-      .get(normalizedAddress);
+      .get(normalizedAddress, tenantId);
     if (byAddress) return { opportunityId: byAddress.opportunity_id, matchType: "normalized_address" };
   } catch (err) {
     console.error("Opportunity dedupe query failed:", err.message);
@@ -123,7 +129,8 @@ async function handleCreate(req, res, ctx) {
     ? body.classification
     : "unknown";
 
-  const duplicate = findDuplicate(ctx.db, { apn, normalizedAddress });
+  const tenantId = normalizeTenantId(ctx.config && ctx.config.tenantId);
+  const duplicate = findDuplicate(ctx.db, { apn, normalizedAddress, tenantId });
   if (duplicate) {
     return ok(res, {
       duplicate: true,
@@ -156,11 +163,12 @@ async function handleCreate(req, res, ctx) {
          qualification_status, contact_status, opportunity_status, data_quality_status,
          seller_motivation_type, asking_price, property_condition_summary,
          created_by, updated_by
-       ) VALUES (?, 'pipeline', ?, ?, 'new_lead',
+       ) VALUES (?, ?, ?, ?, 'new_lead',
          'needs_review', 'uncontacted', 'active', 'raw_ingestion',
          ?, ?, ?, ?, ?)`
     ).run(
       opportunityId,
+      tenantId,
       opportunityCode,
       propertyId,
       text(body.motivation, "motivation", { required: false, max: 200 }),
@@ -248,7 +256,8 @@ async function handleStageMove(req, res, ctx, opportunityId) {
   const actor = actorOf(req);
   const db = ctx.db;
 
-  const opp = db.prepare("SELECT id, pipeline_stage FROM seller_opportunities WHERE id = ?").get(opportunityId);
+  const tenantId = normalizeTenantId(ctx.config && ctx.config.tenantId);
+  const opp = db.prepare("SELECT id, pipeline_stage FROM seller_opportunities WHERE id = ? AND tenant_id = ?").get(opportunityId, tenantId);
   if (!opp) return sendJson(res, 404, { ok: false, error: "opportunity_not_found" });
   if (opp.pipeline_stage === stage) {
     return ok(res, { opportunityId, stage, moved: false });
@@ -300,7 +309,8 @@ async function handleStageMove(req, res, ctx, opportunityId) {
 async function handleAddContact(req, res, ctx, opportunityId) {
   const body = await readJson(req);
   const db = ctx.db;
-  const opp = db.prepare("SELECT id FROM seller_opportunities WHERE id = ?").get(opportunityId);
+  const tenantId = normalizeTenantId(ctx.config && ctx.config.tenantId);
+  const opp = db.prepare("SELECT id FROM seller_opportunities WHERE id = ? AND tenant_id = ?").get(opportunityId, tenantId);
   if (!opp) return sendJson(res, 404, { ok: false, error: "opportunity_not_found" });
 
   const actor = actorOf(req);

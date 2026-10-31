@@ -357,6 +357,14 @@ export const isKnownTool = (name) => TOOL_SCHEMAS.some((t) => t.function.name ==
  * responsible for the gate; this function assumes it has already been passed.
  */
 export async function executeTool({ name, args = {}, snapshot, operator, actor = "piper" }) {
+  // Tenant scope for seller-data tools: the operator repository carries the
+  // deployment's configured tenant; every opportunity id entering below is
+  // resolved against it (a foreign id reads exactly like a nonexistent one).
+  const tenantId = operator ? operator.tenantId || null : null;
+  const opportunityExists = (opportunityId) =>
+    tenantId
+      ? !!operator.db.prepare("SELECT 1 FROM seller_opportunities WHERE id = ? AND tenant_id = ?").get(opportunityId, tenantId)
+      : !!operator.db.prepare("SELECT 1 FROM seller_opportunities WHERE id = ?").get(opportunityId);
   switch (name) {
     case "get_operating_brief":
       return { ok: true, data: buildBrief(snapshot) };
@@ -512,6 +520,7 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
         address: str(args.address, 200),
         phone: str(args.phone, 60),
         limit: args.limit,
+        tenantId,
       });
       if (result.error) return { ok: false, error: result.error, detail: "Pass a seller name, address fragment, or phone number." };
       return { ok: true, data: result };
@@ -521,15 +530,16 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
       const seller = resolveSeller(operator.db, {
         contactId: str(args.contactId, 200),
         opportunityId: str(args.opportunityId, 200),
+        tenantId,
       });
       if (!seller) return { ok: false, error: "seller_not_found" };
-      return { ok: true, data: { seller, opportunities: sellerOpportunities(operator.db, seller.contactId) } };
+      return { ok: true, data: { seller, opportunities: sellerOpportunities(operator.db, seller.contactId, tenantId) } };
     }
 
     case "get_seller_timeline": {
       const opportunityId = str(args.opportunityId, 200);
       if (!opportunityId) return { ok: false, error: "missing_opportunityId" };
-      const timeline = sellerTimeline(operator.db, operator, opportunityId, { limit: args.limit });
+      const timeline = sellerTimeline(operator.db, operator, opportunityId, { limit: args.limit, tenantId });
       if (!timeline.found) return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
       return { ok: true, data: timeline };
     }
@@ -537,16 +547,14 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
     case "get_last_contact": {
       const opportunityId = str(args.opportunityId, 200);
       if (!opportunityId) return { ok: false, error: "missing_opportunityId" };
-      const exists = operator.db.prepare("SELECT 1 FROM seller_opportunities WHERE id = ?").get(opportunityId);
-      if (!exists) return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
-      return { ok: true, data: lastContact(operator.db, opportunityId) };
+      if (!opportunityExists(opportunityId)) return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
+      return { ok: true, data: lastContact(operator.db, opportunityId, tenantId) };
     }
 
     case "get_offer_history": {
       const opportunityId = str(args.opportunityId, 200);
       if (!opportunityId) return { ok: false, error: "missing_opportunityId" };
-      const exists = operator.db.prepare("SELECT 1 FROM seller_opportunities WHERE id = ?").get(opportunityId);
-      if (!exists) return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
+      if (!opportunityExists(opportunityId)) return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
       return { ok: true, data: { opportunityId, offers: operator.listOffers(opportunityId) } };
     }
 
@@ -567,6 +575,7 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
         maxPrice: args.maxPrice,
         stage: str(args.stage, 60),
         limit: args.limit,
+        tenantId,
       });
       if (result.error) return { ok: false, error: result.error, detail: "Pass a street, name, price, or stage to search on." };
       return { ok: true, data: result };
@@ -576,6 +585,7 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
       const plan = prepareCallPlan(operator.db, operator, {
         contactId: str(args.contactId, 200),
         opportunityId: str(args.opportunityId, 200),
+        tenantId,
       });
       if (!plan.ok) return { ok: false, error: plan.error, detail: plan.detail };
       return { ok: true, data: plan };

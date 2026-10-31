@@ -22,16 +22,16 @@ export function buildServices(config, db) {
   let repos;
   if (config.dataSource === "empty") {
     repos = {
-      opportunity: new SqliteOpportunityRepository(db),
-      provenance: new SqliteProvenanceRepository(db),
-      classification: new SqliteClassificationRepository(db),
+      opportunity: new SqliteOpportunityRepository(db, config.tenantId),
+      provenance: new SqliteProvenanceRepository(db, config.tenantId),
+      classification: new SqliteClassificationRepository(db, config.tenantId),
     };
   } else {
     repos = buildFixtureRepositories(config.dataSource);
   }
 
-  const transactionService = db ? new TransactionWorkflowService(db) : null;
-  const dispositionService = db ? new PostRenovationDispositionService(db) : null;
+  const transactionService = db ? new TransactionWorkflowService(db, config.tenantId) : null;
+  const dispositionService = db ? new PostRenovationDispositionService(db, config.tenantId) : null;
   const piperContext = db ? buildRiskAwarePiperContext(db, config, transactionService, dispositionService) : null;
 
   return {
@@ -40,11 +40,11 @@ export function buildServices(config, db) {
     classifications: new ClassificationReadService(repos.classification),
     dataQuality: new DataQualityReadService(repos.opportunity),
     operator: db ? new SqliteOperatorRepository(db, config) : null,
-    investmentCommittee: db ? new InvestmentCommitteeService(db) : null,
+    investmentCommittee: db ? new InvestmentCommitteeService(db, config.tenantId) : null,
     transactions: transactionService,
-    renovationExits: db ? new RenovationExitGovernanceService(db) : null,
+    renovationExits: db ? new RenovationExitGovernanceService(db, config.tenantId) : null,
     dispositions: dispositionService,
-    workRoom: db ? createAgentWorkRoomService(db) : null,
+    workRoom: db ? createAgentWorkRoomService(db, config.tenantId) : null,
     piperContext,
     piper: db ? buildPiperRuntime(config, db, piperContext) : null,
   };
@@ -119,7 +119,7 @@ function buildRiskAwarePiperContext(db, config, transactions, dispositions = nul
 }
 
 function buildPiperRuntime(config, db, contextService = null) {
-  const context = contextService || buildRiskAwarePiperContext(db, config, new TransactionWorkflowService(db), new PostRenovationDispositionService(db));
+  const context = contextService || buildRiskAwarePiperContext(db, config, new TransactionWorkflowService(db, config.tenantId), new PostRenovationDispositionService(db, config.tenantId));
   const operator = new SqliteOperatorRepository(db, config);
   let provider;
   try {

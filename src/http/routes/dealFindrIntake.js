@@ -1,6 +1,7 @@
 import { sendJson } from "../response.js";
 import { randomUUID } from "node:crypto";
 import { persistSellerContact } from "../../services/sellerContactService.js";
+import { normalizeTenantId } from "../../repositories/sqlite/tenantScope.js";
 
 function numberOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -111,32 +112,43 @@ export async function handleDealFindrIntake(req, res, ctx) {
 
   const normalizedAddress = address.trim().toLowerCase().replace(/\s+/g, " ");
   const db = ctx.db;
+  const tenantId = normalizeTenantId(ctx.config && ctx.config.tenantId);
 
   let existingOpp = null;
   let matchType = null;
 
+  // Deduplication — three independent keys, each scoped to the configured
+  // tenant: a record owned by another tenant never matches, so the same
+  // source record / APN / address legitimately creates a new opportunity
+  // for this tenant.
   try {
     if (sourceRecordId) {
       existingOpp = db.prepare(`
-        SELECT opportunity_id FROM seller_opportunity_sources
-        WHERE source_type IN ('deal_scout_handoff', 'deal_finder_intake') AND source_record_id = ?
-      `).get(sourceRecordId);
+        SELECT sos.opportunity_id AS opportunity_id FROM seller_opportunity_sources sos
+        JOIN seller_opportunities o ON o.id = sos.opportunity_id
+        WHERE sos.source_type IN ('deal_scout_handoff', 'deal_finder_intake') AND sos.source_record_id = ?
+          AND o.tenant_id = ?
+      `).get(sourceRecordId, tenantId);
       if (existingOpp) matchType = "source_record_id";
     }
 
     if (!existingOpp && apn) {
       existingOpp = db.prepare(`
-        SELECT opportunity_id FROM seller_opportunity_sources
-        WHERE JSON_EXTRACT(provenance_metadata_json, '$.apn') = ?
-      `).get(apn);
+        SELECT sos.opportunity_id AS opportunity_id FROM seller_opportunity_sources sos
+        JOIN seller_opportunities o ON o.id = sos.opportunity_id
+        WHERE JSON_EXTRACT(sos.provenance_metadata_json, '$.apn') = ?
+          AND o.tenant_id = ?
+      `).get(apn, tenantId);
       if (existingOpp) matchType = "apn";
     }
 
     if (!existingOpp) {
       existingOpp = db.prepare(`
-        SELECT opportunity_id FROM seller_opportunity_sources
-        WHERE LOWER(original_address) = ?
-      `).get(normalizedAddress);
+        SELECT sos.opportunity_id AS opportunity_id FROM seller_opportunity_sources sos
+        JOIN seller_opportunities o ON o.id = sos.opportunity_id
+        WHERE LOWER(sos.original_address) = ?
+          AND o.tenant_id = ?
+      `).get(normalizedAddress, tenantId);
       if (existingOpp) matchType = "normalized_address";
     }
   } catch (err) {
@@ -279,9 +291,10 @@ export async function handleDealFindrIntake(req, res, ctx) {
         id, tenant_id, opportunity_code, ocg_one_property_id, pipeline_stage,
         qualification_status, contact_status, opportunity_status, data_quality_status,
         asking_price, property_condition_summary, created_by, updated_by
-      ) VALUES (?, 'ocg-one', ?, ?, 'new_lead', 'needs_review', 'uncontacted', 'active', 'raw_ingestion', ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, 'new_lead', 'needs_review', 'uncontacted', 'active', 'raw_ingestion', ?, ?, ?, ?)
     `).run(
       opportunityId,
+      tenantId,
       opportunityCode,
       propertyId,
       askingPrice || null,

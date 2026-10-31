@@ -26,10 +26,22 @@ test("OCG OS architecture names exactly HUNTER, VICTOR, PIPER on PIPELINE", () =
   for (const name of ["HUNTER", "VICTOR", "PIPER", "PIPELINE"]) {
     assert.ok(arch.includes(name), `architecture doc must name ${name}`);
   }
-  // Addition guard (CA2): no other roster agent may be presented as an OCG OS
-  // member. Scoped to the membership sections, before "What OCG OS is not" —
-  // separate systems and governance roles are legitimately named later.
+  // Membership guard (scoped to the membership sections, before "What OCG OS
+  // is not" — separate systems and governance roles are legitimately named
+  // later).
   const membership = arch.split("## What OCG OS is not")[0];
+  // Allowlist guard (CA-D1, Issue #29): the membership section presents the
+  // components as a table whose first column is the component name in bold.
+  // The presented set must equal the canonical roster EXACTLY — the earlier
+  // denylist alone could not catch an unlisted rogue member (QUINCEY probe:
+  // an inserted TED row passed). Any addition to or removal from the table
+  // fails this assertion.
+  const presented = [...membership.matchAll(/^\|\s*\*\*([A-Z][A-Z ]*)\*\*\s*\|/gm)]
+    .map((x) => x[1].trim());
+  assert.deepEqual([...presented].sort(), ["HUNTER", "PIPELINE", "PIPER", "VICTOR"],
+    "membership table must present exactly HUNTER, VICTOR, PIPER, PIPELINE");
+  // Supplementary prose guard: known outsiders must not be named anywhere in
+  // the membership sections either.
   for (const outsider of ["KING", "MARK", "NOVA", "ORION", "ARCHER", "MAESTRO",
     "ASTRA", "DEVIN", "CHARLIE", "WALLIE", "MIRA", "SYNDEE"]) {
     assert.ok(!new RegExp(`\\b${outsider}\\b`).test(membership),
@@ -77,8 +89,13 @@ test("governed APIs forbid database sharing and code merging", () => {
   assert.match(apis, /no database is shared/i);
   assert.match(apis, /Deal Scout Mobile/);
   assert.match(apis, /Agent Workspace/);
-  // Tenant honesty: architecture must not claim multi-tenant enforcement.
-  assert.match(arch, /NOT IMPLEMENTED|not.*filter/i);
+  // Tenant honesty: architecture must describe the enforced state — one
+  // configured tenant (PIPELINE_TENANT_ID) with scoped reads/writes — and
+  // must not claim filtering is unimplemented or that one process serves
+  // multiple tenants.
+  assert.match(arch, /PIPELINE_TENANT_ID/);
+  assert.doesNotMatch(arch, /NOT IMPLEMENTED|not.*filter|do \*\*not\*\* filter/i);
+  assert.match(arch, /single-tenant/i);
 });
 
 test("workflow PIPER tool inventory matches the tool registry exactly", () => {
@@ -97,6 +114,30 @@ test("workflow PIPER tool inventory matches the tool registry exactly", () => {
     `workflow doc must state ${readNames.length} read tools`);
   assert.ok(workflow.includes(`${writeNames.length} write`),
     `workflow doc must state ${writeNames.length} write tools`);
+  // Two-directional inventory guard (CA-D2, Issue #29): parse the doc's own
+  // read/write tool lists out of the governance block and require partitioned
+  // set equality with the registry — a tool added to the doc only (QUINCEY
+  // probe: `teleport_deal`), dropped from the doc, or moved between the
+  // read/write partitions fails, in either direction.
+  const govStart = workflow.indexOf("PIPER tool governance");
+  assert.ok(govStart >= 0, "workflow doc must contain the PIPER tool governance block");
+  const govEnd = workflow.indexOf("\n\n", govStart);
+  const governance = workflow.slice(govStart, govEnd < 0 ? undefined : govEnd);
+  const docList = (label) => {
+    const m = governance.match(new RegExp(`${label} tools\\s*\\(([^)]*)\\)`));
+    assert.ok(m, `workflow governance must present a ${label} tools list`);
+    return [...m[1].matchAll(/`([a-z_]+)`/g)].map((x) => x[1]);
+  };
+  assert.deepEqual([...docList("Read")].sort(), [...readNames].sort(),
+    "doc read-tool list must equal the registry read set exactly");
+  assert.deepEqual([...docList("Write")].sort(), [...writeNames].sort(),
+    "doc write-tool list must equal the registry write set exactly");
+  // No orphan tool-shaped names anywhere else in the governance block: every
+  // backticked snake_case token there must be a registry tool.
+  const mentioned = [...governance.matchAll(/`([a-z][a-z_]*)`/g)].map((x) => x[1])
+    .filter((n) => n.includes("_"));
+  assert.deepEqual([...new Set(mentioned)].sort(), [...schemaNames].sort(),
+    "every tool-shaped name in the governance block must be a registry tool");
   // The approval-gate claim must cover the write set, draft tools included.
   for (const name of ["draft_sms", "draft_email"]) {
     assert.ok(writeNames.includes(name), `${name} must be a governed write tool`);

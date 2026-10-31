@@ -15,6 +15,8 @@
  * raw ids and internal bookkeeping are kept out of the summaries.
  */
 
+import { isOpportunityInTenant } from "../repositories/sqlite/tenantScope.js";
+
 const MAX_EVENTS = 100;
 const SUMMARY_LEN = 160;
 
@@ -60,6 +62,14 @@ export async function buildSellerTimeline(ctx, opportunityId) {
   }
   if (!opportunityId) {
     throw Object.assign(new Error("missing_opportunityId"), { code: "missing_opportunityId", status: 400 });
+  }
+
+  // Tenant ownership assertion: a foreign opportunity is exactly a missing
+  // one on this surface (404 opportunity_not_found), checked before any
+  // per-opportunity read below.
+  const scopeTenantId = operator && operator.tenantId;
+  if (scopeTenantId && !isOpportunityInTenant(db, scopeTenantId, opportunityId)) {
+    throw Object.assign(new Error("opportunity_not_found"), { code: "opportunity_not_found", status: 404 });
   }
 
   // Canonical opportunity read (works for fixtures and sqlite; 404 when unknown).

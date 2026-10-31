@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isOpportunityInTenant, normalizeTenantId } from "../repositories/sqlite/tenantScope.js";
 
 const APPROVED = Object.freeze({ approve_sell:"sell", approve_hold:"hold", approve_refinance:"refinance" });
 const REQUIREMENTS = Object.freeze({
@@ -9,11 +10,19 @@ const REQUIREMENTS = Object.freeze({
 const EVENTS = new Set(["started","blocked","unblocked","completed","failed"]);
 
 export class PostRenovationDispositionService {
-  constructor(db){ this.db=db; }
+  constructor(db, tenantId){ this.db=db; this.tenantId=normalizeTenantId(tenantId); }
+  _inTenant(opportunityId){ return isOpportunityInTenant(this.db,this.tenantId,opportunityId); }
+  // The owning opportunity of a plan, or null when the plan does not exist.
+  _planOpportunityId(planId){
+    const row=this.db.prepare("SELECT opportunity_id FROM disposition_plans WHERE id=?").get(planId);
+    return row?row.opportunity_id:null;
+  }
 
   createPlan({ handoffId, reviewId, actor="local-operator" }) {
     const handoff=this.db.prepare("SELECT * FROM renovation_exit_handoffs WHERE id=?").get(handoffId);
     if(!handoff) throw new Error("renovation_exit_handoff_not_found");
+    // A foreign handoff fails exactly like a nonexistent one.
+    if(!this._inTenant(handoff.opportunity_id)) throw new Error("renovation_exit_handoff_not_found");
     const review=this.db.prepare("SELECT * FROM renovation_exit_reviews WHERE id=? AND handoff_id=?").get(reviewId,handoffId);
     if(!review) throw new Error("renovation_exit_review_not_found");
     const type=APPROVED[review.decision];
@@ -34,16 +43,25 @@ export class PostRenovationDispositionService {
 
   get(id){
     const row=this.db.prepare(`SELECT p.*,(SELECT event_type FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) latest_event,(SELECT detail FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) latest_detail,(SELECT external_ref FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) external_ref FROM disposition_plans p WHERE p.id=?`).get(id);
-    return row?this._decorate(toPlan(row)):null;
+    if(!row) return null;
+    // A plan belonging to a foreign opportunity resolves like a missing one.
+    return this._inTenant(row.opportunity_id)?this._decorate(toPlan(row)):null;
   }
 
   list(opportunityId){
+    if(!this._inTenant(opportunityId)) return [];
     return this.db.prepare(`SELECT p.*,(SELECT event_type FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) latest_event,(SELECT detail FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) latest_detail,(SELECT external_ref FROM disposition_plan_events e WHERE e.disposition_plan_id=p.id ORDER BY rowid DESC LIMIT 1) external_ref FROM disposition_plans p WHERE p.opportunity_id=? ORDER BY p.created_at DESC,rowid DESC`).all(opportunityId).map(r=>this._decorate(toPlan(r)));
   }
 
-  events(planId){ return this.db.prepare("SELECT * FROM disposition_plan_events WHERE disposition_plan_id=? ORDER BY rowid").all(planId).map(toEvent); }
+  events(planId){
+    const opportunityId=this._planOpportunityId(planId);
+    if(opportunityId===null||!this._inTenant(opportunityId)) return [];
+    return this.db.prepare("SELECT * FROM disposition_plan_events WHERE disposition_plan_id=? ORDER BY rowid").all(planId).map(toEvent);
+  }
 
   requirementEvidence(planId){
+    const opportunityId=this._planOpportunityId(planId);
+    if(opportunityId===null||!this._inTenant(opportunityId)) return [];
     return this.db.prepare("SELECT * FROM disposition_requirement_evidence WHERE disposition_plan_id=? ORDER BY rowid").all(planId).map(r=>({id:r.id,planId:r.disposition_plan_id,requirementKey:r.requirement_key,evidenceRef:r.evidence_ref,note:r.note,verifiedBy:r.verified_by,verifiedAt:r.verified_at,createdAt:r.created_at}));
   }
 
