@@ -1,5 +1,6 @@
 import { resolveProvenance } from "../../domain/provenance/provenanceModel.js";
 import { resolveSnapshotFigures } from "./snapshotResolution.js";
+import { normalizeTenantId } from "./tenantScope.js";
 import { statusForStage, opportunityProvenanceState } from "../../domain/opportunities/opportunityModel.js";
 
 /**
@@ -20,8 +21,9 @@ const parseJson = (str) => {
 };
 
 export class SqliteOpportunityRepository {
-  constructor(db) {
+  constructor(db, tenantId) {
     this.db = db;
+    this.tenantId = normalizeTenantId(tenantId);
   }
 
   _fetchOffers(oppId) {
@@ -121,7 +123,8 @@ export class SqliteOpportunityRepository {
         ORDER BY r.created_at DESC, r.rowid DESC
         LIMIT 1
       )
-    `).all();
+      WHERE o.tenant_id = ?
+    `).all(this.tenantId);
 
     return rows.map(r => {
       // Find seller name from audit log
@@ -237,8 +240,8 @@ export class SqliteOpportunityRepository {
       LEFT JOIN seller_opportunity_sources src ON src.opportunity_id = o.id
       LEFT JOIN record_classifications c ON c.opportunity_id = o.id
       LEFT JOIN opportunity_underwriting_refs ref ON ref.opportunity_id = o.id
-      WHERE o.id = ?
-    `).get(id);
+      WHERE o.id = ? AND o.tenant_id = ?
+    `).get(id, this.tenantId);
 
     if (!opp) return null;
 
@@ -403,13 +406,14 @@ export class SqliteOpportunityRepository {
 }
 
 export class SqliteProvenanceRepository {
-  constructor(db) {
+  constructor(db, tenantId) {
     this.db = db;
+    this.tenantId = normalizeTenantId(tenantId);
   }
 
   async listAll() {
     const rows = this.db.prepare(`
-      SELECT 
+      SELECT
         o.id AS opportunityId,
         src.source_message_id AS originalSourceMessageId,
         src.source_type AS sourceType,
@@ -417,7 +421,8 @@ export class SqliteProvenanceRepository {
       FROM seller_opportunities o
       LEFT JOIN seller_opportunity_sources src ON src.opportunity_id = o.id
       LEFT JOIN source_provenance prov ON prov.opportunity_id = o.id
-    `).all();
+      WHERE o.tenant_id = ?
+    `).all(this.tenantId);
 
     return rows.map(r => ({
       opportunityId: r.opportunityId,
@@ -446,8 +451,9 @@ function toProvenanceState(resolutionStatus) {
 }
 
 export class SqliteClassificationRepository {
-  constructor(db) {
+  constructor(db, tenantId) {
     this.db = db;
+    this.tenantId = normalizeTenantId(tenantId);
   }
 
   /**
@@ -472,8 +478,9 @@ export class SqliteClassificationRepository {
       FROM seller_opportunities o
       LEFT JOIN record_classifications c ON c.opportunity_id = o.id
       LEFT JOIN source_provenance prov ON prov.opportunity_id = o.id
+      WHERE o.tenant_id = ?
       ORDER BY o.id
-    `).all();
+    `).all(this.tenantId);
 
     return rows.map(r => ({
       opportunityId: r.opportunityId,
@@ -491,15 +498,17 @@ export class SqliteClassificationRepository {
   async listHistory() {
     const rows = this.db.prepare(`
       SELECT
-        opportunity_id,
-        prior_classification,
-        new_classification,
-        classification_rules_version,
-        determined_at,
-        determined_by,
-        reason
-      FROM classification_history
-    `).all();
+        h.opportunity_id,
+        h.prior_classification,
+        h.new_classification,
+        h.classification_rules_version,
+        h.determined_at,
+        h.determined_by,
+        h.reason
+      FROM classification_history h
+      JOIN seller_opportunities o ON o.id = h.opportunity_id
+      WHERE o.tenant_id = ?
+    `).all(this.tenantId);
 
     return rows.map(r => ({
       opportunityId: r.opportunity_id,

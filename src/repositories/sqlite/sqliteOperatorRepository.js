@@ -12,6 +12,7 @@
 
 import { randomUUID } from "node:crypto";
 import { resolveSnapshotFigures } from "./snapshotResolution.js";
+import { isOpportunityInTenant, normalizeTenantId } from "./tenantScope.js";
 
 const now = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
@@ -38,25 +39,40 @@ export class SqliteOperatorRepository {
   constructor(db, config = {}) {
     this.db = db;
     this.config = config;
+    this.tenantId = normalizeTenantId(config && config.tenantId);
+  }
+
+  /**
+   * Tenant ownership assertion: true only when the opportunity exists in the
+   * configured tenant. Every by-opportunity_id path below consults this
+   * first; a foreign id is made to behave exactly like a nonexistent id on
+   * that surface (empty list, null, or the surface's existing not-found
+   * error) — never a distinct "foreign tenant" signal.
+   */
+  _inTenant(opportunityId) {
+    return isOpportunityInTenant(this.db, this.tenantId, opportunityId);
   }
 
   // --- next actions --------------------------------------------------------
 
   listNextActions(opportunityId = null) {
-    const sql = opportunityId
-      ? `SELECT * FROM operator_next_actions WHERE opportunity_id = ? ORDER BY
+    if (opportunityId) {
+      if (!this._inTenant(opportunityId)) return [];
+      const rows = this.db.prepare(`SELECT * FROM operator_next_actions WHERE opportunity_id = ? ORDER BY
            CASE status WHEN 'open' THEN 0 ELSE 1 END,
-           COALESCE(due_date, '9999'), created_at`
-      : `SELECT * FROM operator_next_actions ORDER BY
-           CASE status WHEN 'open' THEN 0 ELSE 1 END,
-           COALESCE(due_date, '9999'), created_at`;
-    const rows = opportunityId
-      ? this.db.prepare(sql).all(opportunityId)
-      : this.db.prepare(sql).all();
+           COALESCE(due_date, '9999'), created_at`).all(opportunityId);
+      return rows.map(toNextAction);
+    }
+    const rows = this.db.prepare(`SELECT na.* FROM operator_next_actions na
+         JOIN seller_opportunities o ON o.id = na.opportunity_id
+         WHERE o.tenant_id = ? ORDER BY
+           CASE na.status WHEN 'open' THEN 0 ELSE 1 END,
+           COALESCE(na.due_date, '9999'), na.created_at`).all(this.tenantId);
     return rows.map(toNextAction);
   }
 
   createNextAction({ opportunityId, title, details = null, dueDate = null, actor }) {
+    if (!this._inTenant(opportunityId)) throw new Error("opportunity_not_found");
     const id = randomUUID();
     this.db.prepare(`
       INSERT INTO operator_next_actions (id, opportunity_id, title, details, due_date, status, created_by)
@@ -68,6 +84,7 @@ export class SqliteOperatorRepository {
   completeNextAction({ id, actor, status = "done" }) {
     const existing = this.db.prepare("SELECT * FROM operator_next_actions WHERE id = ?").get(id);
     if (!existing) return null;
+    if (!this._inTenant(existing.opportunity_id)) return null;
     this.db.prepare(`
       UPDATE operator_next_actions
       SET status = ?, completed_at = ?, completed_by = ?
@@ -79,6 +96,7 @@ export class SqliteOperatorRepository {
   // --- notes ---------------------------------------------------------------
 
   listNotes(opportunityId) {
+    if (!this._inTenant(opportunityId)) return [];
     return this.db
       .prepare("SELECT * FROM operator_notes WHERE opportunity_id = ? ORDER BY created_at DESC")
       .all(opportunityId)
@@ -86,6 +104,7 @@ export class SqliteOperatorRepository {
   }
 
   createNote({ opportunityId, body, actor }) {
+    if (!this._inTenant(opportunityId)) throw new Error("opportunity_not_found");
     const id = randomUUID();
     this.db
       .prepare("INSERT INTO operator_notes (id, opportunity_id, body, created_by) VALUES (?, ?, ?, ?)")
@@ -97,6 +116,7 @@ export class SqliteOperatorRepository {
   // --- checklist -----------------------------------------------------------
 
   listChecklist(opportunityId) {
+    if (!this._inTenant(opportunityId)) return [];
     return this.db
       .prepare("SELECT * FROM operator_checklist_items WHERE opportunity_id = ? ORDER BY item_key")
       .all(opportunityId)
@@ -112,6 +132,7 @@ export class SqliteOperatorRepository {
   }
 
   setChecklistItem({ opportunityId, key, label, checked, actor }) {
+    if (!this._inTenant(opportunityId)) throw new Error("opportunity_not_found");
     this.db.prepare(`
       INSERT INTO operator_checklist_items (id, opportunity_id, item_key, label, is_checked, updated_by, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -128,6 +149,7 @@ export class SqliteOperatorRepository {
   // Uses seller_interactions from migration 003 rather than a parallel table.
 
   listInteractions(opportunityId) {
+    if (!this._inTenant(opportunityId)) return [];
     return this.db
       .prepare("SELECT * FROM seller_interactions WHERE opportunity_id = ? ORDER BY occurred_at DESC")
       .all(opportunityId)
@@ -144,6 +166,7 @@ export class SqliteOperatorRepository {
   }
 
   createInteraction({ opportunityId, channel, direction, summary, outcome = null, occurredAt = null, actor }) {
+    if (!this._inTenant(opportunityId)) throw new Error("opportunity_not_found");
     const id = randomUUID();
     this.db.prepare(`
       INSERT INTO seller_interactions
@@ -156,6 +179,7 @@ export class SqliteOperatorRepository {
   // --- offers -------------------------------------------------------------
 
   listOffers(opportunityId) {
+    if (!this._inTenant(opportunityId)) return [];
     const offers = this.db.prepare("SELECT * FROM seller_offers WHERE opportunity_id = ? ORDER BY created_at DESC").all(opportunityId);
     return offers.map(o => {
       const versions = this.db.prepare("SELECT * FROM seller_offer_versions WHERE offer_id = ? ORDER BY version_number DESC").all(o.id);
@@ -210,9 +234,17 @@ export class SqliteOperatorRepository {
     assertValidStrategy(strategyType);
 
     const opp = this.db.prepare("SELECT * FROM seller_opportunities WHERE id = ?").get(opportunityId);
-    if (!opp) throw new Error("opportunity_not_found");
+    if (!opp || opp.tenant_id !== this.tenantId) throw new Error("opportunity_not_found");
 
-    const uw = this.db.prepare("SELECT * FROM opportunity_underwriting_refs WHERE opportunity_id = ?").get(opportunityId);
+    // Deterministic ref selection (Audit B): cite the same underwriting ref
+    // the investment committee would evaluate — latest by analyzed_at with
+    // the committee's exact tie-breaking (investmentCommitteeService.js).
+    const uw = this.db.prepare(`
+      SELECT * FROM opportunity_underwriting_refs
+      WHERE opportunity_id = ?
+      ORDER BY analyzed_at DESC, created_at DESC, rowid DESC
+      LIMIT 1
+    `).get(opportunityId);
     if (!uw) throw new Error("underwriting_not_found");
 
     const strategy = strategyType;
@@ -272,6 +304,7 @@ export class SqliteOperatorRepository {
   decideOffer({ offerId, action, proposedPrice, strategyType, earnestMoney, inspectionDays, closingDays, contingencies, internalNotes, actor }) {
     const offer = this.db.prepare("SELECT * FROM seller_offers WHERE id = ?").get(offerId);
     if (!offer) throw new Error("offer_not_found");
+    if (!this._inTenant(offer.opportunity_id)) throw new Error("offer_not_found");
 
     const currentVer = this.db.prepare("SELECT * FROM seller_offer_versions WHERE id = ?").get(offer.active_version_id);
     if (!currentVer) throw new Error("active_version_not_found");
@@ -305,7 +338,14 @@ export class SqliteOperatorRepository {
       const nextVerNum = offer.current_version + 1;
       const nextVerId = "ver_" + offerId.substring(4) + "_" + nextVerNum;
 
-      const uw = this.db.prepare("SELECT * FROM opportunity_underwriting_refs WHERE opportunity_id = ?").get(offer.opportunity_id);
+      // Same deterministic ref selection as prepareOffer: the latest ref by
+      // analyzed_at, tie-broken exactly as the investment committee does.
+      const uw = this.db.prepare(`
+        SELECT * FROM opportunity_underwriting_refs
+        WHERE opportunity_id = ?
+        ORDER BY analyzed_at DESC, created_at DESC, rowid DESC
+        LIMIT 1
+      `).get(offer.opportunity_id);
       if (!uw) throw new Error("underwriting_not_found");
 
       const strategy = strategyType !== undefined ? strategyType : currentVer.strategy_type;
@@ -412,8 +452,11 @@ export class SqliteOperatorRepository {
   }
 
   resolveContact(opportunityId) {
+    if (!this._inTenant(opportunityId)) {
+      return { status: "MISSING", value: null, channel: null };
+    }
     const participant = this.db.prepare(`
-      SELECT * FROM seller_opportunity_participants 
+      SELECT * FROM seller_opportunity_participants
       WHERE opportunity_id = ? AND is_primary = 1
     `).get(opportunityId);
     
@@ -456,6 +499,7 @@ export class SqliteOperatorRepository {
   // unblocks offer preparation for manually entered and Deal Finder leads.
 
   getUnderwritingAssumptions(opportunityId) {
+    if (!this._inTenant(opportunityId)) return null;
     const row = this.db.prepare(
       `SELECT * FROM opportunity_underwriting_refs
        WHERE opportunity_id = ? AND source_system = 'operator_assumption'
@@ -468,7 +512,7 @@ export class SqliteOperatorRepository {
     opportunityId, arv = null, rehab = null, fee = null, holding = null,
     askingPrice = null, confidence = null, limitations = null, basis = null, actor,
   }) {
-    const opp = this.db.prepare("SELECT id FROM seller_opportunities WHERE id = ?").get(opportunityId);
+    const opp = this.db.prepare("SELECT id FROM seller_opportunities WHERE id = ? AND tenant_id = ?").get(opportunityId, this.tenantId);
     if (!opp) throw new Error("opportunity_not_found");
 
     const a = finiteOrNull(arv);
@@ -516,6 +560,11 @@ export class SqliteOperatorRepository {
   }
 
   createOutreachDraft({ opportunityId, offerVersionId = null, recipientPersonId, recipientValueSnapshot, recipientChannel, subject = null, contentText, templateVersion = null, actor }) {
+    // A foreign opportunity resolves no contact — the same outcome this
+    // method already produces for a nonexistent one.
+    if (!this._inTenant(opportunityId)) {
+      throw new Error("recipient_contact_required");
+    }
     // 1. Resolve contact details and perform strict verification check
     const contact = this.resolveContact(opportunityId);
     if (contact.status === "MISSING" || !contact.value) {
@@ -586,6 +635,9 @@ export class SqliteOperatorRepository {
     if (!["sms", "email"].includes(channel)) {
       throw new Error("unsupported_channel");
     }
+    if (!this._inTenant(opportunityId)) {
+      throw new Error("recipient_contact_required");
+    }
     const participant = this.db.prepare(`
       SELECT * FROM seller_opportunity_participants
       WHERE opportunity_id = ? AND is_primary = 1
@@ -644,6 +696,12 @@ export class SqliteOperatorRepository {
   }
 
   authorizeOutreach(commId, actor) {
+    const comm = this.db.prepare("SELECT opportunity_id FROM seller_communications WHERE id = ?").get(commId);
+    if (comm && !this._inTenant(comm.opportunity_id)) {
+      // Behave exactly as for a nonexistent communication: no current state,
+      // so the transition validator rejects the move from "none".
+      throw new Error("invalid_state_transition: Cannot transition from none to authorized");
+    }
     this._addCommunicationEvent(commId, "authorized", actor);
     return this.getCommunication(commId);
   }
@@ -651,6 +709,7 @@ export class SqliteOperatorRepository {
   attemptSendOutreach(commId, actor) {
     const comm = this.db.prepare("SELECT * FROM seller_communications WHERE id = ?").get(commId);
     if (!comm) throw new Error("communication_not_found");
+    if (!this._inTenant(comm.opportunity_id)) throw new Error("communication_not_found");
 
     this._addCommunicationEvent(comm.id, "send_attempted", actor);
 
@@ -703,6 +762,12 @@ export class SqliteOperatorRepository {
     if (!contentText || !contentText.trim()) {
       throw new Error("missing_contentText");
     }
+    // A foreign opportunity cannot receive inbound records. (For a
+    // nonexistent one the insert fails on the seller_communications FK;
+    // the route surfaces both as the same generic failure.)
+    if (!this._inTenant(opportunityId)) {
+      throw new Error("opportunity_not_in_tenant_scope");
+    }
 
     const commId = randomUUID();
     const ts = now();
@@ -744,6 +809,7 @@ export class SqliteOperatorRepository {
   getCommunication(id) {
     const c = this.db.prepare("SELECT * FROM seller_communications WHERE id = ?").get(id);
     if (!c) return null;
+    if (!this._inTenant(c.opportunity_id)) return null;
 
     const events = this.db.prepare(`
       SELECT * FROM seller_communication_events WHERE communication_id = ? ORDER BY occurred_at ASC, rowid ASC
@@ -782,6 +848,7 @@ export class SqliteOperatorRepository {
   }
 
   listCommunications(opportunityId) {
+    if (!this._inTenant(opportunityId)) return [];
     const rows = this.db.prepare(`
       SELECT id FROM seller_communications WHERE opportunity_id = ? ORDER BY created_at DESC
     `).all(opportunityId);

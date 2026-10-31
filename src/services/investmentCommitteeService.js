@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isOpportunityInTenant, normalizeTenantId } from "../repositories/sqlite/tenantScope.js";
 
 function parseJson(value, fallback) {
   if (!value) return fallback;
@@ -25,11 +26,14 @@ function finite(value) {
 }
 
 export class InvestmentCommitteeService {
-  constructor(db) {
+  constructor(db, tenantId) {
     this.db = db;
+    this.tenantId = normalizeTenantId(tenantId);
   }
 
   listReviews(opportunityId) {
+    // A foreign opportunity reads exactly like one with no reviews.
+    if (!isOpportunityInTenant(this.db, this.tenantId, opportunityId)) return [];
     return this.db.prepare(`
       SELECT * FROM investment_committee_reviews
       WHERE opportunity_id = ?
@@ -38,6 +42,11 @@ export class InvestmentCommitteeService {
   }
 
   reviewActiveOffer({ opportunityId, actor = "investment-committee" }) {
+    // A foreign opportunity fails exactly like one with no active offer —
+    // this surface's existing not-found outcome.
+    if (!isOpportunityInTenant(this.db, this.tenantId, opportunityId)) {
+      throw new Error("active_offer_required");
+    }
     const offer = this.db.prepare(`
       SELECT * FROM seller_offers WHERE opportunity_id = ? ORDER BY created_at DESC LIMIT 1
     `).get(opportunityId);

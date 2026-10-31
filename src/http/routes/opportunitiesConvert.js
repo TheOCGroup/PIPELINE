@@ -1,6 +1,7 @@
 import { verifyServiceToken } from "../../auth/tokenService.js";
 import { sendJson } from "../response.js";
 import { randomUUID } from "node:crypto";
+import { normalizeTenantId } from "../../repositories/sqlite/tenantScope.js";
 
 export async function handleConvertLead(req, res, ctx) {
   // 1. Enforce POST method
@@ -77,8 +78,12 @@ export async function handleConvertLead(req, res, ctx) {
     return sendJson(res, 400, { ok: false, error: "invalid_json" });
   }
 
-  // 6. Enforce required parameters
-  const { idempotencyKey, correlationId, sourceLeadId, sourceSystem, tenantId = "ocg-one", property, participants, sourceMessage } = data;
+  // 6. Enforce required parameters. NOTE: the tenant is NEVER taken from the
+  // request body — converted records are stamped with the deployment's
+  // configured tenant (PIPELINE_TENANT_ID) so a caller cannot plant records
+  // into another tenant's scope.
+  const { idempotencyKey, correlationId, sourceLeadId, sourceSystem, property, participants, sourceMessage } = data;
+  const tenantId = normalizeTenantId(ctx.config && ctx.config.tenantId);
 
   if (!idempotencyKey || typeof idempotencyKey !== "string") {
     return sendJson(res, 400, { ok: false, error: "missing_idempotency_key" });

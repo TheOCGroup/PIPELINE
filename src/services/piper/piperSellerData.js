@@ -16,6 +16,17 @@ const norm = (v) => String(v || "").trim().toLowerCase();
 const digits = (v) => String(v || "").replace(/\D/g, "");
 const fullName = (c) => [c.first_name, c.last_name].filter(Boolean).join(" ").trim();
 
+/**
+ * Tenant scope for these helpers: callers in the tool registry pass the
+ * deployment's configured tenant; seller facts for another tenant's
+ * opportunities are then invisible — a foreign opportunity resolves exactly
+ * like a nonexistent one. A null tenantId (direct unit-level calls) leaves
+ * the historical unscoped behavior untouched.
+ */
+const tenantPredicate = (tenantId, alias = "o") =>
+  tenantId ? ` AND ${alias}.tenant_id = ?` : "";
+const tenantArgs = (tenantId) => (tenantId ? [tenantId] : []);
+
 /** One representative address per opportunity (earliest source = provenance). */
 function addressByOpportunity(db) {
   const rows = db.prepare(`
@@ -37,7 +48,7 @@ function addressByOpportunity(db) {
  *                 opportunities: [{ opportunityId, address, stage, askingPrice }] }
  *   ambiguous = true when more than one candidate shares the top match quality.
  */
-export function findSellerCandidates(db, { name = null, address = null, phone = null, limit = 10 } = {}) {
+export function findSellerCandidates(db, { name = null, address = null, phone = null, limit = 10, tenantId = null } = {}) {
   const qName = norm(name);
   const qAddr = norm(address);
   const qPhone = digits(phone);
@@ -52,8 +63,8 @@ export function findSellerCandidates(db, { name = null, address = null, phone = 
     FROM pipeline_contacts c
     JOIN seller_opportunity_participants p ON p.ocg_one_person_id = c.id
     JOIN seller_opportunities o ON o.id = p.opportunity_id
-    WHERE p.participant_role IN ('primary_owner', 'co_owner', 'spouse', 'heir', 'decision_maker')
-  `).all();
+    WHERE p.participant_role IN ('primary_owner', 'co_owner', 'spouse', 'heir', 'decision_maker')${tenantPredicate(tenantId)}
+  `).all(...tenantArgs(tenantId));
 
   const scored = [];
   for (const r of rows) {
@@ -120,7 +131,7 @@ export function findSellerCandidates(db, { name = null, address = null, phone = 
 }
 
 /** Resolve the primary seller contact for an opportunity, or a contact directly. */
-export function resolveSeller(db, { contactId = null, opportunityId = null } = {}) {
+export function resolveSeller(db, { contactId = null, opportunityId = null, tenantId = null } = {}) {
   let contact = null;
   if (contactId) {
     contact = db.prepare("SELECT * FROM pipeline_contacts WHERE id = ?").get(contactId);
@@ -128,9 +139,10 @@ export function resolveSeller(db, { contactId = null, opportunityId = null } = {
     contact = db.prepare(`
       SELECT c.* FROM pipeline_contacts c
       JOIN seller_opportunity_participants p ON p.ocg_one_person_id = c.id
-      WHERE p.opportunity_id = ? AND p.participant_role = 'primary_owner'
+      JOIN seller_opportunities o ON o.id = p.opportunity_id
+      WHERE p.opportunity_id = ? AND p.participant_role = 'primary_owner'${tenantPredicate(tenantId)}
       ORDER BY p.created_at ASC LIMIT 1
-    `).get(opportunityId);
+    `).get(opportunityId, ...tenantArgs(tenantId));
   }
   if (!contact) return null;
   return {
@@ -144,7 +156,7 @@ export function resolveSeller(db, { contactId = null, opportunityId = null } = {
 }
 
 /** Opportunities tied to a seller contact, with addresses and stages. */
-export function sellerOpportunities(db, contactId) {
+export function sellerOpportunities(db, contactId, tenantId = null) {
   const addresses = addressByOpportunity(db);
   const rows = db.prepare(`
     SELECT o.id, o.opportunity_code, o.pipeline_stage, o.opportunity_status,
@@ -152,9 +164,9 @@ export function sellerOpportunities(db, contactId) {
            o.created_at
     FROM seller_opportunities o
     JOIN seller_opportunity_participants p ON p.opportunity_id = o.id
-    WHERE p.ocg_one_person_id = ?
+    WHERE p.ocg_one_person_id = ?${tenantPredicate(tenantId)}
     ORDER BY o.created_at DESC
-  `).all(contactId);
+  `).all(contactId, ...tenantArgs(tenantId));
   return rows.map((o) => ({
     opportunityId: o.id,
     code: o.opportunity_code,
@@ -174,8 +186,10 @@ export function sellerOpportunities(db, contactId) {
  * notes, offers, tasks, appointments, and Piper's own executed actions.
  * Raw audit noise is deliberately excluded.
  */
-export function sellerTimeline(db, operator, opportunityId, { limit = 60 } = {}) {
-  const opp = db.prepare("SELECT id, created_at FROM seller_opportunities WHERE id = ?").get(opportunityId);
+export function sellerTimeline(db, operator, opportunityId, { limit = 60, tenantId = null } = {}) {
+  const opp = tenantId
+    ? db.prepare("SELECT id, created_at FROM seller_opportunities WHERE id = ? AND tenant_id = ?").get(opportunityId, tenantId)
+    : db.prepare("SELECT id, created_at FROM seller_opportunities WHERE id = ?").get(opportunityId);
   if (!opp) return { found: false };
   const addresses = addressByOpportunity(db);
   const address = addresses.get(opportunityId);
@@ -262,7 +276,11 @@ export function sellerTimeline(db, operator, opportunityId, { limit = 60 } = {})
 }
 
 /** The most recent recorded contact (interaction or communication). */
-export function lastContact(db, opportunityId) {
+export function lastContact(db, opportunityId, tenantId = null) {
+  if (tenantId) {
+    const opp = db.prepare("SELECT id FROM seller_opportunities WHERE id = ? AND tenant_id = ?").get(opportunityId, tenantId);
+    if (!opp) return { found: false };
+  }
   const interaction = db.prepare(`
     SELECT channel, direction, summary, outcome, occurred_at AS at
     FROM seller_interactions WHERE opportunity_id = ? ORDER BY occurred_at DESC LIMIT 1
@@ -320,7 +338,7 @@ export function tasksDue(db, operator, { opportunityId = null, filter = "open", 
  * Descriptive pipeline search: street fragment, seller name fragment, price
  * band, stage. One row per opportunity; every row names why it matched.
  */
-export function searchPipeline(db, { street = null, name = null, askingPrice = null, minPrice = null, maxPrice = null, stage = null, limit = 10 } = {}) {
+export function searchPipeline(db, { street = null, name = null, askingPrice = null, minPrice = null, maxPrice = null, stage = null, limit = 10, tenantId = null } = {}) {
   const qStreet = norm(street);
   const qName = norm(name);
   if (!qStreet && !qName && askingPrice == null && minPrice == null && maxPrice == null && !stage) {
@@ -339,8 +357,9 @@ export function searchPipeline(db, { street = null, name = null, askingPrice = n
 
   let rows = db.prepare(`
     SELECT id, pipeline_stage, asking_price, opportunity_status, created_at
-    FROM seller_opportunities
-  `).all();
+    FROM seller_opportunities o
+    WHERE 1=1${tenantPredicate(tenantId)}
+  `).all(...tenantArgs(tenantId));
 
   if (stage) rows = rows.filter((o) => o.pipeline_stage === stage);
   if (askingPrice != null && Number.isFinite(Number(askingPrice))) {
@@ -377,17 +396,17 @@ export function searchPipeline(db, { street = null, name = null, askingPrice = n
  * Build a call plan for a seller. Resolves the contact and assembles context —
  * it NEVER initiates a call. Dialing is Phase 3 (execute_call, not built).
  */
-export function prepareCallPlan(db, operator, { contactId = null, opportunityId = null } = {}) {
-  const seller = resolveSeller(db, { contactId, opportunityId });
+export function prepareCallPlan(db, operator, { contactId = null, opportunityId = null, tenantId = null } = {}) {
+  const seller = resolveSeller(db, { contactId, opportunityId, tenantId });
   if (!seller) return { ok: false, error: "seller_not_found" };
   if (!seller.phone) {
     return { ok: false, error: "no_phone_on_record", detail: `No phone number is recorded for ${seller.displayName}.` };
   }
-  const opps = sellerOpportunities(db, seller.contactId);
+  const opps = sellerOpportunities(db, seller.contactId, tenantId);
   const focus = opportunityId
     ? opps.find((o) => o.opportunityId === opportunityId) || null
     : opps[0] || null;
-  const lc = focus ? lastContact(db, focus.opportunityId) : { found: false };
+  const lc = focus ? lastContact(db, focus.opportunityId, tenantId) : { found: false };
   const openTasks = focus
     ? db.prepare("SELECT COUNT(*) AS n FROM operator_next_actions WHERE opportunity_id = ? AND status = 'open'").get(focus.opportunityId).n
     : 0;

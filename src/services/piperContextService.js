@@ -12,6 +12,7 @@
  */
 
 import { STAGES, isClosedStage } from "../domain/stages/stageModel.js";
+import { normalizeTenantId } from "../repositories/sqlite/tenantScope.js";
 
 const MAX_OPPORTUNITIES = 250;
 const MAX_RECENT = 25;
@@ -25,6 +26,7 @@ export class PiperContextService {
   constructor(db, config) {
     this.db = db;
     this.config = config;
+    this.tenantId = normalizeTenantId(config && config.tenantId);
   }
 
   /** Timestamp of the last brief Piper delivered, or null on first run. */
@@ -72,9 +74,10 @@ export class PiperContextService {
       LEFT JOIN source_provenance prov        ON prov.opportunity_id = o.id
       LEFT JOIN record_classifications cls    ON cls.opportunity_id = o.id
       LEFT JOIN opportunity_underwriting_refs ref ON ref.opportunity_id = o.id
+      WHERE o.tenant_id = ?
       ORDER BY o.updated_at DESC, o.created_at DESC
       LIMIT ${MAX_OPPORTUNITIES}
-    `).all();
+    `).all(this.tenantId);
 
     const actionsByOpp = groupBy(
       this.db.prepare(`
@@ -315,6 +318,12 @@ export class PiperContextService {
     const bound = (sql, ...params) => this.db.prepare(sql).all(...params).slice(0, MAX_RECENT);
     const where = cutoff ? "WHERE event_timestamp > ?" : "";
     const args = cutoff ? [cutoff] : [];
+    // Tenant scope for the recent-events tail: only events belonging to the
+    // configured tenant's opportunities may enter the snapshot.
+    const tenantOppIds = new Set(
+      this.db.prepare("SELECT id FROM seller_opportunities WHERE tenant_id = ?").all(this.tenantId).map((r) => r.id)
+    );
+    const inScope = (opportunityId) => tenantOppIds.has(opportunityId);
 
     const intakes = bound(`
       SELECT event_timestamp AS at, actor_id, payload_json
@@ -331,19 +340,19 @@ export class PiperContextService {
         opportunityId: payload.opportunityId || null,
         address: payload.address || null,
       };
-    });
+    }).filter((e) => inScope(e.opportunityId));
 
     const stageEvents = bound(`
       SELECT opportunity_id, prior_stage, new_stage, changed_by, reason, created_at AS at
       FROM seller_stage_events ${cutoff ? "WHERE created_at > ?" : ""}
       ORDER BY created_at DESC
-    `, ...args);
+    `, ...args).filter((e) => inScope(e.opportunity_id));
 
     const classificationChanges = bound(`
       SELECT opportunity_id, prior_classification, new_classification, determined_by, reason, determined_at AS at
       FROM classification_history ${cutoff ? "WHERE determined_at > ?" : ""}
       ORDER BY determined_at DESC
-    `, ...args);
+    `, ...args).filter((e) => inScope(e.opportunity_id));
 
     const victorUpdates = bound(`
       SELECT opportunity_id, source_system AS underwriting_source_type, mao AS underwriting_mao_snapshot,
@@ -351,7 +360,7 @@ export class PiperContextService {
       FROM opportunity_underwriting_refs
       WHERE created_at IS NOT NULL ${cutoff ? "AND created_at > ?" : ""}
       ORDER BY created_at DESC
-    `, ...args).map((r) => ({ ...r, attributedTo: "Victor" }));
+    `, ...args).filter((e) => inScope(e.opportunity_id)).map((r) => ({ ...r, attributedTo: "Victor" }));
 
     void where;
     return { intakes, stageEvents, classificationChanges, victorUpdates };
