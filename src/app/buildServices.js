@@ -11,6 +11,7 @@ import { DataQualityReadService } from "../services/dataQualityReadService.js";
 import { SqliteOperatorRepository } from "../repositories/sqlite/sqliteOperatorRepository.js";
 import { PiperContextService } from "../services/piperContextService.js";
 import { PiperRuntime } from "../services/piper/piperRuntime.js";
+import { OncallCommsClient } from "../integrations/oncall/oncallCommsClient.js";
 import { createPiperProvider } from "../services/piper/providers/index.js";
 import { InvestmentCommitteeService } from "../services/investmentCommitteeService.js";
 import { TransactionWorkflowService } from "../services/transactionWorkflowService.js";
@@ -128,5 +129,9 @@ function buildPiperRuntime(config, db, contextService = null) {
     console.error(`[piper] provider disabled: ${err.message}`);
     provider = createPiperProvider({ piperProvider: "none" });
   }
-  return new PiperRuntime({ db, config, contextService: context, operator, provider });
+  // ONCALL bridge client: inert unless ONCALL_COMMS_BASE_URL +
+  // PIPER_ONCALL_BRIDGE_SECRET are configured (the client reports disabled
+  // and refuses); constructing it changes nothing on a default deployment.
+  const comms = new OncallCommsClient(config);
+  return new PiperRuntime({ db, config, contextService: context, operator, provider, comms });
 }

@@ -336,6 +336,36 @@ export const TOOL_SCHEMAS = Object.freeze([
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "request_callback",
+      description: "Propose a governed seller callback placed by ONCALL, the estate's only dispatch authority — Piper never dials directly. Requires operator approval, and the approval itself supplies the approval reference ONCALL demands: there is no way to request a call without one, and an approval reference cannot be supplied as an argument. The phone number is PIPELINE's recorded number for the opportunity's primary seller; it cannot be supplied or overridden here. ONCALL's policy (consent binding, do-not-call list, calling hours, caps, dedupe) still decides whether the request is placed, and ONCALL currently fails Piper requests closed until a Piper voice profile is provisioned.",
+      parameters: {
+        type: "object",
+        properties: {
+          opportunityId: { type: "string" },
+          consentBasis: { type: "string", enum: ["express_consent", "callback_requested"], description: "The recorded consent basis for this callback. seller_callback permits only these two." },
+          instructions: { type: "string", description: "Optional context recorded on the ONCALL record as provenance. It is not a spoken script." },
+        },
+        required: ["opportunityId", "consentBasis"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_callback_result",
+      description: "Read the ONCALL-governed outcome of callback requests Piper previously submitted, by outboundId or by opportunityId. A status of queued means the provider created the call — it is NOT evidence the seller answered or was spoken to. Results are scoped to Piper's own requests.",
+      parameters: {
+        type: "object",
+        properties: {
+          outboundId: { type: "string", description: "The ONCALL outbound id returned by request_callback." },
+          opportunityId: { type: "string", description: "List callback requests recorded against this opportunity." },
+        },
+      },
+    },
+  },
 ]);
 
 const WRITE_TOOLS = new Set([
@@ -347,6 +377,7 @@ const WRITE_TOOLS = new Set([
   "prepare_outreach_draft",
   "draft_sms",
   "draft_email",
+  "request_callback",
 ]);
 
 export const isWriteTool = (name) => WRITE_TOOLS.has(name);
@@ -355,8 +386,13 @@ export const isKnownTool = (name) => TOOL_SCHEMAS.some((t) => t.function.name ==
 /**
  * Executes a tool. Write tools reach here only after approval — the runtime is
  * responsible for the gate; this function assumes it has already been passed.
+ *
+ * `comms` is the optional ONCALL bridge client and `approval` is the runtime's
+ * record of the operator approval being executed ({ ref, toolCallId,
+ * decidedBy }). Both exist solely for request_callback: the approval
+ * reference ONCALL requires is taken from `approval`, never from `args`.
  */
-export async function executeTool({ name, args = {}, snapshot, operator, actor = "piper" }) {
+export async function executeTool({ name, args = {}, snapshot, operator, actor = "piper", comms = null, approval = null }) {
   // Tenant scope for seller-data tools: the operator repository carries the
   // deployment's configured tenant; every opportunity id entering below is
   // resolved against it (a foreign id reads exactly like a nonexistent one).
@@ -616,6 +652,95 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
       return { ok: true, data: { communication: draft, sends: false } };
     }
 
+    // --- ONCALL governed callback (write: approval-gated, dials nothing) -----
+    // Piper cannot dial. This submits ONE call request to ONCALL, which
+    // decides under its own policy. The approval reference ONCALL requires
+    // comes from the runtime's approval record (`approval`), attached when
+    // the operator approved this exact proposal — a model-supplied value in
+    // args is never read, so a model-initiated call without an operator
+    // approval is refused by construction, here and in the client.
+
+    case "request_callback": {
+      if (!approval?.ref) {
+        return {
+          ok: false,
+          error: "approval_ref_required",
+          detail: "A callback request executes only from an operator-approved proposal; the approval supplies the reference ONCALL requires.",
+        };
+      }
+      if (!comms || !comms.isEnabled) {
+        return {
+          ok: false,
+          error: "comms_disabled",
+          detail: "The ONCALL communications bridge is not configured on this deployment (ONCALL_COMMS_BASE_URL / PIPER_ONCALL_BRIDGE_SECRET). Piper cannot request calls.",
+        };
+      }
+      const opportunityId = str(args.opportunityId, 200);
+      if (!opportunityId) return { ok: false, error: "missing_opportunityId" };
+      const consentBasis = str(args.consentBasis, 40);
+      if (!["express_consent", "callback_requested"].includes(consentBasis)) {
+        return {
+          ok: false,
+          error: "consent_basis_not_permitted",
+          detail: "seller_callback accepts only express_consent or callback_requested; ONCALL enforces the same binding server-side.",
+        };
+      }
+      const seller = resolveSeller(operator.db, { opportunityId, tenantId });
+      if (!seller) return { ok: false, error: "seller_not_found" };
+      if (!seller.phone) {
+        return { ok: false, error: "no_phone_on_record", detail: `No phone number is recorded for ${seller.displayName}.` };
+      }
+      const result = await comms.requestCallback({
+        phone: seller.phone,
+        consentBasis,
+        approvalRef: approval.ref,
+        taskRef: opportunityId,
+        idempotencyKey: approval.toolCallId ? `piper-callback-${approval.toolCallId}` : null,
+        instructions: str(args.instructions, 2000),
+        customerName: seller.displayName,
+      });
+      // A definitive ONCALL verdict is the executed action's result — the
+      // denial/refusal is data the operator must see, not a tool crash.
+      const GOVERNED_OUTCOMES = ["queued", "policy_denied", "provider_failed", "voice_profile_not_provisioned", "outbound_disabled", "idempotency_conflict"];
+      if (GOVERNED_OUTCOMES.includes(result.state)) {
+        return {
+          ok: true,
+          data: {
+            outcome: result.state,
+            outboundId: result.outboundId || null,
+            status: result.status || null,
+            duplicate: Boolean(result.duplicate),
+            providerCallId: result.providerCallId || null,
+            reasons: result.reasons || null,
+            approvalRef: approval.ref,
+            contacted: false,
+            summary: result.summary || result.detail || null,
+          },
+        };
+      }
+      return { ok: false, error: result.error || "comms_failed", detail: result.detail || result.summary || null };
+    }
+
+    case "get_callback_result": {
+      if (!comms || !comms.isEnabled) {
+        return {
+          ok: false,
+          error: "comms_disabled",
+          detail: "The ONCALL communications bridge is not configured on this deployment (ONCALL_COMMS_BASE_URL / PIPER_ONCALL_BRIDGE_SECRET).",
+        };
+      }
+      const outboundId = str(args.outboundId, 60);
+      if (outboundId) {
+        const r = await comms.getResult(outboundId);
+        if (!r.ok) return { ok: false, error: r.error, detail: r.detail || null };
+        return { ok: true, data: { call: r.call } };
+      }
+      const taskRef = str(args.opportunityId, 200);
+      const r = await comms.listResults({ taskRef });
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail || null };
+      return { ok: true, data: { calls: r.calls } };
+    }
+
     default:
       return { ok: false, error: "unknown_tool", detail: `Piper has no tool named ${name}.` };
   }
@@ -656,6 +781,10 @@ export function describeToolCall(name, args = {}) {
       return `Draft an SMS for ${args.opportunityId}. This does not send it.`;
     case "draft_email":
       return `Draft an email for ${args.opportunityId}. This does not send it.`;
+    case "request_callback":
+      return `Request a governed ONCALL callback to the seller on ${args.opportunityId} (consent: ${args.consentBasis || "?"}). Approving supplies the approval reference ONCALL requires; ONCALL policy still decides whether any call is placed, and Piper never dials directly.`;
+    case "get_callback_result":
+      return `Check the ONCALL callback outcome ${args.outboundId ? `for ${args.outboundId}` : `for ${args.opportunityId || "?"}`}`;
     default:
       return `${name}(${Object.keys(args).join(", ")})`;
   }
