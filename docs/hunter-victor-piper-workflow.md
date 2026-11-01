@@ -88,17 +88,26 @@ disqualified, lost, archived`
   aggregated by the seller timeline.
 
 **PIPER tool governance (IMPLEMENTED, `src/services/piper/toolRegistry.js`):**
-the registry defines **20 tools — 12 read, 8 write**. Read tools
+the registry defines **22 tools — 13 read, 9 write**. Read tools
 (`get_operating_brief`, `find_opportunities`, `get_opportunity`,
 `get_outreach_state`, `find_seller`, `get_seller_summary`,
 `get_seller_timeline`, `get_last_contact`, `get_offer_history`, `get_tasks`,
-`search_pipeline`, `prepare_call`) execute immediately. Write tools
+`search_pipeline`, `prepare_call`, `get_callback_result`) execute immediately. Write tools
 (`create_next_action`, `add_note`, `log_interaction`, `prepare_offer`,
-`modify_offer`, `prepare_outreach_draft`, `draft_sms`, `draft_email`) are
+`modify_offer`, `prepare_outreach_draft`, `draft_sms`, `draft_email`,
+`request_callback`) are
 recorded as proposals and execute **only after operator approval**, through
 the same repository path the UI uses. (Corrected 2026-10-24 per QUINCEY
 finding U1/CA1 on commit `8be726f`: an earlier version of this section listed
-only the original 10 tools.)
+only the original 10 tools.) Two tools reach ONCALL, the estate's sole
+dispatch authority, through its governed service bridge: the read tool
+above reports the outcome of earlier callback requests, and the write tool
+above submits a single seller-callback request — only from an approved
+proposal, whose approval supplies the reference ONCALL requires, and only
+when the bridge is configured on the deployment. PIPER itself never dials,
+and ONCALL policy still decides whether any call is placed. (Inventory
+updated 2026-11-01 for the ONCALL bridge tools, per the CA-D2 two-directional
+guard in the architecture contract tests.)
 Production currently reports `piperProvider: "none"` — PIPER is LIMITED and
 must be described that way until a provider is connected and verified.
 
