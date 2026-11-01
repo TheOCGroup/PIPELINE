@@ -96,6 +96,10 @@ const WRITE_INTENT_PATTERNS = Object.freeze({
   prepare_outreach_draft: /\b(prepare|draft|create|write)\b.{0,24}\b(outreach|message)\b/i,
   draft_sms: /\b(draft|write|prepare|compose|send)\b.{0,24}\b(text|sms|message)\b/i,
   draft_email: /\b(draft|write|prepare|compose|send)\b.{0,24}\b(email|e-mail)\b/i,
+  escalate_to_founder: /\bescalat|\bfounder\b.{0,24}\b(attention|decision|review|approval|call)\b|\braise (this|it|the deal)\b/i,
+  handoff_to_agent: /\bhand\s?off\b|\bhandoff\b|\bhand (this|it|the deal) off\b|\bdelegate\b|\bpass (this|it|the deal) to\b|\bgive (this|it|the deal) to (hunter|victor|piper)\b/i,
+  start_guided_workflow: /\b(start|begin|open)\b.{0,32}\b(guided\s+)?(workflow|sequence)\b|\bguided workflow\b/i,
+  advance_guided_workflow: /\b(advance|skip|pause|resume|abandon)\b.{0,32}\b(workflow|step|sequence)\b|\bnext step\b.{0,24}\b(workflow|sequence)\b/i,
 });
 
 function writeToolExplicitlyRequested(name, question) {
@@ -109,14 +113,20 @@ export { SYSTEM_PROMPT };
 
 export class PiperRuntime {
   /**
-   * @param {object} deps { db, config, contextService, operator, provider }
+   * @param {object} deps { db, config, contextService, operator, provider, workRoom, agentDirectory, guidedWorkflows }
    */
-  constructor({ db, config, contextService, operator, provider }) {
+  constructor({ db, config, contextService, operator, provider, workRoom = null, agentDirectory = null, guidedWorkflows = null }) {
     this.db = db;
     this.config = config;
     this.context = contextService;
     this.operator = operator;
     this.provider = provider;
+    /** Agent work room (migration 023 substrate) for escalations/handoffs. */
+    this.workRoom = workRoom;
+    /** Director identity registry (Issue #7) — handoff target validation. */
+    this.agentDirectory = agentDirectory;
+    /** Guided workflow store (migration 033) for the workflow tools. */
+    this.guidedWorkflows = guidedWorkflows;
     /** runId -> AbortController, for in-flight cancellation. */
     this.active = new Map();
   }
@@ -364,7 +374,7 @@ export class PiperRuntime {
         // Read tools run now; they cannot mutate anything.
         for (const call of reads) {
           if (!isKnownTool(call.name)) continue;
-          const result = await executeTool({ name: call.name, args: call.arguments, snapshot, operator: this.operator, actor });
+          const result = await executeTool({ name: call.name, args: call.arguments, snapshot, operator: this.operator, actor, workRoom: this.workRoom, agentDirectory: this.agentDirectory, guidedWorkflows: this.guidedWorkflows });
           readResults.push({ name: call.name, result });
           // Deterministic session-context update from the tool result.
           this.#updateContextFromTool(thread.id, threadCtx, call.name, call.arguments, result);
@@ -471,6 +481,9 @@ export class PiperRuntime {
         snapshot,
         operator: this.operator,
         actor,
+        workRoom: this.workRoom,
+        agentDirectory: this.agentDirectory,
+        guidedWorkflows: this.guidedWorkflows,
       });
 
       if (!result.ok) throw Object.assign(new Error(result.error), { code: result.error });

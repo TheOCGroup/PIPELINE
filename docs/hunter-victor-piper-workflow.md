@@ -88,13 +88,16 @@ disqualified, lost, archived`
   aggregated by the seller timeline.
 
 **PIPER tool governance (IMPLEMENTED, `src/services/piper/toolRegistry.js`):**
-the registry defines **20 tools — 12 read, 8 write**. Read tools
-(`get_operating_brief`, `find_opportunities`, `get_opportunity`,
-`get_outreach_state`, `find_seller`, `get_seller_summary`,
-`get_seller_timeline`, `get_last_contact`, `get_offer_history`, `get_tasks`,
-`search_pipeline`, `prepare_call`) execute immediately. Write tools
+the registry defines **26 tools — 14 read, 12 write**. Read tools
+(`get_operating_brief`, `get_intelligence_report`, `get_guided_workflow`, `find_opportunities`,
+`get_opportunity`, `get_outreach_state`, `find_seller`,
+`get_seller_summary`, `get_seller_timeline`, `get_last_contact`,
+`get_offer_history`, `get_tasks`, `search_pipeline`, `prepare_call`)
+execute immediately. Write tools
 (`create_next_action`, `add_note`, `log_interaction`, `prepare_offer`,
-`modify_offer`, `prepare_outreach_draft`, `draft_sms`, `draft_email`) are
+`modify_offer`, `prepare_outreach_draft`, `draft_sms`, `draft_email`,
+`escalate_to_founder`, `handoff_to_agent`, `start_guided_workflow`,
+`advance_guided_workflow`) are
 recorded as proposals and execute **only after operator approval**, through
 the same repository path the UI uses. (Corrected 2026-10-24 per QUINCEY
 finding U1/CA1 on commit `8be726f`: an earlier version of this section listed

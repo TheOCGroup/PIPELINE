@@ -245,16 +245,31 @@ async function runImport() {
 
     // Import sources
     console.log("Migrating sources...");
+    // Import sources. tenant_id (migration 035) is carried faithfully when
+    // the payload row has the key — a post-035 export always does, and the
+    // F-027 round-trip contract is that every exported cell is preserved
+    // exactly (a NULL stays NULL; import never rewrites ownership). Only a
+    // legacy pre-035 payload, whose rows have no tenant_id key at all,
+    // falls back to the parent opportunity's tenant in THIS database —
+    // the same backfill rule migration 035 applies (tenant truth from the
+    // parent row, never from any other caller-supplied field).
     for (const row of payload.data.seller_opportunity_sources) {
       const get = (k) => getValue(row, k);
+      let sourceTenantId;
+      if (Object.prototype.hasOwnProperty.call(row, "tenant_id")) {
+        sourceTenantId = get("tenant_id") ?? null;
+      } else {
+        const parent = db.prepare(`SELECT tenant_id FROM seller_opportunities WHERE id = ?`).get(get("opportunity_id"));
+        sourceTenantId = parent ? parent.tenant_id : null;
+      }
       db.prepare(`
         INSERT INTO seller_opportunity_sources (
-          id, opportunity_id, source_type, source_record_id, source_message_id,
+          id, opportunity_id, tenant_id, source_type, source_record_id, source_message_id,
           original_address, source_timestamp, conversion_actor, conversion_timestamp,
           provenance_metadata_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        get("id"), get("opportunity_id"), get("source_type"), get("source_record_id"), get("source_message_id"),
+        get("id"), get("opportunity_id"), sourceTenantId, get("source_type"), get("source_record_id"), get("source_message_id"),
         get("original_address"), get("source_timestamp"), get("conversion_actor"), get("conversion_timestamp"),
         get("provenance_metadata_json"), get("created_at")
       );

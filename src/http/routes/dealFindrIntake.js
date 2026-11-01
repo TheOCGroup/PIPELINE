@@ -305,11 +305,11 @@ export async function handleDealFindrIntake(req, res, ctx) {
 
     db.prepare(`
       INSERT INTO seller_opportunity_sources (
-        id, opportunity_id, source_type, source_record_id, source_message_id,
+        id, opportunity_id, tenant_id, source_type, source_record_id, source_message_id,
         original_address, source_timestamp, conversion_actor, conversion_timestamp, provenance_metadata_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      randomUUID(), opportunityId, victorPackage ? "deal_scout_handoff" : "deal_finder_intake",
+      randomUUID(), opportunityId, tenantId, victorPackage ? "deal_scout_handoff" : "deal_finder_intake",
       sourceRecordId || null, sourceMessageId || null,
       normalizedAddress, sourceTimestampValue, intakeActor, conversionTime, JSON.stringify(provenanceMetadata)
     );

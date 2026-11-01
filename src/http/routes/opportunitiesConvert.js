@@ -1,7 +1,7 @@
 import { verifyServiceToken } from "../../auth/tokenService.js";
 import { sendJson } from "../response.js";
 import { randomUUID } from "node:crypto";
-import { normalizeTenantId } from "../../repositories/sqlite/tenantScope.js";
+import { isOpportunityInTenant, normalizeTenantId } from "../../repositories/sqlite/tenantScope.js";
 
 export async function handleConvertLead(req, res, ctx) {
   // 1. Enforce POST method
@@ -107,11 +107,21 @@ export async function handleConvertLead(req, res, ctx) {
   const db = ctx.db;
 
   // 7. Duplicate Conversion Protection / Idempotency Check
-  // Check if lead was already converted
+  // Both idempotency legs are tenant-scoped (QUINCEY U1): a record owned by
+  // another tenant is indistinguishable from a nonexistent one, so neither
+  // leg may disclose a foreign opportunity id. The write side below stays
+  // the only creator and always stamps the configured tenant. Since
+  // migration 035 the source uniqueness is tenant-aware —
+  // UNIQUE(tenant_id, source_type, source_record_id) — so a foreign
+  // re-presentation that misses both legs converts as the caller's OWN
+  // tenant-local record instead of colliding with the foreign row.
+  // Check if lead was already converted (this tenant only — the source row
+  // is scoped through its parent opportunity's tenant_id)
   const existingSource = db.prepare(`
-    SELECT opportunity_id FROM seller_opportunity_sources
-    WHERE source_record_id = ? AND source_type = ?
-  `).get(sourceLeadId, sourceSystem);
+    SELECT sos.opportunity_id FROM seller_opportunity_sources sos
+    JOIN seller_opportunities so ON so.id = sos.opportunity_id
+    WHERE sos.source_record_id = ? AND sos.source_type = ? AND so.tenant_id = ?
+  `).get(sourceLeadId, sourceSystem, tenantId);
 
   if (existingSource) {
     return sendJson(res, 200, {
@@ -130,11 +140,17 @@ export async function handleConvertLead(req, res, ctx) {
   if (existingAudit) {
     try {
       const payload = JSON.parse(existingAudit.payload_json);
-      return sendJson(res, 200, {
-        ok: true,
-        opportunityId: payload.opportunityId,
-        status: "already_converted"
-      });
+      // Tenant-scope the audit-key leg: only honour the recorded conversion
+      // when its opportunity belongs to the configured tenant. A foreign or
+      // dangling reference falls through exactly as if the audit row did not
+      // exist — no foreign opportunity id is ever disclosed.
+      if (isOpportunityInTenant(db, tenantId, payload.opportunityId)) {
+        return sendJson(res, 200, {
+          ok: true,
+          opportunityId: payload.opportunityId,
+          status: "already_converted"
+        });
+      }
     } catch (_) {}
   }
 
@@ -177,12 +193,12 @@ export async function handleConvertLead(req, res, ctx) {
     const sourceId = randomUUID();
     db.prepare(`
       INSERT INTO seller_opportunity_sources (
-        id, opportunity_id, source_type, source_record_id, source_message_id,
+        id, opportunity_id, tenant_id, source_type, source_record_id, source_message_id,
         original_address, source_timestamp, conversion_actor, conversion_timestamp,
         provenance_metadata_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 's2s', ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 's2s', ?, ?, ?)
     `).run(
-      sourceId, opportunityId, sourceSystem, sourceLeadId, sourceMessage?.sourceMessageId || null,
+      sourceId, opportunityId, tenantId, sourceSystem, sourceLeadId, sourceMessage?.sourceMessageId || null,
       property.address || null, sourceMessage?.sourceTimestamp || new Date().toISOString(),
       new Date().toISOString(), sourceMessage ? JSON.stringify(sourceMessage) : null, new Date().toISOString()
     );

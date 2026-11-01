@@ -284,6 +284,30 @@ export async function buildSellerTimeline(ctx, opportunityId) {
     /* audit table absent in some builds */
   }
 
+  // 11. Journey recommendations (migration 036) — the recorded recommended
+  // action for this opportunity, with the basis it was transcribed from
+  // (committee decision of record or the brief NEXT derivation).
+  try {
+    const rows = db
+      .prepare(
+        `SELECT action_label, action_kind, basis_type, created_by, created_at
+         FROM journey_recommendations
+         WHERE opportunity_id = ?${scopeTenantId ? " AND tenant_id = ?" : ""}
+         ORDER BY created_at ASC`
+      )
+      .all(...(scopeTenantId ? [opportunityId, scopeTenantId] : [opportunityId]));
+    for (const r of rows) {
+      events.push(
+        ev("recommendation", r.created_at, `Recommended action: ${r.action_label}`, r.created_by, {
+          actionKind: r.action_kind || null,
+          basisType: r.basis_type || null,
+        })
+      );
+    }
+  } catch {
+    /* journey tables absent in some builds */
+  }
+
   // Newest first; undated events sink to the bottom. Cap the list.
   events.sort((a, b) => {
     if (!a.at && !b.at) return 0;

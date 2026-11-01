@@ -81,12 +81,13 @@ export function seedDatabaseIfEmpty(db) {
         ) VALUES (?, 'ocg-one', ?, ?, ?, 'needs_review', 'uncontacted', 'active', 'raw_ingestion', ?, ?, 'system-seed', 'system-seed')
       `).run(o.id, o.code, "seed-prop-" + o.id, o.stage, o.askingPrice, "Initial seeded fixture opportunity");
 
-      // 2. Insert seller_opportunity_sources
+      // 2. Insert seller_opportunity_sources (tenant stamped from the
+      // parent opportunity inserted above — migration 035).
       db.prepare(`
         INSERT INTO seller_opportunity_sources (
-          id, opportunity_id, source_type, source_record_id, source_message_id,
+          id, opportunity_id, tenant_id, source_type, source_record_id, source_message_id,
           original_address, source_timestamp, conversion_actor
-        ) VALUES (?, ?, 'property_lead_inbox', ?, ?, ?, ?, 'system-seed')
+        ) VALUES (?, ?, 'ocg-one', 'property_lead_inbox', ?, ?, ?, ?, 'system-seed')
       `).run(randomUUID(), o.id, "seed-prop-" + o.id, o.sourceMsgId, o.address, new Date().toISOString());
 
       // 3. Insert source_provenance

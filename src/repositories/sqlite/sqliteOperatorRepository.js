@@ -855,6 +855,62 @@ export class SqliteOperatorRepository {
 
     return rows.map(r => this.getCommunication(r.id));
   }
+
+  // --- buyer criteria (Issue #8: client criteria intake) --------------------
+  //
+  // Buyer criteria are tenant-owned roots (like seller_opportunities, they
+  // carry tenant_id directly). Every read filters on the configured tenant;
+  // a foreign id behaves exactly like a nonexistent id. The tenant is never
+  // taken from the request — creates are stamped with the configured tenant.
+
+  createBuyerCriteria({ label, markets = [], propertyTypes = [], minPrice = null, maxPrice = null, minMaoHeadroom = null, criteria = {}, actor }) {
+    const id = randomUUID();
+    this.db.prepare(`
+      INSERT INTO buyer_criteria (id, tenant_id, label, markets_json, property_types_json, min_price, max_price, min_mao_headroom, criteria_json, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+    `).run(id, this.tenantId, label, JSON.stringify(markets || []), JSON.stringify(propertyTypes || []),
+      finiteOrNull(minPrice), finiteOrNull(maxPrice), finiteOrNull(minMaoHeadroom),
+      JSON.stringify(criteria && typeof criteria === "object" ? criteria : {}), actor);
+    return this.getBuyerCriteria(id);
+  }
+
+  listBuyerCriteria({ includeArchived = false } = {}) {
+    const rows = this.db.prepare(`
+      SELECT * FROM buyer_criteria
+      WHERE tenant_id = ? ${includeArchived ? "" : "AND status = 'active'"}
+      ORDER BY created_at ASC, rowid ASC
+    `).all(this.tenantId);
+    return rows.map(toBuyerCriteria);
+  }
+
+  getBuyerCriteria(id) {
+    if (!id) return null;
+    const row = this.db.prepare("SELECT * FROM buyer_criteria WHERE id = ? AND tenant_id = ?").get(id, this.tenantId);
+    return toBuyerCriteria(row);
+  }
+
+  updateBuyerCriteria({ id, label, markets, propertyTypes, minPrice, maxPrice, minMaoHeadroom, criteria, status, actor }) {
+    const existing = this.db.prepare("SELECT * FROM buyer_criteria WHERE id = ? AND tenant_id = ?").get(id, this.tenantId);
+    if (!existing) return null;
+    const next = {
+      label: label !== undefined ? label : existing.label,
+      markets_json: markets !== undefined ? JSON.stringify(markets || []) : existing.markets_json,
+      property_types_json: propertyTypes !== undefined ? JSON.stringify(propertyTypes || []) : existing.property_types_json,
+      min_price: minPrice !== undefined ? finiteOrNull(minPrice) : existing.min_price,
+      max_price: maxPrice !== undefined ? finiteOrNull(maxPrice) : existing.max_price,
+      min_mao_headroom: minMaoHeadroom !== undefined ? finiteOrNull(minMaoHeadroom) : existing.min_mao_headroom,
+      criteria_json: criteria !== undefined ? JSON.stringify(criteria && typeof criteria === "object" ? criteria : {}) : existing.criteria_json,
+      status: status !== undefined ? status : existing.status,
+    };
+    this.db.prepare(`
+      UPDATE buyer_criteria
+      SET label = ?, markets_json = ?, property_types_json = ?, min_price = ?, max_price = ?,
+          min_mao_headroom = ?, criteria_json = ?, status = ?, updated_at = ?
+      WHERE id = ? AND tenant_id = ?
+    `).run(next.label, next.markets_json, next.property_types_json, next.min_price, next.max_price,
+      next.min_mao_headroom, next.criteria_json, next.status, now(), id, this.tenantId);
+    return this.getBuyerCriteria(id);
+  }
 }
 
 function toNextAction(r) {
@@ -901,5 +957,42 @@ function toUnderwritingAssumptions(r) {
     basis: evidence ? evidence.basis : null,
     analyzedAt: r.analyzed_at,
     createdAt: r.created_at,
+  };
+}
+
+function parseJsonArray(value) {
+  try {
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonObject(value) {
+  try {
+    const parsed = value ? JSON.parse(value) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function toBuyerCriteria(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    label: r.label,
+    markets: parseJsonArray(r.markets_json),
+    propertyTypes: parseJsonArray(r.property_types_json),
+    minPrice: r.min_price ?? null,
+    maxPrice: r.max_price ?? null,
+    minMaoHeadroom: r.min_mao_headroom ?? null,
+    criteria: parseJsonObject(r.criteria_json),
+    status: r.status,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   };
 }

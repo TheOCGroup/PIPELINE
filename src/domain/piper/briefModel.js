@@ -19,7 +19,7 @@ export function buildBrief(snapshot) {
   const changed = [
     ...snapshot.recent.stageEvents.map((e)=>({opportunityId:e.opportunity_id,label:`Stage moved ${e.prior_stage||"—"} → ${e.new_stage}`,reasons:[`Changed by ${e.changed_by}${e.reason?` — ${e.reason}`:""}.`]})),
     ...snapshot.recent.classificationChanges.map((c)=>({opportunityId:c.opportunity_id,label:`Classification ${c.prior_classification||"NONE"} → ${c.new_classification}`,reasons:[`Determined by ${c.determined_by} — ${c.reason}`]})),
-    ...snapshot.recent.victorUpdates.map((v)=>({opportunityId:v.opportunity_id,label:`Underwriting snapshot recorded${v.attributedTo.agent?` from ${v.attributedTo.agent} (${v.attributedTo.system})`:""}`,reasons:[`Ceiling ${money(v.underwriting_mao_snapshot)}, ARV ${money(v.underwriting_arv_snapshot)}${v.underwriting_confidence?`, confidence ${v.underwriting_confidence}`:""}.`]})),
+    ...snapshot.recent.victorUpdates.map((v)=>{const opp=snapshot.opportunities.find((o)=>o.id===v.opportunity_id);const item={opportunityId:v.opportunity_id,label:`Underwriting snapshot recorded${v.attributedTo.agent?` from ${v.attributedTo.agent} (${v.attributedTo.system})`:""}`,reasons:[`Ceiling ${money(v.underwriting_mao_snapshot)}, ARV ${money(v.underwriting_arv_snapshot)}${v.underwriting_confidence?`, confidence ${v.underwriting_confidence}`:""}.`]};if(opp?.figures)item.figures={mao:opp.figures.mao,arv:opp.figures.arv};return item;}),
   ];
 
   const newIntake = snapshot.recent.intakes.filter((i)=>i.attributedTo.agent==="Hunter").map((i)=>({opportunityId:i.opportunityId,label:i.address?`New intake — ${i.address}`:"New intake",reasons:[`Delivered by ${i.attributedTo.agent} (${i.attributedTo.system}); stored actor "${i.attributedTo.storedActor}".`]}));

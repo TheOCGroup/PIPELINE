@@ -30,6 +30,7 @@ import { authorizePiperIntake } from "./routes/piperIntakeAuthorization.js";
 import { handleOperatorRoutes } from "./routes/operatorRoutes.js";
 import { handlePiperRoutes } from "./routes/piperRoutes.js";
 import { handleWorkRoomRoutes } from "./routes/workRoomRoutes.js";
+import { handleAgentDirectoryRoutes } from "./routes/agentDirectoryRoutes.js";
 import { handleAidenCallIntegration, handleAidenInboxState, handleAidenRecordingPlayback, authorizeAidenInboxBearer, authorizeInboxCookie, issueInboxSession } from "./routes/aidenCallIntegration.js";
 
 const STATIC = {
@@ -68,6 +69,6 @@ if(path.startsWith("/api/")){
   if(path==="/api/v1/opportunities/convert")return handleConvertLead(req,res,ctx);
   if(path!=="/api/v1/system/status"&&path!=="/api/v1/opportunities/convert"){if(!(await authorizeApiRequest(req,res,ctx)))return;}
   if(path==="/api/v1/aiden/messages"){if(!["GET","PATCH"].includes(req.method))return sendJson(res,405,{ok:false,error:"method_not_allowed"});return handleAidenCallIntegration(req,res,ctx);}
-  const seg=path.replace(/^\/api\/v1\/?/,"").split("/").filter(Boolean);if(seg[0]==="opportunities"&&await handleOpportunityRoutes(req,res,ctx,url,seg))return;if(seg[0]==="investment-committee"&&await handleInvestmentCommitteeRoutes(req,res,ctx,url,seg))return;if(seg[0]==="operator"&&await handleOperatorRoutes(req,res,ctx,url,seg))return;if(seg[0]==="piper"&&await handlePiperRoutes(req,res,ctx,url,seg))return;if(seg[0]==="work-room"&&await handleWorkRoomRoutes(req,res,ctx,url,seg))return;return handleApi(req,res,ctx,url);
+  const seg=path.replace(/^\/api\/v1\/?/,"").split("/").filter(Boolean);if(seg[0]==="opportunities"&&await handleOpportunityRoutes(req,res,ctx,url,seg))return;if(seg[0]==="investment-committee"&&await handleInvestmentCommitteeRoutes(req,res,ctx,url,seg))return;if(seg[0]==="operator"&&await handleOperatorRoutes(req,res,ctx,url,seg))return;if(seg[0]==="piper"&&await handlePiperRoutes(req,res,ctx,url,seg))return;if(seg[0]==="work-room"&&await handleWorkRoomRoutes(req,res,ctx,url,seg))return;if(seg[0]==="agents"&&await handleAgentDirectoryRoutes(req,res,ctx,url,seg))return;return handleApi(req,res,ctx,url);
  }return sendJson(res,404,{ok:false,error:"not_found"});}
 if(path==="/auth/handoff"){if(req.method!=="POST")return sendJson(res,405,{ok:false,error:"method_not_allowed"},{Allow:"POST"});return handleAuthHandoff(req,res,ctx);}if(path.startsWith("/auth/"))return sendJson(res,404,{ok:false,error:"not_found"});if(req.method!=="GET"&&req.method!=="HEAD")return sendJson(res,405,{ok:false,error:"method_not_allowed"},{Allow:"GET, HEAD"});if(STATIC[path])return sendAsset(res,200,readPublic(publicDir,path.slice(1)),STATIC[path]);return sendHtml(res,200,readPublic(publicDir,"index.html").toString("utf8"));}catch{return sendJson(res,500,{ok:false,error:"internal_error"});}});}
