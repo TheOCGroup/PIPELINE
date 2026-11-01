@@ -17,6 +17,11 @@
  */
 
 import { buildBrief } from "../../domain/piper/briefModel.js";
+import { buildIntelligenceReport } from "./intelligenceReportService.js";
+import { createAgentWorkRoomService } from "../agentWorkRoomService.js";
+import { buildAgentGovernance } from "../agentGovernance.js";
+import { createGuidedWorkflowService } from "./guidedWorkflowService.js";
+import { GUIDED_WORKFLOW_TEMPLATES, getGuidedWorkflowTemplate } from "../../domain/piper/guidedWorkflows.js";
 import {
   findSellerCandidates,
   resolveSeller,
@@ -38,6 +43,29 @@ export const TOOL_SCHEMAS = Object.freeze([
       name: "get_operating_brief",
       description: "The current operating brief: what needs a decision, what is stalled, what changed, new intake, risks, and recommended next actions. Derived from stored PIPELINE state.",
       parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_intelligence_report",
+      description: "The structured intelligence report (Charlie format): portfolio totals, per-opportunity basis-labeled figures, underwriting status and confidence, open decisions, risks, and open founder escalations. Read-only; derived entirely from stored PIPELINE state.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_guided_workflow",
+      description: "Read guided-workflow state: one workflow by id, the in-flight workflow and history for an opportunity, or the tenant's active workflows. Read-only bookkeeping — a guided workflow never executes anything itself.",
+      parameters: {
+        type: "object",
+        properties: {
+          workflowId: { type: "string" },
+          opportunityId: { type: "string" },
+          limit: { type: "number", description: "Default 50, maximum 100." },
+        },
+      },
     },
   },
   {
@@ -322,6 +350,72 @@ export const TOOL_SCHEMAS = Object.freeze([
   {
     type: "function",
     function: {
+      name: "escalate_to_founder",
+      description: "Propose a founder escalation for a blocked, high-risk, or decision-critical item. Requires operator approval; on approval it records the escalation as an auditable work-room task awaiting the founder, with the reason and evidence references. It notifies no one externally — the escalation is the record the founder reviews.",
+      parameters: {
+        type: "object",
+        properties: {
+          opportunityId: { type: "string", description: "Optional; the opportunity the escalation concerns." },
+          reason: { type: "string", description: "Why this needs the founder: the blocker, risk, or decision required." },
+          severity: { type: "string", enum: ["normal", "high", "critical"] },
+          evidenceRefs: { type: "array", items: { type: "string" }, description: "Pointers to the stored evidence behind the escalation (record ids, brief sections, review ids)." },
+        },
+        required: ["reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "handoff_to_agent",
+      description: "Propose handing work to another OCG OS agent. Requires operator approval; on approval it creates a work-room task for that agent in the same append-only audit as operator-driven delegation. The target is validated against the Director identity registry: it must be a registered, active agent identity (HUNTER, VICTOR, PIPER, or a registered specialist) — unknown or retired identities are refused. It does not contact anyone — it records the handoff.",
+      parameters: {
+        type: "object",
+        properties: {
+          targetAgent: { type: "string", description: "The registered agent identity's name, e.g. \"VICTOR\" or a specialist's directory name." },
+          summary: { type: "string", description: "What the receiving agent is being asked to do, and why." },
+          opportunityId: { type: "string", description: "Optional; links the handoff to an opportunity." },
+          title: { type: "string", description: "Optional short task title." },
+        },
+        required: ["targetAgent", "summary"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "start_guided_workflow",
+      description: "Propose starting a persisted guided workflow (a code-defined step sequence) on an opportunity. Requires operator approval; on approval it records the workflow instance with its first step current. Starting executes nothing — the operator works each step, and a step's suggested tool still parks for its own approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          workflowKey: { type: "string", enum: GUIDED_WORKFLOW_TEMPLATES.map((t) => t.key), description: "Which guided workflow template to start." },
+          opportunityId: { type: "string", description: "Optional; the opportunity the sequence is worked on." },
+          title: { type: "string", description: "Optional title override." },
+        },
+        required: ["workflowKey"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "advance_guided_workflow",
+      description: "Propose moving a guided workflow: advance (mark the current step done), skip, pause, resume, or abandon. Requires operator approval. Bookkeeping only — advancing never runs the step's suggested tool or any other action.",
+      parameters: {
+        type: "object",
+        properties: {
+          workflowId: { type: "string" },
+          action: { type: "string", enum: ["advance", "skip", "pause", "resume", "abandon"], description: "Default advance." },
+          note: { type: "string", description: "Optional note recorded with the step decision." },
+        },
+        required: ["workflowId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "draft_email",
       description: "Propose an immutable email draft to the seller's recorded email address. Requires operator approval; never sends. Sending is not wired.",
       parameters: {
@@ -347,6 +441,10 @@ const WRITE_TOOLS = new Set([
   "prepare_outreach_draft",
   "draft_sms",
   "draft_email",
+  "escalate_to_founder",
+  "handoff_to_agent",
+  "start_guided_workflow",
+  "advance_guided_workflow",
 ]);
 
 export const isWriteTool = (name) => WRITE_TOOLS.has(name);
@@ -356,11 +454,44 @@ export const isKnownTool = (name) => TOOL_SCHEMAS.some((t) => t.function.name ==
  * Executes a tool. Write tools reach here only after approval — the runtime is
  * responsible for the gate; this function assumes it has already been passed.
  */
-export async function executeTool({ name, args = {}, snapshot, operator, actor = "piper" }) {
+/** Kinds that can hold handed-off work. The founder is reached through
+ * escalate_to_founder, not handoff; system identities are not agents. */
+const HANDOFF_TARGET_KINDS = new Set(["orchestrator", "director", "lead", "specialist"]);
+
+/** Resolve a handoff target against the Director identity registry: by id,
+ * by canonical name, or by case-insensitive name. Null when absent. */
+function resolveDirectoryAgent(directory, ref) {
+  if (!directory || !ref) return null;
+  const direct = directory.resolve(ref);
+  if (direct) return direct;
+  const wanted = String(ref).trim().toLowerCase();
+  return directory.list().find((a) => a.name.toLowerCase() === wanted) || null;
+}
+
+export async function executeTool({ name, args = {}, snapshot, operator, actor = "piper", workRoom = null, agentDirectory = null, guidedWorkflows = null }) {
   // Tenant scope for seller-data tools: the operator repository carries the
   // deployment's configured tenant; every opportunity id entering below is
   // resolved against it (a foreign id reads exactly like a nonexistent one).
   const tenantId = operator ? operator.tenantId || null : null;
+  // Work room + agent directory: the runtime passes the shared instances
+  // built by buildServices. A direct caller without them falls back to the
+  // SAME governed construction (agentGovernance.js) from the operator's own
+  // db + tenant — there is no ungoverned work-room construction anywhere
+  // (QUINCEY F7). A database too old for the governance tables degrades to
+  // the legacy bare room and no directory; handoff then fails closed,
+  // because without a registry there is no validated target.
+  let room = workRoom || null;
+  let directory = agentDirectory || null;
+  if ((!room || !directory) && operator?.db) {
+    try {
+      const gov = buildAgentGovernance(operator.db, tenantId);
+      room = room || gov.workRoom;
+      directory = directory || gov.directory;
+    } catch {
+      room = room || createAgentWorkRoomService(operator.db, tenantId);
+    }
+  }
+  const workflows = guidedWorkflows || (operator?.db ? createGuidedWorkflowService(operator.db, tenantId) : null);
   const opportunityExists = (opportunityId) =>
     tenantId
       ? !!operator.db.prepare("SELECT 1 FROM seller_opportunities WHERE id = ? AND tenant_id = ?").get(opportunityId, tenantId)
@@ -368,6 +499,9 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
   switch (name) {
     case "get_operating_brief":
       return { ok: true, data: buildBrief(snapshot) };
+
+    case "get_intelligence_report":
+      return { ok: true, data: buildIntelligenceReport(snapshot, { workRoom: room }) };
 
     case "find_opportunities": {
       const limit = Math.min(Number(args.limit) || 10, 50);
@@ -616,6 +750,162 @@ export async function executeTool({ name, args = {}, snapshot, operator, actor =
       return { ok: true, data: { communication: draft, sends: false } };
     }
 
+    // --- Cross-agent work room (write: approval-gated, records only) --------
+    // Escalations and handoffs land in the migration-023 work room — the same
+    // append-only audit as operator-driven delegation. Neither tool contacts
+    // anyone; each records a durable, reviewable fact.
+
+    case "escalate_to_founder": {
+      const reason = str(args.reason, 1000);
+      if (!reason) return { ok: false, error: "missing_reason", detail: "An escalation needs the blocker, risk, or decision it is raising." };
+      const opportunityId = str(args.opportunityId, 200);
+      if (opportunityId && !opportunityExists(opportunityId)) {
+        return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
+      }
+      if (!room) return { ok: false, error: "work_room_unavailable" };
+      const severity = ["normal", "high", "critical"].includes(args.severity) ? args.severity : "normal";
+      const evidenceRefs = Array.isArray(args.evidenceRefs)
+        ? args.evidenceRefs.map((e) => str(e, 300)).filter(Boolean).slice(0, 10)
+        : [];
+      const task = room.create({
+        department: "OCG OS",
+        title: `Founder escalation: ${reason}`.slice(0, 300),
+        requestedBy: actor,
+        orchestrator: "Aiden",
+        director: "Founder",
+        leadAgent: "Piper",
+        opportunityId: opportunityId || null,
+        state: "awaiting_approval",
+        approvalRequired: true,
+        currentAction: "Escalated to the founder by Piper; awaiting founder review.",
+        blocker: reason,
+      });
+      room.event({
+        taskId: task.id,
+        eventType: "approval_requested",
+        actor: "Piper",
+        fromActor: "Piper",
+        toActor: "Founder",
+        summary: `Escalation (${severity}): ${reason}`,
+        evidenceRef: evidenceRefs[0] || null,
+        metadata: { via: "piper_escalate_to_founder", severity, evidenceRefs },
+      });
+      return { ok: true, data: { escalation: { id: task.id, state: task.state, severity, opportunityId: opportunityId || null, reason } } };
+    }
+
+    case "handoff_to_agent": {
+      const summary = str(args.summary, 2000);
+      if (!summary) return { ok: false, error: "missing_summary", detail: "A handoff needs what the receiving agent is being asked to do." };
+      // The target is validated against the Director identity registry
+      // (Issue #7): the identity must exist in the directory, be active,
+      // and be an agent kind that can hold work. Unknown names and retired
+      // identities are refused — there is no hardcoded agent list anymore
+      // (QUINCEY F7).
+      const rawTarget = str(args.targetAgent, 200);
+      const target = rawTarget ? resolveDirectoryAgent(directory, rawTarget) : null;
+      if (!target || !HANDOFF_TARGET_KINDS.has(target.kind)) {
+        return { ok: false, error: "unknown_agent", detail: "Piper can hand off to an agent registered in the OCG OS directory (HUNTER, VICTOR, PIPER, or an active registered specialist). For a founder decision, use escalate_to_founder." };
+      }
+      if (target.status !== "active") {
+        return { ok: false, error: "agent_not_active", detail: `${target.name} is retired in the agent directory and cannot receive work.` };
+      }
+      const opportunityId = str(args.opportunityId, 200);
+      if (opportunityId && !opportunityExists(opportunityId)) {
+        return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
+      }
+      if (!room) return { ok: false, error: "work_room_unavailable" };
+      const task = room.create({
+        department: "OCG OS",
+        title: str(args.title, 300) || `Handoff to ${target.name}: ${summary}`.slice(0, 300),
+        requestedBy: actor,
+        orchestrator: "Aiden",
+        director: "OCG OS Director",
+        leadAgent: target.name,
+        opportunityId: opportunityId || null,
+        state: "queued",
+        currentAction: summary,
+      });
+      room.event({
+        taskId: task.id,
+        eventType: "handoff",
+        actor: "Piper",
+        fromActor: "Piper",
+        toActor: target.name,
+        summary,
+        evidenceRef: str(args.evidenceRef, 300),
+        metadata: { via: "piper_handoff_to_agent", targetAgentId: target.id },
+      });
+      return { ok: true, data: { handoff: { id: task.id, targetAgent: target.name, targetAgentId: target.id, state: task.state, opportunityId: opportunityId || null } } };
+    }
+
+    // --- Guided workflows (migration 033; bookkeeping only) ----------------
+    // Starting/advancing a workflow writes instance + step bookkeeping and
+    // NOTHING else: a step never executes its suggested tool, and write
+    // tools below still park for their own approval when actually proposed.
+
+    case "start_guided_workflow": {
+      const workflowKey = str(args.workflowKey, 100);
+      if (!getGuidedWorkflowTemplate(workflowKey)) {
+        return { ok: false, error: "unknown_workflow", detail: `Guided workflows: ${GUIDED_WORKFLOW_TEMPLATES.map((t) => t.key).join(", ")}.` };
+      }
+      const opportunityId = str(args.opportunityId, 200);
+      if (opportunityId && !opportunityExists(opportunityId)) {
+        return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
+      }
+      if (!workflows) return { ok: false, error: "guided_workflows_unavailable" };
+      try {
+        const workflow = workflows.start({
+          workflowKey,
+          opportunityId: opportunityId || null,
+          title: str(args.title, 300),
+          actor,
+        });
+        return { ok: true, data: { workflow } };
+      } catch (err) {
+        return { ok: false, error: err.message || "guided_workflow_failed" };
+      }
+    }
+
+    case "advance_guided_workflow": {
+      const workflowId = str(args.workflowId, 200);
+      if (!workflowId) return { ok: false, error: "missing_workflow_id", detail: "Which guided workflow? get_guided_workflow lists them." };
+      if (!workflows) return { ok: false, error: "guided_workflows_unavailable" };
+      const action = ["advance", "skip", "pause", "resume", "abandon"].includes(args.action) ? args.action : "advance";
+      try {
+        const workflow = workflows[action](workflowId, { actor, note: str(args.note, 1000) });
+        return { ok: true, data: { workflow } };
+      } catch (err) {
+        const code = err.message || "guided_workflow_failed";
+        // Ghost equality: a foreign workflow id reads exactly like a
+        // nonexistent one, in the same vocabulary as every other tool.
+        return { ok: false, error: code === "guided_workflow_not_found" ? "not_found" : code };
+      }
+    }
+
+    case "get_guided_workflow": {
+      if (!workflows) return { ok: false, error: "guided_workflows_unavailable" };
+      const workflowId = str(args.workflowId, 200);
+      if (workflowId) {
+        const workflow = workflows.get(workflowId);
+        if (!workflow) return { ok: false, error: "not_found", detail: `No guided workflow ${workflowId} in PIPELINE.` };
+        return { ok: true, data: { workflow } };
+      }
+      const opportunityId = str(args.opportunityId, 200);
+      if (opportunityId) {
+        if (!opportunityExists(opportunityId)) {
+          return { ok: false, error: "not_found", detail: `No opportunity ${opportunityId} in PIPELINE.` };
+        }
+        return {
+          ok: true,
+          data: {
+            active: workflows.activeForOpportunity(opportunityId),
+            workflows: workflows.list({ opportunityId, limit: args.limit }),
+          },
+        };
+      }
+      return { ok: true, data: { workflows: workflows.list({ state: "active", limit: args.limit }) } };
+    }
+
     default:
       return { ok: false, error: "unknown_tool", detail: `Piper has no tool named ${name}.` };
   }
@@ -656,6 +946,24 @@ export function describeToolCall(name, args = {}) {
       return `Draft an SMS for ${args.opportunityId}. This does not send it.`;
     case "draft_email":
       return `Draft an email for ${args.opportunityId}. This does not send it.`;
+    case "get_intelligence_report":
+      return "Build the structured intelligence report from stored PIPELINE state";
+    case "escalate_to_founder":
+      return `Escalate to the founder${args.opportunityId ? ` on ${args.opportunityId}` : ""}: "${String(args.reason || "").slice(0, 120)}"`;
+    case "handoff_to_agent":
+      return `Hand off to ${args.targetAgent || "?"}${args.opportunityId ? ` on ${args.opportunityId}` : ""}: "${String(args.summary || "").slice(0, 120)}"`;
+    case "get_guided_workflow":
+      return args.workflowId
+        ? `Show guided workflow ${args.workflowId}`
+        : args.opportunityId
+          ? `Show the guided workflow state for ${args.opportunityId}`
+          : "List active guided workflows";
+    case "start_guided_workflow":
+      return `Start the ${args.workflowKey || "?"} guided workflow${args.opportunityId ? ` on ${args.opportunityId}` : ""}. This records the sequence only — it runs nothing.`;
+    case "advance_guided_workflow": {
+      const action = ["advance", "skip", "pause", "resume", "abandon"].includes(args.action) ? args.action : "advance";
+      return `${action[0].toUpperCase()}${action.slice(1)} guided workflow ${args.workflowId || "?"} (bookkeeping only — no step action runs)`;
+    }
     default:
       return `${name}(${Object.keys(args).join(", ")})`;
   }

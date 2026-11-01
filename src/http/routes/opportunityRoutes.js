@@ -180,13 +180,14 @@ async function handleCreate(req, res, ctx) {
 
     db.prepare(
       `INSERT INTO seller_opportunity_sources (
-         id, opportunity_id, source_type, source_record_id, source_message_id,
+         id, opportunity_id, tenant_id, source_type, source_record_id, source_message_id,
          original_address, source_timestamp, conversion_actor, conversion_timestamp,
          provenance_metadata_json
-       ) VALUES (?, ?, 'manual_entry', ?, NULL, ?, ?, ?, ?, ?)`
+       ) VALUES (?, ?, ?, 'manual_entry', ?, NULL, ?, ?, ?, ?, ?)`
     ).run(
       randomUUID(),
       opportunityId,
+      tenantId,
       null,
       normalizedAddress,
       now,

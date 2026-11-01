@@ -404,12 +404,18 @@ function strongest(s) {
   }
 
   const top = ranked[0];
+  // Basis labels ride along: a figure the source labeled "estimated" is never
+  // presented as recorded, and the headline only claims "recorded" when both
+  // sides of the top margin actually are.
+  const basisOf = (o, field) => o.figures?.[field]?.basis || "recorded";
+  const topBases = [basisOf(top.o, "mao"), basisOf(top.o, "askingPrice")];
+  const marginWord = topBases.every((b) => b === "recorded") ? "widest recorded margin" : "widest margin";
   return say(
-    `${label(top.o)} has the widest recorded margin: ceiling ${money(top.o.underwriting.mao)} against a ${money(top.o.askingPrice)} ask.`,
+    `${label(top.o)} has the ${marginWord}: ceiling ${money(top.o.underwriting.mao)} (${basisOf(top.o, "mao")}) against a ${money(top.o.askingPrice)} (${basisOf(top.o, "askingPrice")}) ask.`,
     ranked.slice(0, 5).map((r) => ({
       opportunityId: r.o.id,
       label: label(r.o),
-      reasons: [`Ceiling ${money(r.o.underwriting.mao)} vs ask ${money(r.o.askingPrice)} (${money(r.spread)} spread).`],
+      reasons: [`Ceiling ${money(r.o.underwriting.mao)} (${basisOf(r.o, "mao")}) vs ask ${money(r.o.askingPrice)} (${basisOf(r.o, "askingPrice")}) (${money(r.spread)} spread).`],
     })), s
   );
 }

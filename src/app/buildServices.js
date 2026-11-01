@@ -16,7 +16,11 @@ import { InvestmentCommitteeService } from "../services/investmentCommitteeServi
 import { TransactionWorkflowService } from "../services/transactionWorkflowService.js";
 import { RenovationExitGovernanceService } from "../services/renovationExitGovernanceService.js";
 import { PostRenovationDispositionService } from "../services/postRenovationDispositionService.js";
-import { createAgentWorkRoomService } from "../services/agentWorkRoomService.js";
+import { buildAgentGovernance } from "../services/agentGovernance.js";
+import { CandidateRankingService } from "../services/candidateRankingService.js";
+import { JourneyService } from "../services/journeyService.js";
+import { createGuidedWorkflowService } from "../services/piper/guidedWorkflowService.js";
+import { createDirectorReportService } from "../services/directorReportService.js";
 
 export function buildServices(config, db) {
   let repos;
@@ -34,19 +38,56 @@ export function buildServices(config, db) {
   const dispositionService = db ? new PostRenovationDispositionService(db, config.tenantId) : null;
   const piperContext = db ? buildRiskAwarePiperContext(db, config, transactionService, dispositionService) : null;
 
+  // Issue #7 Director governance: identity directory -> capability service
+  // -> governed work room -> Director report. The wiring lives in ONE
+  // helper (agentGovernance.js) shared with Piper's direct-caller fallback,
+  // so no ungoverned construction of the work room exists anywhere (F7).
+  const governance = db ? buildAgentGovernance(db, config.tenantId) : null;
+  const agentDirectory = governance ? governance.directory : null;
+  const agentCapabilities = governance ? governance.capabilities : null;
+
+  // Issue #1: ONE shared work-room instance — the same tenant-bound room
+  // backs the operator work-room surface, Issue #7 governance, and the
+  // Piper runtime's escalation/handoff tools.
+  const workRoom = governance ? governance.workRoom : null;
+
+  const operatorRepo = db ? new SqliteOperatorRepository(db, config) : null;
+  const committeeService = db ? new InvestmentCommitteeService(db, config.tenantId) : null;
+
+  // Issue #1 item 5: persisted guided workflows (migration 033) — same
+  // tenant discipline, instances served to the Piper runtime as a tool
+  // dependency.
+  const guidedWorkflows = db ? createGuidedWorkflowService(db, config.tenantId) : null;
+
   return {
     opportunities: new OpportunityReadService(repos.opportunity),
     provenance: new ProvenanceReadService(repos.provenance),
     classifications: new ClassificationReadService(repos.classification),
     dataQuality: new DataQualityReadService(repos.opportunity),
-    operator: db ? new SqliteOperatorRepository(db, config) : null,
-    investmentCommittee: db ? new InvestmentCommitteeService(db, config.tenantId) : null,
+    operator: operatorRepo,
+    investmentCommittee: committeeService,
+    candidateRanking: db ? new CandidateRankingService(db, config.tenantId) : null,
+    // Issue #8 journey artifacts (migration 036): durable seller briefs,
+    // call-preparation REST surface, journey recommendations, follow-up
+    // history — sharing the one operator repository, the committee
+    // service, and the (risk-aware) Piper context used by the brief NEXT
+    // derivation.
+    journey: db ? new JourneyService(db, {
+      tenantId: config.tenantId,
+      operator: operatorRepo,
+      committee: committeeService,
+      contextService: piperContext,
+    }) : null,
     transactions: transactionService,
     renovationExits: db ? new RenovationExitGovernanceService(db, config.tenantId) : null,
     dispositions: dispositionService,
-    workRoom: db ? createAgentWorkRoomService(db, config.tenantId) : null,
+    workRoom,
+    guidedWorkflows,
+    agents: agentDirectory,
+    capabilities: agentCapabilities,
+    directorReport: db ? createDirectorReportService(db, config.tenantId) : null,
     piperContext,
-    piper: db ? buildPiperRuntime(config, db, piperContext) : null,
+    piper: db ? buildPiperRuntime(config, db, piperContext, workRoom, agentDirectory, guidedWorkflows) : null,
   };
 }
 
@@ -118,7 +159,7 @@ function buildRiskAwarePiperContext(db, config, transactions, dispositions = nul
   return context;
 }
 
-function buildPiperRuntime(config, db, contextService = null) {
+function buildPiperRuntime(config, db, contextService = null, workRoom = null, agentDirectory = null, guidedWorkflows = null) {
   const context = contextService || buildRiskAwarePiperContext(db, config, new TransactionWorkflowService(db, config.tenantId), new PostRenovationDispositionService(db, config.tenantId));
   const operator = new SqliteOperatorRepository(db, config);
   let provider;
@@ -128,5 +169,5 @@ function buildPiperRuntime(config, db, contextService = null) {
     console.error(`[piper] provider disabled: ${err.message}`);
     provider = createPiperProvider({ piperProvider: "none" });
   }
-  return new PiperRuntime({ db, config, contextService: context, operator, provider });
+  return new PiperRuntime({ db, config, contextService: context, operator, provider, workRoom, agentDirectory, guidedWorkflows });
 }

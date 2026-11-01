@@ -2,6 +2,8 @@
  * Piper endpoints — /api/v1/piper/*
  *
  *   GET  /brief              the operating brief, derived from stored state
+ *   GET  /intelligence-report  the structured (Charlie-format) intelligence
+ *                            report for founder brief aggregation
  *   POST /ask                one turn; may settle awaiting_approval
  *   POST /cancel             abort an in-flight run
  *   POST /approve            approve or reject a proposed action — the only
@@ -18,6 +20,7 @@
 import { sendJson } from "../response.js";
 import { CAPABILITIES } from "../../domain/piper/intentRouter.js";
 import { describeState, RUN_STATES } from "../../domain/piper/runState.js";
+import { buildIntelligenceReport } from "../../services/piper/intelligenceReportService.js";
 
 const MAX_QUESTION = 2000;
 
@@ -69,6 +72,21 @@ export async function handlePiperRoutes(req, res, ctx, url, segments) {
           ok: true,
           data: brief,
           meta: { provider, deterministic: !provider.connected },
+        });
+        return true;
+      }
+
+      case "intelligence-report": {
+        if (!requireGet()) return true;
+        // Read-only aggregation for founder brief tooling (Charlie format).
+        // Derived from the same tenant-scoped snapshot Piper reasons over;
+        // open escalations come from the work room when it is wired.
+        const snapshot = ctx.services.piperContext.snapshot();
+        const report = buildIntelligenceReport(snapshot, { workRoom: ctx.services.workRoom || null });
+        sendJson(res, 200, {
+          ok: true,
+          data: report,
+          meta: { provider: piper.describeProvider(), deterministic: true },
         });
         return true;
       }
