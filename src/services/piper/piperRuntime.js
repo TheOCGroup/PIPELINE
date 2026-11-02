@@ -96,7 +96,17 @@ const WRITE_INTENT_PATTERNS = Object.freeze({
   prepare_outreach_draft: /\b(prepare|draft|create|write)\b.{0,24}\b(outreach|message)\b/i,
   draft_sms: /\b(draft|write|prepare|compose|send)\b.{0,24}\b(text|sms|message)\b/i,
   draft_email: /\b(draft|write|prepare|compose|send)\b.{0,24}\b(email|e-mail)\b/i,
-  request_callback: /\b(call|phone|ring)\b.{0,32}\b(seller|him|her|them|back)\b|\bcallback\b|\bcall\s+back\b/i,
+  // request_callback is narrowed (QUINCEY F-1 on PR #38): a bare mention of
+  // "callback" or "call back" never parks a proposal. Parking requires a
+  // directive form: a call verb governing a seller referent ("call the
+  // seller", "call him back", "call back the seller"), a mediated request
+  // ("have/ask/get Piper or ONCALL to call"), a please/can-you/could-you
+  // request frame, a sentence-initial "call ... back" imperative, or the
+  // noun "callback" as the object of a request verb (request/arrange/set
+  // up/book) tied to a seller referent. A message that opens as a question
+  // or an explanation (who/what/when/why/how/did/explain/tell me/...) never
+  // parks at all, whatever it mentions.
+  request_callback: /^(?!\s*(?:please\s+)?(?:who|what|when|where|why|how|did|do|does|was|were|is|are|should|can\s+i|could\s+i|explain|tell\s+me|describe|show\s+me)\b)(?:call\b[^.?!]{0,32}\bback\b|[\s\S]*?(?:\b(?:call|phone|ring)\s+(?:the\s+|that\s+)?(?:seller|him|her|them)\b|\bcall\s+back\s+(?:the\s+|that\s+)?(?:seller|him|her|them)\b|\b(?:have|ask|get)\s+(?:piper|oncall)\s+(?:to\s+)?(?:call|phone|ring)\b|\b(?:please|can\s+you|could\s+you)\b(?:(?!\b(?:explain|describe|show|tell)\b)[^.?!]){0,40}\b(?:call|phone|ring)\b[^.?!]{0,32}\b(?:seller|him|her|them|back)\b|\b(?:please|can\s+you|could\s+you)\b(?:(?!\b(?:explain|describe|show|tell)\b)[^.?!]){0,24}\bcall\s+back\b|\b(?:request|arrange|set\s+up|book)\b[^.?!]{0,32}\bcallback\b[^.?!]{0,32}\b(?:seller|him|her|them)\b))/i,
 });
 
 function writeToolExplicitlyRequested(name, question) {

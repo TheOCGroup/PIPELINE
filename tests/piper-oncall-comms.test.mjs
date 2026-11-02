@@ -433,3 +433,82 @@ test("runtime: a callback proposed without an explicit founder request to call i
   assert.equal(asked.pendingApprovals.length, 0);
   assert.equal(calls.length, 0);
 });
+
+// --- runtime: the write-intent matcher (QUINCEY F-1 narrowing) -----------------
+//
+// The request_callback pattern used to park a proposal on any bare mention
+// of "callback" (QUINCEY F-1: "Explain how a callback works here" parked).
+// The narrowed pattern requires a directive form. These batteries pin both
+// directions at runtime level: informational phrasings produce ZERO parked
+// proposals and ZERO ONCALL traffic even when the model proposes the tool;
+// genuine call intent still parks (and only parks — execution still needs
+// decide() + approval, proven by the two-key test above).
+
+const INFORMATIONAL_PHRASINGS = [
+  "Explain how a callback works here", // QUINCEY F-1 reproduction, verbatim
+  "What is a callback?",
+  "How do callbacks work in ONCALL?",
+  "Tell me about callbacks in general",
+  "Please explain how a callback works here",
+  "Please explain the call back process for the seller",
+  "What's the difference between a callback and calling back?",
+  "Did the seller call back yesterday?",
+  "The seller said he would call back tomorrow",
+  "When did we last call the seller?",
+  "Show me the call history for the seller",
+  "What happens if we call the seller twice in one day?",
+  "The integration uses a callback URL for webhooks - how does that work?",
+  "Can I schedule a callback meeting with the team on Friday?",
+  "Why didn't the seller call back?",
+  "Describe the call with the seller from Tuesday",
+  "The callback is scheduled for 3pm",
+  "Update the callback number for the seller",
+];
+
+const GENUINE_INTENT_PHRASINGS = [
+  "Please call the seller back about the offer",
+  "Call the seller",
+  "Call him back",
+  "Call back the seller",
+  "Call Robert back",
+  "Have Piper call the seller about the offer",
+  "Ask ONCALL to call her",
+  "Can you call the seller today?",
+  "Please call back",
+  "Request a callback for the seller",
+  "Set up a callback with him",
+  "Phone the seller this afternoon",
+  "We need to call the seller about the price",
+];
+
+test("runtime: informational phrasings never park a callback proposal (QUINCEY F-1 battery)", async (t) => {
+  for (const question of INFORMATIONAL_PHRASINGS) {
+    const { calls, fetchImpl } = stubFetch(ok201);
+    const provider = new ScriptedProvider([
+      callTool("request_callback", { opportunityId: "opp-rt", consentBasis: "express_consent" }),
+      say("Here is the explanation you asked for."),
+    ]);
+    const { runtime, db } = buildRuntimeFor(t, provider, enabledClient(fetchImpl));
+    seedRuntimeSeller(db);
+
+    const asked = await runtime.ask({ question, actor: "founder" });
+    assert.equal(asked.pendingApprovals.length, 0, `informational phrasing parked a proposal: ${question}`);
+    assert.equal(calls.length, 0, `informational phrasing produced ONCALL traffic: ${question}`);
+  }
+});
+
+test("runtime: genuine call intent still parks a callback proposal — and only parks it", async (t) => {
+  for (const question of GENUINE_INTENT_PHRASINGS) {
+    const { calls, fetchImpl } = stubFetch(ok201);
+    const provider = new ScriptedProvider([
+      callTool("request_callback", { opportunityId: "opp-rt", consentBasis: "express_consent" }),
+    ]);
+    const { runtime, db } = buildRuntimeFor(t, provider, enabledClient(fetchImpl));
+    seedRuntimeSeller(db);
+
+    const asked = await runtime.ask({ question, actor: "founder" });
+    assert.equal(asked.pendingApprovals.length, 1, `genuine intent did not park: ${question}`);
+    assert.equal(asked.pendingApprovals[0].tool, "request_callback");
+    assert.equal(calls.length, 0, `a parked proposal sent traffic before approval: ${question}`);
+  }
+});
