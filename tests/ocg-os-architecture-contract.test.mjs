@@ -104,7 +104,7 @@ test("workflow PIPER tool inventory matches the tool registry exactly", () => {
   assert.ok(writeBlock, "toolRegistry must define WRITE_TOOLS");
   const writeNames = [...writeBlock[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]);
   const readNames = schemaNames.filter((n) => !writeNames.includes(n));
-  assert.equal(schemaNames.length, 20, "registry baseline is 20 tools");
+  assert.equal(schemaNames.length, 22, "registry baseline is 22 tools");
   // The doc must name every tool and state counts that match the registry,
   // so adding/removing a tool — or a stale inventory (QUINCEY U1) — fails.
   for (const name of schemaNames) {

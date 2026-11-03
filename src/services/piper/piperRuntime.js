@@ -96,6 +96,17 @@ const WRITE_INTENT_PATTERNS = Object.freeze({
   prepare_outreach_draft: /\b(prepare|draft|create|write)\b.{0,24}\b(outreach|message)\b/i,
   draft_sms: /\b(draft|write|prepare|compose|send)\b.{0,24}\b(text|sms|message)\b/i,
   draft_email: /\b(draft|write|prepare|compose|send)\b.{0,24}\b(email|e-mail)\b/i,
+  // request_callback is narrowed (QUINCEY F-1 on PR #38): a bare mention of
+  // "callback" or "call back" never parks a proposal. Parking requires a
+  // directive form: a call verb governing a seller referent ("call the
+  // seller", "call him back", "call back the seller"), a mediated request
+  // ("have/ask/get Piper or ONCALL to call"), a please/can-you/could-you
+  // request frame, a sentence-initial "call ... back" imperative, or the
+  // noun "callback" as the object of a request verb (request/arrange/set
+  // up/book) tied to a seller referent. A message that opens as a question
+  // or an explanation (who/what/when/why/how/did/explain/tell me/...) never
+  // parks at all, whatever it mentions.
+  request_callback: /^(?!\s*(?:please\s+)?(?:who|what|when|where|why|how|did|do|does|was|were|is|are|should|can\s+i|could\s+i|explain|tell\s+me|describe|show\s+me)\b)(?:call\b[^.?!]{0,32}\bback\b|[\s\S]*?(?:\b(?:call|phone|ring)\s+(?:the\s+|that\s+)?(?:seller|him|her|them)\b|\bcall\s+back\s+(?:the\s+|that\s+)?(?:seller|him|her|them)\b|\b(?:have|ask|get)\s+(?:piper|oncall)\s+(?:to\s+)?(?:call|phone|ring)\b|\b(?:please|can\s+you|could\s+you)\b(?:(?!\b(?:explain|describe|show|tell)\b)[^.?!]){0,40}\b(?:call|phone|ring)\b[^.?!]{0,32}\b(?:seller|him|her|them|back)\b|\b(?:please|can\s+you|could\s+you)\b(?:(?!\b(?:explain|describe|show|tell)\b)[^.?!]){0,24}\bcall\s+back\b|\b(?:request|arrange|set\s+up|book)\b[^.?!]{0,32}\bcallback\b[^.?!]{0,32}\b(?:seller|him|her|them)\b))/i,
 });
 
 function writeToolExplicitlyRequested(name, question) {
@@ -109,14 +120,17 @@ export { SYSTEM_PROMPT };
 
 export class PiperRuntime {
   /**
-   * @param {object} deps { db, config, contextService, operator, provider }
+   * @param {object} deps { db, config, contextService, operator, provider, comms }
+   *   comms is the optional ONCALL bridge client (request_callback /
+   *   get_callback_result); when absent or unconfigured those tools refuse.
    */
-  constructor({ db, config, contextService, operator, provider }) {
+  constructor({ db, config, contextService, operator, provider, comms = null }) {
     this.db = db;
     this.config = config;
     this.context = contextService;
     this.operator = operator;
     this.provider = provider;
+    this.comms = comms;
     /** runId -> AbortController, for in-flight cancellation. */
     this.active = new Map();
   }
@@ -364,7 +378,7 @@ export class PiperRuntime {
         // Read tools run now; they cannot mutate anything.
         for (const call of reads) {
           if (!isKnownTool(call.name)) continue;
-          const result = await executeTool({ name: call.name, args: call.arguments, snapshot, operator: this.operator, actor });
+          const result = await executeTool({ name: call.name, args: call.arguments, snapshot, operator: this.operator, actor, comms: this.comms });
           readResults.push({ name: call.name, result });
           // Deterministic session-context update from the tool result.
           this.#updateContextFromTool(thread.id, threadCtx, call.name, call.arguments, result);
@@ -471,6 +485,11 @@ export class PiperRuntime {
         snapshot,
         operator: this.operator,
         actor,
+        comms: this.comms,
+        // The approval record for THIS decision. request_callback takes its
+        // ONCALL approval reference from here — derived from the operator's
+        // approval of this exact proposal — never from tool arguments.
+        approval: { ref: `piper-approval:${call.id}`, toolCallId: call.id, decidedBy: actor },
       });
 
       if (!result.ok) throw Object.assign(new Error(result.error), { code: result.error });
@@ -479,7 +498,10 @@ export class PiperRuntime {
         .run(JSON.stringify(result.data ?? {}), now(), toolCallId);
       this.#setState(call.run_id, RUN_STATES.RUNNING_TOOL, RUN_STATES.COMPLETE);
       this.#clearPendingConfirmation(call.thread_id);
-      this.#appendMessage(call.thread_id, call.run_id, "assistant", `Done — ${describeToolCall(call.tool_name, JSON.parse(call.arguments_json))}. Written to PIPELINE.`);
+      const completionNote = call.tool_name === "request_callback"
+        ? "Submitted to ONCALL under this approval."
+        : "Written to PIPELINE.";
+      this.#appendMessage(call.thread_id, call.run_id, "assistant", `Done — ${describeToolCall(call.tool_name, JSON.parse(call.arguments_json))}. ${completionNote}`);
       return { ok: true, status: "executed", wrote: true, data: result.data };
     } catch (err) {
       const code = err.code || "tool_failed";

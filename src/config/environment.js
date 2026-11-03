@@ -127,6 +127,15 @@ export function loadConfig(env = process.env) {
   }
   const ocgOneBaseUrl = env.OCG_ONE_BASE_URL || DEFAULTS.ocgOneBaseUrl;
 
+  // ONCALL communications bridge (PIPER -> ONCALL governed call requests).
+  // Disabled by default: BOTH the ONCALL base URL and the bridge secret must
+  // be configured before PIPER can ask ONCALL to place a seller callback.
+  // The secret's value is never logged or returned anywhere — ONCALL derives
+  // the "piper" agent identity from it server-side, and every request still
+  // needs an operator approval reference (see oncallCommsClient.js).
+  const oncallCommsBaseUrl = String(env.ONCALL_COMMS_BASE_URL || "").trim().replace(/\/+$/, "");
+  const piperOncallBridgeSecret = env.PIPER_ONCALL_BRIDGE_SECRET || "";
+
   const handoffIssuer = env.OCG_ONE_HANDOFF_ISSUER || "ocg-one";
   const handoffAudience = env.OCG_ONE_HANDOFF_AUDIENCE || "pipeline";
   
@@ -237,6 +246,9 @@ export function loadConfig(env = process.env) {
     sessionTtlMinutes,
     piperIntakeEnabled,
     piperIntakeSecret,
+    oncallCommsBaseUrl,
+    piperOncallBridgeSecret,
+    oncallCommsEnabled: Boolean(oncallCommsBaseUrl && piperOncallBridgeSecret),
     piperProvider,
     piperBaseUrl,
     piperModel,
