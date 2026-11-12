@@ -1,9 +1,10 @@
 /**
- * PIPELINE authorization model (definitions only for Phase 3C).
+ * PIPELINE role-to-permission matrix.
  *
- * Roles and permissions are declared here for later enforcement. No Phase 3C
- * route performs a production operator action, so nothing is enforced yet beyond
- * the handoff stub. The model is documented in docs/architecture-boundary.md.
+ * API enforcement is performed by authMiddleware and the operator route layer.
+ * The founder operator bearer receives the administrator permission set;
+ * OCG ONE SSO role mapping remains gated until its signing keys and trust
+ * configuration are provisioned and verified. See docs/architecture-boundary.md.
  */
 
 export const ROLES = Object.freeze(["viewer", "operator", "manager", "administrator"]);

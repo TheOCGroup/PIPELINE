@@ -6,99 +6,25 @@ Each needs a product decision before Phase 3G work starts.
 
 ---
 
-## 0. P1 — the Classifications screen shows fabricated data
+## 0. Classification display — fabricated lineage verdict removed; authoritative lineage still not recorded
 
-**Found during release verification on 2026-08-15. Pre-existing; not introduced
-by the intake security patch. Not fixed here, because the correct fix needs a
-schema decision.** Do not present the Classifications screen as authoritative
-until this is resolved.
+**Current main status (2026-11-12):** The prior fixture-id hardcoding and synthetic history described in the August finding are no longer present.
 
-`SqliteClassificationRepository` in `src/repositories/sqlite/sqliteRepositories.js`
-does not read the tables it appears to.
+`SqliteClassificationRepository.listAll()` now returns `NOT_RECORDED` for lineage classification, reports the separate `record_classifications.classification_value` as `recordClassification`, and exposes the stored provenance resolution state separately. `listHistory()` reads the append-only `classification_history` table directly.
 
-**`listAll()`** hardcodes lineage classification by fixture id:
+This is intentionally conservative. `record_classifications.classification_value` is a deal-type value (for example `investment_rehab`), while `source_provenance.resolution_status` describes whether provenance was resolved. Neither field, by itself, proves that the source lead is REAL or SYNTHETIC. An unresolved source must never be silently promoted to REAL or classified SYNTHETIC merely because evidence is absent.
 
-```js
-let classification = "REAL";
-if (r.opportunityId === "FX-OPP-0004") classification = "SYNTHETIC";
-else if (r.opportunityId === "FX-OPP-0003") classification = "AMBIGUOUS";
-```
+**Remaining product/schema decision:** define the authoritative evidence and write path for a REAL / SYNTHETIC / AMBIGUOUS lineage determination. Until that is approved and implemented, the correct current value is `NOT_RECORDED`; do not derive a lineage verdict from provenance resolution status alone.
 
-Every record that is not one of those two demo fixtures is therefore reported
-**REAL** — including records whose provenance is `unresolved`. Verified live: an
-intake record with UNRESOLVED provenance displays as REAL.
+## 1. Operator workflow persistence — server-side routes now exist
 
-That is the inverse of the invariant this product exists to enforce. The domain
-model is explicit — `classifyByLineage()` in
-`src/domain/classifications/classificationModel.js` returns AMBIGUOUS for
-unknown or absent lineage, commented "unknown / absent lineage is never silently
-promoted" — and the repository silently promotes.
+**Current main status (2026-11-12):** The old browser-only scratchpad finding is stale for the current code.
 
-**`listHistory()`** does not read `classification_history` at all. It selects
-`DEAL_FINDR_INTAKE` and `DEAL_FINDR_DUPLICATE_RECONCILED` rows out of
-`operational_audit_events` and synthesizes each entry with a constant
-`priorClassification: "NONE"`, `newClassification: "REAL"`, and
-`reason: "Ingested via Deal Findr Webhook"`. Consequences, all verified against a
-live database:
+The current UI persists workflow records through authenticated `/api/v1/operator/*` routes. The server-side repository stores notes, checklist items, seller interactions, underwriting assumptions, and related operator records. Transaction stage transitions, transaction tasks, milestones, and acquisition handoff events are persisted through `TransactionWorkflowService` and its event tables. These are not `localStorage` overrides.
 
-- the append-only history that migration 007 protects with triggers is never
-  displayed, while the screen claims to be showing it;
-- a duplicate address that was *reconciled* — explicitly not a classification
-  event — appears as a classification event. One opportunity with a single real
-  history row rendered as three;
-- with 2 rows in `classification_history`, `/api/v1/classifications` returned 8;
-- SYNTHETIC and AMBIGUOUS records both display a REAL history entry.
+`localStorage` remains in use for non-authoritative interface preferences such as fixture visibility, view mode, Piper panel state, and voice-output preference. Those preferences do not replace the server's opportunity stage or alter server-side funnel counts.
 
-**Why it is not fixed in this release.** There is no lineage column to read.
-`record_classifications.classification_value` holds a deal-type value
-(`investment_rehab`), not a REAL/SYNTHETIC/AMBIGUOUS lineage determination, which
-is why someone hardcoded the mapping in the first place. Fixing it properly means
-deciding where lineage classification is stored — a new column and migration, or
-a documented derivation from `source_provenance.resolution_status` — and then
-routing both methods through the existing, already-tested domain functions the
-way `src/repositories/fixture/fixtureClassificationReadRepository.js` does.
-
-That is a schema and product decision, not a repair. Guessing the mapping in a
-release commit would ship a different wrong answer with more confidence.
-
-**Scope of impact.** Read-only display defect. It does not affect intake writes,
-authorization, provenance, data quality, or the opportunity views, all of which
-read their real tables. Production ships `readOnly = true` and no intake by
-default, so a fresh deployment shows only seeded fixtures until cutover.
-
----
-
-## 1. Operator input is browser-local and invisible to the server
-
-**Status:** accepted for this release. Do not treat operator input as saved data.
-
-The underwriting analyzer, acquisitions checklist, seller call log, and the stage
-selector on the opportunity detail view all write to `localStorage` through
-`getOverrides` / `setOverride` in `public/app.js`. Consequences today:
-
-- input exists in exactly one browser profile and never reaches the server;
-- teammates cannot see it, and it is absent from every API response;
-- clearing site data destroys it with no recovery path and no audit trail;
-- a locally overridden stage silently outranks the server's stage in the
-  opportunities list and in the Overview funnel counts, so two operators can see
-  different pipeline totals for the same database.
-
-That last point is the sharp edge: the counts on Overview are not purely a
-function of server state.
-
-Interim disclosures are rendered in the three operator panels so the behaviour is
-visible to whoever is using it. **Disclosure is not a fix.**
-
-**The decision to make.** Either give operator input a real persistence path or
-remove it. Persistence is not a small change — it means mutation endpoints on an
-API that is deliberately GET/HEAD-only, new migrations, an authorization model
-for who may move a stage, and an audit trail consistent with the append-only
-guarantees migration 007 already enforces for classification history. Choosing
-persistence effectively ends "PIPELINE is a read-only projection", which is a
-product decision, not a refactor.
-
-Until then the honest framing is: PIPELINE reads authoritative state, and the
-scratchpad is a private notepad drawn on top of it.
+**Remaining acceptance:** exercise each persistence workflow against a populated, isolated test database and verify read-after-write, audit history, tenant scoping, and restart persistence before production cutover. The live IAP-only deployment currently has an empty database by design.
 
 ---
 
@@ -139,13 +65,10 @@ Keep this check when merging Phase 4.
 
 ---
 
-## 4. Two documents disagree about who owns lead intake
+## 4. Lead intake ownership — current implementation contract
 
-`docs/architecture-boundary.md` routes intake through OCG ONE as the canonical
-lead layer. `src/http/routes/dealFindrIntake.js` writes directly into PIPELINE's
-own tables. Both statements are currently true in the repository and they cannot
-both be the contract.
+**Current main implementation:** Deal Scout submits seller-opportunity intake directly to PIPELINE through the authenticated `/api/integrations/deal-findr/intake` contract. PIPELINE owns the resulting seller-opportunity, source, provenance, and audit records. This matches `docs/governed-integration-apis.md` and the implemented intake route.
 
-Someone with the product context needs to pick one and correct the other. This
-has no runtime effect today; it is a correctness problem in the documentation
-that will mislead the next integrator.
+OCG ONE remains authoritative for properties, people/contacts, users/authentication identities, documents, canonical tasks/approvals, and transitional legacy `property_leads` records. PIPELINE stores OCG ONE identifiers and resolves OCG ONE-owned details through authenticated APIs; it must not open or duplicate OCG ONE's database.
+
+The earlier statement that OCG ONE is the canonical lead-intake intermediary is superseded by the implemented Deal Scout-to-PIPELINE intake contract. Keep the ownership boundary above explicit in future integration work.
