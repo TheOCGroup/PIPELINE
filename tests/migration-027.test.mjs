@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -10,7 +11,7 @@ import { runMigrations } from "../src/database/migrationRunner.js";
 import { resolveSnapshotFigures } from "../src/repositories/sqlite/snapshotResolution.js";
 import { planRemediation, applyRemediation } from "../src/bin/pipeline-remediate-027.js";
 
-const MIGRATIONS_DIR = new URL("../migrations", import.meta.url).pathname;
+const MIGRATIONS_DIR = fileURLToPath(new URL("../migrations", import.meta.url));
 
 /** A migrations dir containing everything EXCEPT 027 (the pre-027 world). */
 function preMigrationsDir() {
