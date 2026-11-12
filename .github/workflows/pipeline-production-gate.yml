@@ -30,6 +30,9 @@ jobs:
       - name: Run complete test suite
         run: npm test
 
+      - name: Verify Phase 3G read-only migration gate
+        run: python3 -B -m unittest discover -s tests -p 'test_phase3g_readiness.py' -v
+
       - name: Check runtime entrypoints
         run: |
           node --check server.js
