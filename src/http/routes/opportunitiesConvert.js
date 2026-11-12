@@ -44,10 +44,10 @@ export async function handleConvertLead(req, res, ctx) {
   }
 
   // 4. Assert S2S permission scope
-  const scope = payload.scope || "";
+  const scopes = String(payload.scope || "").split(/\s+/).filter(Boolean);
   const permissions = Array.isArray(payload.permissions) ? payload.permissions : [payload.permissions];
-  const hasWriteScope = scope.includes("pipeline.opportunity.create") ||
-                        scope.includes("ocg-one.pipeline.write") ||
+  const hasWriteScope = scopes.includes("pipeline.opportunity.create") ||
+                        scopes.includes("ocg-one.pipeline.write") ||
                         permissions.includes("pipeline.opportunity.create") ||
                         permissions.includes("ocg-one.pipeline.write");
   if (!hasWriteScope) {
@@ -79,7 +79,7 @@ export async function handleConvertLead(req, res, ctx) {
   }
 
   // 6. Enforce required parameters. NOTE: the tenant is NEVER taken from the
-  // request body — converted records are stamped with the deployment's
+  // request body â€” converted records are stamped with the deployment's
   // configured tenant (PIPELINE_TENANT_ID) so a caller cannot plant records
   // into another tenant's scope.
   const { idempotencyKey, correlationId, sourceLeadId, sourceSystem, property, participants, sourceMessage } = data;

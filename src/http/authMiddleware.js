@@ -176,12 +176,12 @@ export async function authorizeApiRequest(req, res, ctx) {
         expectedAudience: audience,
       });
       if (verification.ok) {
-        const scope = verification.payload.scope || "";
+        const scopes = String(verification.payload.scope || "").split(/\s+/).filter(Boolean);
         const permissions = Array.isArray(verification.payload.permissions)
           ? verification.payload.permissions
           : [verification.payload.permissions];
         if (
-          scope.includes("ocg-one.pipeline.read") ||
+          scopes.includes("ocg-one.pipeline.read") ||
           permissions.includes("pipeline.read") ||
           permissions.includes("ocg-one.pipeline.read")
         ) {

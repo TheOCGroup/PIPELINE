@@ -55,6 +55,18 @@ test("S2S Opportunity Conversion Endpoint", async (t) => {
   const { app, baseUrl } = await startApp(createApp, config);
   t.after(() => app.server.close());
 
+  await t.test("Substring write scopes are not authorized", async () => {
+    for (const scope of ["not-pipeline.opportunity.create", "ocg-one.pipeline.write.extra"]) {
+      const token = await signServiceToken(privateKeyPem, { scope });
+      const res = await fetch(`${baseUrl}/api/v1/opportunities/convert`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceLeadId: "test" })
+      });
+      assert.equal(res.status, 403, scope);
+      assert.equal((await res.json()).error, "forbidden_insufficient_scope");
+    }
+  });
+
   await t.test("Unauthenticated S2S requests are rejected", async () => {
     const res = await fetch(`${baseUrl}/api/v1/opportunities/convert`, {
       method: "POST",
