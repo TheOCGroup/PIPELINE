@@ -120,7 +120,7 @@ must be described that way until a provider is connected and verified.
    correlation id.
 3. Communications, offer versions, classification history, and task events
    are append-only / immutable.
-4. `tenant_id` is stored on every opportunity and enforced against the
+4. tenant ID is stored on every opportunity and enforced against the
    deployment's configured tenant (`PIPELINE_TENANT_ID`): root reads filter
    by it, opportunity-keyed services assert ownership before reading or
    mutating, intake dedupe matches only within it, and writers (intake,
