@@ -17,7 +17,7 @@ export async function deliverMissionControlHandoff({ transactions, opportunityId
     response = await fetchImpl(url.href, { method: 'POST', headers: { 'authorization': `Bearer ${secret}`, 'content-type': 'application/json' }, body: JSON.stringify({ handoffId, payload: handoff.payload }), signal: AbortSignal.timeout(timeoutMs), redirect: 'error' });
     if (![200, 201].includes(response.status)) throw new Error(`receiver_http_${response.status}`);
     const result = await response.json();
-    if (result?.ok !== true || !result.data?.project?.id || typeof result.data?.duplicate !== 'boolean') throw new Error('invalid_handoff_acknowledgment');
+    if (result?.ok !== true || !result.data?.project?.id || result.data.project.sourceHandoffId !== handoffId || result.data.project.sourceOpportunityId !== opportunityId || typeof result.data?.duplicate !== 'boolean') throw new Error('invalid_handoff_acknowledgment');
     transactions.recordHandoffEvent({ handoffId, eventType: 'acknowledged', actor, externalRef: String(result.data.project.id || '').slice(0,500) || null });
     return { acknowledged: true, duplicate: result.data.duplicate, handoffId };
   } catch (error) {
