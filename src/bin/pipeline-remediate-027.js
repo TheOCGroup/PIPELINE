@@ -27,6 +27,8 @@
  * Usage: node src/bin/pipeline-remediate-027.js <dbPath> [--apply] [--include-immutable]
  */
 import { DatabaseSync } from "node:sqlite";
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
 
 const TERMS_TRIGGER_SQL = `CREATE TRIGGER trg_prevent_pending_or_approved_offer_version_terms_update
 BEFORE UPDATE ON seller_offer_versions
@@ -149,7 +151,7 @@ export function applyRemediation(db, { includeImmutable = false } = {}) {
       if (entry.applied) entry.disposition = "applied";
     }
     if (needsImmutable && includeImmutable) {
-      db.exec(TERMS_TRIGGER_SQL);
+      db.exec(before.find((t) => t.name === "trg_prevent_pending_or_approved_offer_version_terms_update")?.sql || TERMS_TRIGGER_SQL);
       const after = triggerInventory();
       const identical = JSON.stringify(before) === JSON.stringify(after);
       if (!identical) throw new Error("trigger inventory differs after remediation — rolling back");
@@ -163,7 +165,7 @@ export function applyRemediation(db, { includeImmutable = false } = {}) {
   return manifest;
 }
 
-const isMain = import.meta.url === `file://${process.argv[1]}`;
+const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 if (isMain) {
   const [dbPath, ...flags] = process.argv.slice(2);
   if (!dbPath) {

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -8,7 +9,7 @@ import { join } from "node:path";
 import { openPipelineDatabase } from "../src/database/openDatabase.js";
 import { runMigrations } from "../src/database/migrationRunner.js";
 
-const REPO = new URL("..", import.meta.url).pathname;
+const REPO = fileURLToPath(new URL("..", import.meta.url));
 const MIGRATIONS_DIR = join(REPO, "migrations");
 
 function scratchDb(name, { withVersion = true } = {}) {

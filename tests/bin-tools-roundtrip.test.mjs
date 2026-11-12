@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -16,7 +17,7 @@ import { runMigrations } from "../src/database/migrationRunner.js";
 // is populated, protected approved/pending_approval versions, explicit
 // underwriting_ref_id links (incl. a NULL-snapshot version), and refs.
 
-const REPO = new URL("..", import.meta.url).pathname;
+const REPO = fileURLToPath(new URL("..", import.meta.url));
 const MIGRATIONS_DIR = join(REPO, "migrations");
 const EXPORT_CLI = join(REPO, "src/bin/pipeline-export.js");
 const IMPORT_CLI = join(REPO, "src/bin/pipeline-import.js");
