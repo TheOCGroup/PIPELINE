@@ -242,6 +242,8 @@ export function loadConfig(env = process.env) {
     sessionSecret,
     handoffSecret,
     operatorSecret,
+    missionControlHandoffEndpoint: env.PIPELINE_MISSION_CONTROL_HANDOFF_ENDPOINT || "",
+    missionControlHandoffSecret: env.PIPELINE_MISSION_CONTROL_HANDOFF_SECRET || "",
     operatorAuthEnabled: operatorSecret.length >= OPERATOR_SECRET_MIN,
     sessionTtlMinutes,
     piperIntakeEnabled,

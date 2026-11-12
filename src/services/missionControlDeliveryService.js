@@ -1,4 +1,4 @@
-﻿/** Explicit, retryable PIPELINE -> Mission Control outbox dispatcher.
+/** Explicit, retryable PIPELINE -> Mission Control outbox dispatcher.
  * No delivery occurs inside the closing transaction. A caller must opt in.
  */
 export async function deliverMissionControlHandoff({ transactions, opportunityId, handoffId, endpoint, secret, fetchImpl = fetch, actor = 'mission-control-dispatch', timeoutMs = 10000 }) {
@@ -17,7 +17,7 @@ export async function deliverMissionControlHandoff({ transactions, opportunityId
     response = await fetchImpl(url.href, { method: 'POST', headers: { 'authorization': `Bearer ${secret}`, 'content-type': 'application/json' }, body: JSON.stringify({ handoffId, payload: handoff.payload }), signal: AbortSignal.timeout(timeoutMs), redirect: 'error' });
     if (![200, 201].includes(response.status)) throw new Error(`receiver_http_${response.status}`);
     const result = await response.json();
-    if (result?.ok !== true || !result.data?.project || typeof result.data?.duplicate !== 'boolean') throw new Error('invalid_handoff_acknowledgment');
+    if (result?.ok !== true || !result.data?.project?.id || typeof result.data?.duplicate !== 'boolean') throw new Error('invalid_handoff_acknowledgment');
     transactions.recordHandoffEvent({ handoffId, eventType: 'acknowledged', actor, externalRef: String(result.data.project.id || '').slice(0,500) || null });
     return { acknowledged: true, duplicate: result.data.duplicate, handoffId };
   } catch (error) {
