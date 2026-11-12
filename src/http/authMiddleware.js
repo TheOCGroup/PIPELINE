@@ -152,6 +152,15 @@ export function operatorPermissions() {
 export async function authorizeApiRequest(req, res, ctx) {
   const config = ctx.config;
 
+  // Founder bearer remains valid after OCG ONE integration is enabled.
+  // Authenticate it before attempting RS256 verification so the two credential
+  // types cannot accidentally disable each other during the SSO cutover.
+  const operatorAuth = authenticateOperatorBearer(req, config);
+  if (operatorAuth) {
+    req.operatorAuth = operatorAuth;
+    return true;
+  }
+
   if (config.env === "production" && config.integrationEnabled) {
     let isS2S = false;
     let s2sError = null;
@@ -200,15 +209,15 @@ export async function authorizeApiRequest(req, res, ctx) {
       }
       req.pipelineSession = session;
     }
-    // Session-cookie writes (the OCG ONE handoff path) require a CSRF token;
-    // S2S bearer requests are exempt (requireSessionCsrf checks for a session).
+    // A read-scoped OCG ONE service token must not become an operator write
+    // credential merely because it passed the general API read gate.
+    // Dedicated conversion/intake routes implement their own write scopes.
+    if (isS2S && WRITE_METHODS.has(String(req.method || "").toUpperCase())) {
+      sendJson(res, 403, { ok: false, error: "forbidden_insufficient_scope" });
+      return false;
+    }
+    // Session-cookie writes require a CSRF token; bearer requests are exempt.
     return requireSessionCsrf(req, res, ctx);
-  }
-
-  const operatorAuth = authenticateOperatorBearer(req, config);
-  if (operatorAuth) {
-    req.operatorAuth = operatorAuth;
-    return true;
   }
 
   if (config.env === "production") {
