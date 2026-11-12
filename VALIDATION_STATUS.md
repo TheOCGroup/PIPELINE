@@ -1,4 +1,7 @@
-# PIPELINE validation status — 2026-08-15
+﻿# PIPELINE validation status
+
+> **Current verified status (2026-11-12):** See [production-status-2026-11-12.md](production-status-2026-11-12.md). The historical notes below are retained for provenance and must not be read as the current deployment state.
+# PIPELINE validation status â€” 2026-08-15
 
 ## Preserved
 - Approved concept-screen visual direction remains intact.
@@ -23,3 +26,4 @@
 5. Configure a persistent volume and production environment variables on the chosen host.
 6. Run migrations at runtime against the mounted volume.
 7. Deploy and verify the public URL.
+
