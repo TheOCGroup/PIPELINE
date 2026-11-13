@@ -40,7 +40,7 @@ test("conversion endpoint honors the production read-only safety gate", async (t
   assert.equal((await response.json()).error, "read_only");
 });
 
-test("system status reports configured handoff from the active verification keys", async (t) => {
+test("system status requires authentication even when integration verification keys exist", async (t) => {
   const temp = makeTempDb();
   const { app, baseUrl } = await startApp(createApp, {
     host: "127.0.0.1", port: 0, dbPath: temp.dbPath, env: "production",
@@ -50,10 +50,7 @@ test("system status reports configured handoff from the active verification keys
   t.after(() => { app.close(); temp.cleanup(); });
 
   const response = await fetch(`${baseUrl}/api/v1/system/status`);
-  assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.data.integration, "LIVE");
-  assert.equal(body.data.handoff, "LIVE");
+  assert.equal(response.status, 401);
 });
 
 test("production package uses the staged source layout and live config names", () => {

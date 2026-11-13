@@ -66,7 +66,7 @@ if(path.startsWith("/api/")){
   if(path==="/api/v1/auth/session"){if(req.method!=="GET"&&req.method!=="HEAD")return sendJson(res,405,{ok:false,error:"method_not_allowed"},{Allow:"GET, HEAD"});return handleGetSession(req,res,ctx);}
   if(path==="/api/v1/auth/logout"){if(req.method!=="POST")return sendJson(res,405,{ok:false,error:"method_not_allowed"},{Allow:"POST"});return handlePostLogout(req,res,ctx);}
   if(path==="/api/v1/opportunities/convert")return handleConvertLead(req,res,ctx);
-  if(path!=="/api/v1/system/status"&&path!=="/api/v1/opportunities/convert"){if(!(await authorizeApiRequest(req,res,ctx)))return;}
+  if(!(await authorizeApiRequest(req,res,ctx)))return;
   if(path==="/api/v1/aiden/messages"){if(!["GET","PATCH"].includes(req.method))return sendJson(res,405,{ok:false,error:"method_not_allowed"});return handleAidenCallIntegration(req,res,ctx);}
   const seg=path.replace(/^\/api\/v1\/?/,"").split("/").filter(Boolean);if(seg[0]==="opportunities"&&await handleOpportunityRoutes(req,res,ctx,url,seg))return;if(seg[0]==="investment-committee"&&await handleInvestmentCommitteeRoutes(req,res,ctx,url,seg))return;if(seg[0]==="operator"&&await handleOperatorRoutes(req,res,ctx,url,seg))return;if(seg[0]==="piper"&&await handlePiperRoutes(req,res,ctx,url,seg))return;if(seg[0]==="work-room"&&await handleWorkRoomRoutes(req,res,ctx,url,seg))return;return handleApi(req,res,ctx,url);
  }return sendJson(res,404,{ok:false,error:"not_found"});}

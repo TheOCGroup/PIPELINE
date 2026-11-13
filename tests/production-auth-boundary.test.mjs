@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { SignJWT, importPKCS8 } from 'jose';
@@ -15,3 +15,9 @@ test('read-scoped service identity cannot write and invalid credentials fail',as
 
 
 test('substring or suffixed read scope does not grant S2S access',async t=>{const base=await fixture(t);const key=await importPKCS8(pair.privateKey.export({type:'pkcs8',format:'pem'}),'RS256');for(const scope of ['not-ocg-one.pipeline.read','ocg-one.pipeline.read.extra']){const token=await new SignJWT({scope}).setProtectedHeader({alg:'RS256',typ:'JWT',kid}).setIssuer('ocg-one').setAudience('pipeline').setSubject('qa-service').setIssuedAt().setExpirationTime('60s').sign(key);const res=await fetch(`${base}/api/v1/opportunities`,{headers:{Authorization:`Bearer ${token}`}});assert.equal(res.status,403,scope);}});
+
+test('system status is private in production integrated mode',async t=>{
+ const base=await fixture(t);
+ assert.equal((await fetch(base+'/api/v1/system/status')).status,401);
+ assert.equal((await fetch(base+'/api/v1/system/status',{headers:{Authorization:'Bearer '+keyText}})).status,200);
+});
