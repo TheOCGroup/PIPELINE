@@ -11,6 +11,8 @@ async function signServiceToken(privateKeyPem, {
   audience = "pipeline",
   subject = "ocg-one-service",
   scope = "pipeline.opportunity.create",
+  method = "POST",
+  path = "/api/v1/opportunities/convert",
   contractVersion = "1.0.0",
   alg = "RS256",
   exp
@@ -21,6 +23,8 @@ async function signServiceToken(privateKeyPem, {
 
   const payload = {
     scope,
+    method,
+    path,
     contract_version: contractVersion
   };
 
@@ -54,6 +58,18 @@ test("S2S Opportunity Conversion Endpoint", async (t) => {
 
   const { app, baseUrl } = await startApp(createApp, config);
   t.after(() => app.server.close());
+
+  await t.test("Validly signed tokens bound to other routes or methods are rejected", async () => {
+    for (const options of [{ method: "GET" }, { path: "/api/v1/opportunities" }]) {
+      const token = await signServiceToken(privateKeyPem, options);
+      const res = await fetch(`${baseUrl}/api/v1/opportunities/convert`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceLeadId: "test" })
+      });
+      assert.equal(res.status, 403);
+      assert.equal((await res.json()).error, "forbidden_request_binding");
+    }
+  });
 
   await t.test("Substring write scopes are not authorized", async () => {
     for (const scope of ["not-pipeline.opportunity.create", "ocg-one.pipeline.write.extra"]) {

@@ -36,6 +36,11 @@ export async function handleConvertLead(req, res, ctx) {
   }
 
   const payload = verification.payload;
+  // OCG ONE signs a request-specific service token. Refuse a token issued for
+  // another endpoint or method, even when its scope and signature are valid.
+  if (payload.method !== "POST" || payload.path !== "/api/v1/opportunities/convert") {
+    return sendJson(res, 403, { ok: false, error: "forbidden_request_binding" });
+  }
 
   // 3. Enforce contract version check (major version 1)
   const contractVersion = payload.contract_version;
