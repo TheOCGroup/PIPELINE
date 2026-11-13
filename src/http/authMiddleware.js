@@ -176,18 +176,26 @@ export async function authorizeApiRequest(req, res, ctx) {
         expectedAudience: audience,
       });
       if (verification.ok) {
-        const scopes = String(verification.payload.scope || "").split(/\s+/).filter(Boolean);
-        const permissions = Array.isArray(verification.payload.permissions)
-          ? verification.payload.permissions
-          : [verification.payload.permissions];
-        if (
-          scopes.includes("ocg-one.pipeline.read") ||
-          permissions.includes("pipeline.read") ||
-          permissions.includes("ocg-one.pipeline.read")
-        ) {
-          isS2S = true;
+        // OCG ONE signs each service token for one method and API route.
+        // Refuse cross-route replay even when the signature and read scope pass.
+        const requestPath = new URL(req.url || "/", "http://localhost").pathname;
+        if (verification.payload.method !== String(req.method || "").toUpperCase() ||
+            verification.payload.path !== requestPath) {
+          s2sError = "forbidden_request_binding";
         } else {
-          s2sError = "forbidden_insufficient_scope";
+          const scopes = String(verification.payload.scope || "").split(/\s+/).filter(Boolean);
+          const permissions = Array.isArray(verification.payload.permissions)
+            ? verification.payload.permissions
+            : [verification.payload.permissions];
+          if (
+            scopes.includes("ocg-one.pipeline.read") ||
+            permissions.includes("pipeline.read") ||
+            permissions.includes("ocg-one.pipeline.read")
+          ) {
+            isS2S = true;
+          } else {
+            s2sError = "forbidden_insufficient_scope";
+          }
         }
       } else {
         s2sError = `forbidden_token_invalid: ${verification.reason}`;

@@ -135,7 +135,7 @@ test("API: GET /api/v1/opportunities S2S Bearer token authentication", async (t)
   // 2. Request with wrong signature -> 403
   const wrongKeys = await generateKeyPair("RS256", { extractable: true });
   const wrongPrivateKeyPem = await exportPKCS8(wrongKeys.privateKey);
-  const badToken = await new SignJWT({ scope: "ocg-one.pipeline.read", contract_version: "1.0.0" })
+  const badToken = await new SignJWT({ scope: "ocg-one.pipeline.read", method: "GET", path: "/api/v1/opportunities", contract_version: "1.0.0" })
     .setProtectedHeader({ alg: "RS256", kid: "service-key-2", typ: "JWT" })
     .setIssuer("ocg-one")
     .setAudience("pipeline")
@@ -152,7 +152,7 @@ test("API: GET /api/v1/opportunities S2S Bearer token authentication", async (t)
 
   // 3. Request with insufficient scope -> 403
   const readKey = await importPKCS8(privateKeyPem, "RS256");
-  const badScopeToken = await new SignJWT({ scope: "wrong.scope", contract_version: "1.0.0" })
+  const badScopeToken = await new SignJWT({ scope: "wrong.scope", method: "GET", path: "/api/v1/opportunities", contract_version: "1.0.0" })
     .setProtectedHeader({ alg: "RS256", kid: "service-key-2", typ: "JWT" })
     .setIssuer("ocg-one")
     .setAudience("pipeline")
@@ -168,7 +168,7 @@ test("API: GET /api/v1/opportunities S2S Bearer token authentication", async (t)
   assert.equal(resBadScope.status, 403);
 
   // 4. Request with valid token and scope -> 200
-  const validToken = await new SignJWT({ scope: "ocg-one.pipeline.read", contract_version: "1.0.0" })
+  const validToken = await new SignJWT({ scope: "ocg-one.pipeline.read", method: "GET", path: "/api/v1/opportunities", contract_version: "1.0.0" })
     .setProtectedHeader({ alg: "RS256", kid: "service-key-2", typ: "JWT" })
     .setIssuer("ocg-one")
     .setAudience("pipeline")
