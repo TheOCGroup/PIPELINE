@@ -251,12 +251,18 @@ async function runImport() {
         INSERT INTO seller_opportunity_sources (
           id, opportunity_id, source_type, source_record_id, source_message_id,
           original_address, source_timestamp, conversion_actor, conversion_timestamp,
-          provenance_metadata_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          provenance_metadata_json, created_at, tenant_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         get("id"), get("opportunity_id"), get("source_type"), get("source_record_id"), get("source_message_id"),
         get("original_address"), get("source_timestamp"), get("conversion_actor"), get("conversion_timestamp"),
-        get("provenance_metadata_json"), get("created_at")
+        get("provenance_metadata_json"), get("created_at"),
+        // Faithful round-trip first: a payload that carries tenant_id
+        // (any post-030 export) is reproduced exactly, including NULL.
+        // Only a legacy payload without the key gets the parent lookup.
+        row.tenant_id !== undefined
+          ? row.tenant_id
+          : db.prepare("SELECT tenant_id FROM seller_opportunities WHERE id = ?").get(get("opportunity_id"))?.tenant_id ?? null
       );
     }
 

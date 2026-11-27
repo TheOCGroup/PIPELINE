@@ -113,10 +113,16 @@ export async function handleConvertLead(req, res, ctx) {
 
   // 7. Duplicate Conversion Protection / Idempotency Check
   // Check if lead was already converted
+  // Tenant-scoped (R1 Patch A / GAP-1): another tenant's conversion of the
+  // same source lead must neither leak its opportunity id nor block this
+  // tenant's own conversion (same rule as intake dedupe in dealFindrIntake.js).
   const existingSource = db.prepare(`
-    SELECT opportunity_id FROM seller_opportunity_sources
-    WHERE source_record_id = ? AND source_type = ?
-  `).get(sourceLeadId, sourceSystem);
+    SELECT sos.opportunity_id AS opportunity_id
+    FROM seller_opportunity_sources sos
+    JOIN seller_opportunities o ON o.id = sos.opportunity_id
+    WHERE sos.source_record_id = ? AND sos.source_type = ?
+      AND o.tenant_id = ?
+  `).get(sourceLeadId, sourceSystem, tenantId);
 
   if (existingSource) {
     return sendJson(res, 200, {
@@ -128,9 +134,13 @@ export async function handleConvertLead(req, res, ctx) {
 
   // Check if idempotency key was already used
   const existingAudit = db.prepare(`
-    SELECT payload_json FROM operational_audit_events
-    WHERE correlation_id = ? AND event_type = 'OPPORTUNITY_CONVERSION'
-  `).get(idempotencyKey);
+    SELECT oe.payload_json AS payload_json
+    FROM operational_audit_events oe
+    JOIN seller_opportunities o
+      ON o.id = JSON_EXTRACT(oe.payload_json, '$.opportunityId')
+    WHERE oe.correlation_id = ? AND oe.event_type = 'OPPORTUNITY_CONVERSION'
+      AND o.tenant_id = ?
+  `).get(idempotencyKey, tenantId);
 
   if (existingAudit) {
     try {
@@ -184,12 +194,13 @@ export async function handleConvertLead(req, res, ctx) {
       INSERT INTO seller_opportunity_sources (
         id, opportunity_id, source_type, source_record_id, source_message_id,
         original_address, source_timestamp, conversion_actor, conversion_timestamp,
-        provenance_metadata_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 's2s', ?, ?, ?)
+        provenance_metadata_json, created_at, tenant_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 's2s', ?, ?, ?, ?)
     `).run(
       sourceId, opportunityId, sourceSystem, sourceLeadId, sourceMessage?.sourceMessageId || null,
       property.address || null, sourceMessage?.sourceTimestamp || new Date().toISOString(),
-      new Date().toISOString(), sourceMessage ? JSON.stringify(sourceMessage) : null, new Date().toISOString()
+      new Date().toISOString(), sourceMessage ? JSON.stringify(sourceMessage) : null, new Date().toISOString(),
+      tenantId
     );
 
     // D. Insert stage event

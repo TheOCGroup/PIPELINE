@@ -83,27 +83,30 @@ export class PiperContextService {
       this.db.prepare(`
         SELECT id, opportunity_id, title, due_date, status, created_at, created_by
         FROM operator_next_actions
-      `).all(),
+        WHERE opportunity_id IN (SELECT id FROM seller_opportunities WHERE tenant_id = ?)
+      `).all(this.tenantId),
       (r) => r.opportunity_id
     );
 
     const lastStageEvent = mapBy(
       this.db.prepare(`
-        SELECT opportunity_id, MAX(created_at) AS at FROM seller_stage_events GROUP BY opportunity_id
-      `).all(),
+        SELECT opportunity_id, MAX(created_at) AS at FROM seller_stage_events
+        WHERE opportunity_id IN (SELECT id FROM seller_opportunities WHERE tenant_id = ?) GROUP BY opportunity_id
+      `).all(this.tenantId),
       (r) => r.opportunity_id
     );
 
     const lastInteraction = mapBy(
       this.db.prepare(`
         SELECT opportunity_id, MAX(occurred_at) AS at, COUNT(*) AS n
-        FROM seller_interactions GROUP BY opportunity_id
-      `).all(),
+        FROM seller_interactions
+        WHERE opportunity_id IN (SELECT id FROM seller_opportunities WHERE tenant_id = ?) GROUP BY opportunity_id
+      `).all(this.tenantId),
       (r) => r.opportunity_id
     );
 
     const noteCounts = mapBy(
-      this.db.prepare("SELECT opportunity_id, COUNT(*) AS n FROM operator_notes GROUP BY opportunity_id").all(),
+      this.db.prepare("SELECT opportunity_id, COUNT(*) AS n FROM operator_notes WHERE opportunity_id IN (SELECT id FROM seller_opportunities WHERE tenant_id = ?) GROUP BY opportunity_id").all(this.tenantId),
       (r) => r.opportunity_id
     );
 
@@ -118,8 +121,9 @@ export class PiperContextService {
                  recipient_channel, recipient_verification_status, direction, subject, content_text,
                  in_reply_to_communication_id, created_by, created_at
           FROM seller_communications
+          WHERE opportunity_id IN (SELECT id FROM seller_opportunities WHERE tenant_id = ?)
           ORDER BY created_at DESC
-        `).all(),
+        `).all(this.tenantId),
         (r) => r.opportunity_id
       );
 
@@ -127,8 +131,9 @@ export class PiperContextService {
         this.db.prepare(`
           SELECT id, communication_id, event_type, actor_id, provider_ref, outcome, occurred_at
           FROM seller_communication_events
+          WHERE communication_id IN (SELECT id FROM seller_communications WHERE opportunity_id IN (SELECT id FROM seller_opportunities WHERE tenant_id = ?))
           ORDER BY rowid ASC
-        `).all(),
+        `).all(this.tenantId),
         (r) => r.communication_id
       );
     } catch {}
@@ -139,7 +144,8 @@ export class PiperContextService {
         FROM seller_opportunity_participants p
         LEFT JOIN pipeline_contacts c ON c.id = p.ocg_one_person_id
         WHERE p.is_primary = 1
-      `).all();
+          AND p.opportunity_id IN (SELECT id FROM seller_opportunities WHERE tenant_id = ?)
+      `).all(this.tenantId);
 
       primaryContactByOpp = mapBy(participants.map(p => {
         const val = p.email || p.phone || null;
@@ -315,22 +321,21 @@ export class PiperContextService {
   }
 
   #recent(cutoff) {
+    // Tenant scope is enforced IN SQL for every stream (R1-F1 remediation):
+    // foreign rows never load into the process. The three opportunity-keyed
+    // streams filter on opportunity_id; the audit-events stream is keyed by
+    // the opportunity id inside its payload, scoped via json_extract.
+    const scope = "opportunity_id IN (SELECT id FROM seller_opportunities WHERE tenant_id = ?)";
     const bound = (sql, ...params) => this.db.prepare(sql).all(...params).slice(0, MAX_RECENT);
-    const where = cutoff ? "WHERE event_timestamp > ?" : "";
-    const args = cutoff ? [cutoff] : [];
-    // Tenant scope for the recent-events tail: only events belonging to the
-    // configured tenant's opportunities may enter the snapshot.
-    const tenantOppIds = new Set(
-      this.db.prepare("SELECT id FROM seller_opportunities WHERE tenant_id = ?").all(this.tenantId).map((r) => r.id)
-    );
-    const inScope = (opportunityId) => tenantOppIds.has(opportunityId);
 
     const intakes = bound(`
       SELECT event_timestamp AS at, actor_id, payload_json
       FROM operational_audit_events
-      WHERE event_type = 'DEAL_FINDR_INTAKE' ${cutoff ? "AND event_timestamp > ?" : ""}
+      WHERE event_type = 'DEAL_FINDR_INTAKE'
+        AND json_extract(payload_json, '$.opportunityId') IN (SELECT id FROM seller_opportunities WHERE tenant_id = ?)
+        ${cutoff ? "AND event_timestamp > ?" : ""}
       ORDER BY event_timestamp DESC
-    `, ...args).map((r) => {
+    `, ...(cutoff ? [this.tenantId, cutoff] : [this.tenantId])).map((r) => {
       let payload = {};
       try { payload = JSON.parse(r.payload_json); } catch { /* opaque payload stays empty */ }
       return {
@@ -340,29 +345,30 @@ export class PiperContextService {
         opportunityId: payload.opportunityId || null,
         address: payload.address || null,
       };
-    }).filter((e) => inScope(e.opportunityId));
+    });
 
     const stageEvents = bound(`
       SELECT opportunity_id, prior_stage, new_stage, changed_by, reason, created_at AS at
-      FROM seller_stage_events ${cutoff ? "WHERE created_at > ?" : ""}
+      FROM seller_stage_events
+      WHERE ${scope} ${cutoff ? "AND created_at > ?" : ""}
       ORDER BY created_at DESC
-    `, ...args).filter((e) => inScope(e.opportunity_id));
+    `, ...(cutoff ? [this.tenantId, cutoff] : [this.tenantId]));
 
     const classificationChanges = bound(`
       SELECT opportunity_id, prior_classification, new_classification, determined_by, reason, determined_at AS at
-      FROM classification_history ${cutoff ? "WHERE determined_at > ?" : ""}
+      FROM classification_history
+      WHERE ${scope} ${cutoff ? "AND determined_at > ?" : ""}
       ORDER BY determined_at DESC
-    `, ...args).filter((e) => inScope(e.opportunity_id));
+    `, ...(cutoff ? [this.tenantId, cutoff] : [this.tenantId]));
 
     const victorUpdates = bound(`
       SELECT opportunity_id, source_system AS underwriting_source_type, mao AS underwriting_mao_snapshot,
              arv AS underwriting_arv_snapshot, confidence AS underwriting_confidence, created_at AS at
       FROM opportunity_underwriting_refs
-      WHERE created_at IS NOT NULL ${cutoff ? "AND created_at > ?" : ""}
+      WHERE ${scope} AND created_at IS NOT NULL ${cutoff ? "AND created_at > ?" : ""}
       ORDER BY created_at DESC
-    `, ...args).filter((e) => inScope(e.opportunity_id)).map((r) => ({ ...r, attributedTo: "Victor" }));
+    `, ...(cutoff ? [this.tenantId, cutoff] : [this.tenantId])).map((r) => ({ ...r, attributedTo: "Victor" }));
 
-    void where;
     return { intakes, stageEvents, classificationChanges, victorUpdates };
   }
 }

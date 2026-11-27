@@ -182,8 +182,8 @@ async function handleCreate(req, res, ctx) {
       `INSERT INTO seller_opportunity_sources (
          id, opportunity_id, source_type, source_record_id, source_message_id,
          original_address, source_timestamp, conversion_actor, conversion_timestamp,
-         provenance_metadata_json
-       ) VALUES (?, ?, 'manual_entry', ?, NULL, ?, ?, ?, ?, ?)`
+         provenance_metadata_json, tenant_id
+       ) VALUES (?, ?, 'manual_entry', ?, NULL, ?, ?, ?, ?, ?, ?)`
     ).run(
       randomUUID(),
       opportunityId,
@@ -192,7 +192,8 @@ async function handleCreate(req, res, ctx) {
       now,
       actor,
       now,
-      JSON.stringify(provenanceMetadata)
+      JSON.stringify(provenanceMetadata),
+      tenantId
     );
 
     db.prepare(
