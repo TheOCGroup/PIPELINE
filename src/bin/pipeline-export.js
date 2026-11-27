@@ -20,6 +20,17 @@ const SOURCE_DB_PATH = process.argv[2] || process.env.PIPELINE_EXPORT_SOURCE_DB 
 const BACKUP_DB_PATH = process.argv[3] || process.env.PIPELINE_EXPORT_SNAPSHOT_DB || "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\ocg_one_snapshot.db";
 const EXPORT_JSON_PATH = process.argv[4] || process.env.PIPELINE_EXPORT_JSON || "C:\\Users\\Genaro\\Documents\\OCG OS\\integration-work\\pipeline_export.json";
 
+// TENANT SCOPE (Directive 004 §9 — shared-database export hazard, Lane A
+// A-S3): this CLI historically exported EVERY tenant's records from a
+// shared database. Tenant scope now comes from the deployment config
+// PIPELINE_TENANT_ID. When it is set, the export contains ONLY that
+// tenant's records (root rows by tenant_id; child rows via their parent
+// opportunity/offer chain). When it is NOT set, the export proceeds only
+// if the database holds at most one tenant (the historical
+// deployment-per-tenant behavior); an unscoped export against a
+// multi-tenant database is REFUSED and nothing is written.
+const EXPORT_TENANT_ID = process.env.PIPELINE_TENANT_ID || null;
+
 function getFileHash(filePath) {
   if (!existsSync(filePath)) return null;
   const content = readFileSync(filePath);
@@ -84,6 +95,52 @@ async function runExport() {
     process.exit(1);
   }
 
+  // 4b. Resolve tenant scope BEFORE reading any records. Refusal deletes
+  // the snapshot as well: it is a full-database copy and must not be left
+  // behind as an unscoped export by another name.
+  const oppTableExists = snapshotDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='seller_opportunities'").get();
+  const distinctTenants = oppTableExists
+    ? snapshotDb.prepare("SELECT DISTINCT tenant_id FROM seller_opportunities").all().map((r) => r.tenant_id)
+    : [];
+  if (!EXPORT_TENANT_ID && distinctTenants.length > 1) {
+    console.error(`EXPORT REFUSED: source database contains ${distinctTenants.length} tenants (${distinctTenants.join(", ")}) ` +
+      `but PIPELINE_TENANT_ID is not set. Unscoped export from a shared database would disclose every tenant's records. ` +
+      `Set PIPELINE_TENANT_ID to the deployment's tenant and re-run.`);
+    snapshotDb.close();
+    const { rmSync } = await import("node:fs");
+    try { rmSync(BACKUP_DB_PATH, { force: true }); } catch {}
+    process.exit(1);
+  }
+  const scoped = !!EXPORT_TENANT_ID;
+  if (scoped) {
+    console.log(`Tenant scope: exporting ONLY tenant '${EXPORT_TENANT_ID}' (PIPELINE_TENANT_ID).`);
+    if (oppTableExists && !distinctTenants.includes(EXPORT_TENANT_ID)) {
+      console.warn(`WARNING: tenant '${EXPORT_TENANT_ID}' has no seller_opportunities rows; the export will be empty for opportunity-rooted tables.`);
+    }
+  } else {
+    console.log(`Tenant scope: unscoped export permitted — database holds ${distinctTenants.length} tenant(s) (deployment-per-tenant).`);
+  }
+  // WHERE clause per table for a scoped export. Root rows filter on
+  // tenant_id directly; every child table reaches its tenant through the
+  // parent opportunity (offer_versions via its offer, approval_links via
+  // its offer version) — the same ownership chain the FKs declare.
+  const OPP_OF_TENANT = "SELECT id FROM seller_opportunities WHERE tenant_id = ?";
+  const OFFER_OF_TENANT = `SELECT id FROM seller_offers WHERE opportunity_id IN (${OPP_OF_TENANT})`;
+  const VERSION_OF_TENANT = `SELECT id FROM seller_offer_versions WHERE offer_id IN (${OFFER_OF_TENANT})`;
+  const scopedWhere = {
+    seller_opportunities: "tenant_id = ?",
+    seller_opportunity_participants: `opportunity_id IN (${OPP_OF_TENANT})`,
+    seller_opportunity_sources: `opportunity_id IN (${OPP_OF_TENANT})`,
+    seller_stage_events: `opportunity_id IN (${OPP_OF_TENANT})`,
+    seller_appointments: `opportunity_id IN (${OPP_OF_TENANT})`,
+    seller_interactions: `opportunity_id IN (${OPP_OF_TENANT})`,
+    seller_offers: `opportunity_id IN (${OPP_OF_TENANT})`,
+    opportunity_underwriting_refs: `opportunity_id IN (${OPP_OF_TENANT})`,
+    seller_opportunity_outcomes: `opportunity_id IN (${OPP_OF_TENANT})`,
+    seller_offer_versions: `offer_id IN (${OFFER_OF_TENANT})`,
+    seller_offer_approval_links: `offer_version_id IN (${VERSION_OF_TENANT})`
+  };
+
   // 5. Export Pipeline-owned tables
   const tables = [
     "seller_opportunities",
@@ -103,6 +160,8 @@ async function runExport() {
     schemaVersion: "1.0.0",
     timestamp: new Date().toISOString(),
     sourceDatabaseHash: hashBefore,
+    tenantScope: scoped ? EXPORT_TENANT_ID : (distinctTenants[0] ?? null),
+    tenantScoped: scoped,
     recordCounts: {},
     checksums: {},
     data: {}
@@ -114,7 +173,9 @@ async function runExport() {
       // Check if table exists in OCG ONE db
       const tableExists = snapshotDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table);
       if (tableExists) {
-        rows = snapshotDb.prepare(`SELECT * FROM ${table}`).all();
+        rows = scoped && scopedWhere[table]
+          ? snapshotDb.prepare(`SELECT * FROM ${table} WHERE ${scopedWhere[table]}`).all(EXPORT_TENANT_ID)
+          : snapshotDb.prepare(`SELECT * FROM ${table}`).all();
       }
     } catch (err) {
       console.warn(`Could not read table ${table}: ${err.message}`);

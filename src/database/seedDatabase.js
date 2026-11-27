@@ -85,8 +85,8 @@ export function seedDatabaseIfEmpty(db) {
       db.prepare(`
         INSERT INTO seller_opportunity_sources (
           id, opportunity_id, source_type, source_record_id, source_message_id,
-          original_address, source_timestamp, conversion_actor
-        ) VALUES (?, ?, 'property_lead_inbox', ?, ?, ?, ?, 'system-seed')
+          original_address, source_timestamp, conversion_actor, tenant_id
+        ) VALUES (?, ?, 'property_lead_inbox', ?, ?, ?, ?, 'system-seed', 'ocg-one')
       `).run(randomUUID(), o.id, "seed-prop-" + o.id, o.sourceMsgId, o.address, new Date().toISOString());
 
       // 3. Insert source_provenance
